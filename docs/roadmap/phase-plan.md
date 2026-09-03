@@ -28,6 +28,13 @@ browser. No alarms, no auth, no UDTs, no tag browse tree yet.
 Driver → Tag engine → (historian row + browser update) end-to-end, verified
 against a live simulator.
 
+**Constraint:** historian writes use plain TimescaleDB hypertables only —
+no continuous aggregates and no native compression. ADR-0006 flags those
+specific features as TSL-licensed, pending legal review before the product
+relies on them; the Phase 1 test gate does not require them, so Phase 1
+does not use them. Revisit only once ADR-0006's licensing question is
+resolved.
+
 ## Phase 2 — Tag browsing and device management
 
 **Scope:** the hierarchical browse tree UI (ADR-0001), device configuration
