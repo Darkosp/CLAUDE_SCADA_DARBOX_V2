@@ -81,6 +81,20 @@ the project — this file and the docs it points to will be updated as new
 ADRs are added or the phase plan changes. Re-read them if it's been a while
 since your last session in this repo.
 
+## How design-conversation documents get here
+
+README, ADRs, the architecture docs, `phase-plan.md`, and this file are
+written directly to disk in this repository by the Cowork/Claude session
+running the design conversation, through a file-sync mechanism — **not
+through git**. That session cannot run git itself and cannot commit or
+push. When it says a document was "saved to the repo," that only means the
+file content on disk is correct — never that it is committed.
+
+Do not assume a document is committed just because Cowork said it was
+added or changed. Always check `git status` for uncommitted changes before
+acting on that assumption, and commit/push it yourself (per the rule above:
+these documents go straight to main, no PR).
+
 ## Commits
 
 Commit messages should reference the relevant ADR or phase where relevant,
