@@ -13,6 +13,15 @@ Prior work in sibling repositories/documents on this machine (e.g. `NewScada`,
 for this project. Isolated ideas or patterns from that material may be reused
 here only where explicitly noted as such in this repo's own docs.
 
+## Start here
+
+| Document | What it covers |
+|---|---|
+| [Phase 0 Architecture](docs/architecture/phase-0-architecture.md) | System components, deployment topologies, data flow, technology stack |
+| [Architecture Decisions](docs/architecture/decisions/README.md) | Binding ADRs every change is reviewed against |
+| [Phase Plan](docs/roadmap/phase-plan.md) | Delivery phases, each with an explicit scope and test gate |
+| [CLAUDE.md](CLAUDE.md) | Working instructions for Claude Code sessions in this repo |
+
 ## How this repo is built
 
 This project is designed collaboratively in conversation (concept, architecture,
