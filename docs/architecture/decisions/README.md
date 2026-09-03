@@ -1,0 +1,32 @@
+# Architecture Decision Records
+
+Binding decisions for SCADA_DARBOX. Every pull request is reviewed against them.
+An ADR is superseded, never edited into a different decision — to change one,
+add a new ADR that supersedes it and state why the original no longer holds.
+
+| ADR | Decision |
+|---|---|
+| [0001](0001-tag-identity-and-hierarchy.md) | Tags have a stable ID; the hierarchical path is a mutable display label |
+| [0002](0002-core-module-boundary.md) | Core is domain-neutral; modules are compile-time composed, not runtime plugins |
+| [0003](0003-tag-value-model.md) | Tag values are a typed union (Numeric/Boolean/Text/Discrete) with source timestamp and quality |
+
+## Template
+
+```markdown
+# ADR-NNNN — Title
+
+**Status:** Proposed | Accepted | Superseded by ADR-NNNN
+**Date:** YYYY-MM-DD
+
+## Context
+What forces are at play, and what happens if we get this wrong.
+
+## Decision
+The decision, stated so that it can be checked.
+
+## Consequences
+What this costs us and what it buys us.
+
+## Verified in review by
+Concrete, checkable criteria a reviewer applies to a pull request.
+```
