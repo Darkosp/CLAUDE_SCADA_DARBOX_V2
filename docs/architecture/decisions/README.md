@@ -11,6 +11,7 @@ add a new ADR that supersedes it and state why the original no longer holds.
 | [0003](0003-tag-value-model.md) | Tag values are a typed union (Numeric/Boolean/Text/Discrete) with source timestamp and quality |
 | [0004](0004-tenant-scoping.md) | Tenant scoping exists from day one, above Site, even in single-tenant deployments |
 | [0005](0005-dimensioned-units.md) | Units are a dimension + SI factor, never a free-text label |
+| [0006](0006-technology-stack.md) | .NET + Angular + PostgreSQL/TimescaleDB + SignalR + OPC UA/Modbus/MQTT + Docker |
 
 ## Template
 
