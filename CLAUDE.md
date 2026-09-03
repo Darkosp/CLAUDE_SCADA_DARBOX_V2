@@ -92,8 +92,12 @@ file content on disk is correct — never that it is committed.
 
 Do not assume a document is committed just because Cowork said it was
 added or changed. Always check `git status` for uncommitted changes before
-acting on that assumption, and commit/push it yourself (per the rule above:
-these documents go straight to main, no PR).
+acting on that assumption, and commit/push it yourself.
+
+**Rule:** design-conversation documents (README, ADRs, architecture docs,
+`phase-plan.md`, this file) are committed directly to `main`, no PR. The
+PR/review process starts once Phase 1 begins and there is real application
+code to review.
 
 ## Commits
 
