@@ -13,6 +13,7 @@ add a new ADR that supersedes it and state why the original no longer holds.
 | [0005](0005-dimensioned-units.md) | Units are a dimension + SI factor, never a free-text label |
 | [0006](0006-technology-stack.md) | .NET + Angular + PostgreSQL/TimescaleDB + SignalR + OPC UA/Modbus/MQTT + Docker |
 | [0007](0007-schema-migrations.md) | Schema migrations via DbUp — numbered SQL scripts, no manual ALTERs |
+| [0008](0008-dapper-for-config-tables.md) | Dapper for configuration-table (Tenant/Site/Device/Tag) data access, schema still owned by DbUp |
 
 ## Template
 

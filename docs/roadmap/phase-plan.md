@@ -56,6 +56,20 @@ a tag.
 **Test gate:** a new device and its tags can be added and browsed entirely
 through the UI, with a working trend chart.
 
+**Implementation notes (no new ADR needed):**
+
+- The browse tree needs a Folder concept (a grouping node above Device/Tag
+  with no data-producing behavior of its own). This is already covered by
+  ADR-0001's tag hierarchy — a Folder is a display/organizational node the
+  existing hierarchy already allows, not a new kind of identity requiring
+  its own decision. Config CRUD for it goes through the same Dapper path
+  as Tenant/Site/Device/Tag (ADR-0008).
+- Adding a Device through the UI must make its tags live without a Gateway
+  restart (TagCatalog reload / hot-add on new-device-saved). This is a
+  service lifecycle detail within Phase 2's own scope ("no code required"
+  to add a device), not an architectural decision — it doesn't get a
+  separate ADR.
+
 ## Phase 3 — Alarms
 
 **Scope:** the alarm engine — thresholds, states (active / ack / shelved),

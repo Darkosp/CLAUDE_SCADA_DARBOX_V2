@@ -33,10 +33,12 @@ basic historical trend chart for a tag. Test gate: a new device and its
 tags can be added and browsed entirely through the UI, with a working
 trend chart. Don't begin Phase 3 or later scope until this gate is met.
 
-Phase 2 needs config CRUD through the UI, which is exactly the trigger
-CLAUDE.md already flagged for revisiting the "no ORM" choice from Phase 1
-(see "When Phase 1 (or any phase) begins" below) — raise that as an open
-question here rather than picking EF Core/Dapper/raw SQL unilaterally.
+Phase 2 needs config CRUD through the UI, which was exactly the trigger
+CLAUDE.md flagged for revisiting the "no ORM" choice from Phase 1. That
+question is now closed: ADR-0008 adopts Dapper for the Tenant/Site/Device/
+Tag config tables, with DbUp (ADR-0007) still owning schema and the
+historian staying on plain Npgsql. See "When Phase 1 (or any phase)
+begins" below.
 
 ## When Phase 1 (or any phase) begins
 
@@ -69,8 +71,12 @@ question here rather than picking EF Core/Dapper/raw SQL unilaterally.
   format (e.g. a fixed-point Modbus register) is a driver-level concern,
   separate from and prior to a tag's engineering unit.
 - Don't add an ORM or another data-access layer without an ADR — ADR-0006
-  doesn't name one, so Phase 1 uses plain Npgsql/SQL. Revisit this
-  explicitly (new ADR) when Phase 2 needs config CRUD through the UI.
+  doesn't name one, so Phase 1 uses plain Npgsql/SQL. ADR-0008 has since
+  settled Phase 2's config-CRUD data access: Dapper for the Tenant/Site/
+  Device/Tag tables, schema still owned exclusively by DbUp (ADR-0007).
+  The historian stays on plain Npgsql — Dapper does not apply there.
+  EF Core remains out of scope; don't reintroduce it without a new ADR
+  that supersedes ADR-0008.
 
 ## Solution layout
 
