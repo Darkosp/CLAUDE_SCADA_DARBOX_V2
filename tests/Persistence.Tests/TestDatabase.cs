@@ -16,8 +16,16 @@ namespace ScadaDarbox.Persistence.Tests;
 /// </remarks>
 public sealed class TestDatabase : IAsyncLifetime
 {
-    private const string ServerConnectionString =
-        "Host=localhost;Port=5432;Database=postgres;Username=scada;Password=scada;Timeout=3;Command Timeout=10";
+    /// <summary>
+    /// Where to reach the server. Overridable so a CI environment can point these tests
+    /// at its own database — and so the skip path below can be exercised on demand by
+    /// pointing them somewhere that does not answer.
+    /// </summary>
+    private static readonly string ServerHost =
+        Environment.GetEnvironmentVariable("SCADA_TEST_DB_HOST") ?? "localhost";
+
+    private static string ServerConnectionString =>
+        $"Host={ServerHost};Port=5432;Database=postgres;Username=scada;Password=scada;Timeout=3;Command Timeout=10";
 
     private readonly string _databaseName = $"scada_test_{Guid.NewGuid():N}";
 
@@ -57,7 +65,7 @@ public sealed class TestDatabase : IAsyncLifetime
     }
 
     private static string ConnectionStringFor(string database) =>
-        $"Host=localhost;Port=5432;Database={database};Username=scada;Password=scada";
+        $"Host={ServerHost};Port=5432;Database={database};Username=scada;Password=scada";
 
     private static readonly Lazy<bool> AvailabilityProbe = new(() =>
     {
@@ -84,7 +92,7 @@ public sealed class RequiresDatabaseFactAttribute : FactAttribute
     {
         if (!TestDatabase.IsAvailable)
         {
-            Skip = "No PostgreSQL/TimescaleDB on localhost:5432 — start it with 'docker compose up -d'.";
+            Skip = "No PostgreSQL/TimescaleDB reachable — start it with 'docker compose up -d'.";
         }
     }
 }

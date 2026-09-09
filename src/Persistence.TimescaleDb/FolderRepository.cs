@@ -72,6 +72,10 @@ public sealed class FolderRepository : IFolderRepository
                     OR @ParentFolderId NOT IN (
                         WITH RECURSIVE descendants AS (
                             SELECT id FROM folder WHERE id = @Id
+                            -- UNION, never UNION ALL. The deduplication is load-bearing:
+                            -- it is what makes this terminate if the table already
+                            -- contains a cycle. UNION ALL would recurse forever on the
+                            -- very condition this query exists to detect.
                             UNION
                             SELECT f.id FROM folder f
                             JOIN descendants d ON f.parent_folder_id = d.id
