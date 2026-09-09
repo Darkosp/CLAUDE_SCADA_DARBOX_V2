@@ -16,9 +16,12 @@ docker compose up -d
 ```
 
 Brings up PostgreSQL 17 with TimescaleDB on `localhost:5432` (database `scada`, user
-`scada`, password `scada`). The gateway creates its own schema on first start and seeds
-one tenant, one site, one device and two tags — configuring these through the UI is
-Phase 2.
+`scada`, password `scada`). The gateway applies its migrations at startup (ADR-0007:
+numbered scripts under `src/Persistence.TimescaleDb/migrations/`, run by DbUp before
+the host serves anything) and seeds one tenant, one site, one device and two tags —
+configuring these through the UI is Phase 2.
+
+Schema changes are always a new numbered script, never a hand-applied `ALTER`.
 
 Only plain hypertables are used. Continuous aggregates and native compression are
 TSL-licensed and remain out of scope pending the legal check recorded in ADR-0006.

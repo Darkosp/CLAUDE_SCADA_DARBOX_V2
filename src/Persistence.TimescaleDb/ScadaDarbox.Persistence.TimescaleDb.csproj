@@ -5,6 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="dbup-postgresql" Version="7.0.1" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
 
@@ -13,5 +14,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+
+  <ItemGroup>
+    <!-- Migrations travel inside the assembly, so a deployed Gateway can never be
+         separated from the scripts it needs (ADR-0007). -->
+    <EmbeddedResource Include="migrations\*.sql" />
+  </ItemGroup>
 
 </Project>

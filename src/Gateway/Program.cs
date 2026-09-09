@@ -13,11 +13,15 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("ScadaDb")
     ?? throw new InvalidOperationException("Connection string 'ScadaDb' is not configured.");
 
+// Migrations run before anything else touches the database, and before the host starts
+// serving (ADR-0007). A failure throws, so the process never serves requests against a
+// schema in an unknown state.
+DatabaseMigrator.Migrate(connectionString);
+
 // The database is prepared before the host is built so that the tag catalogue is a
 // fully-formed value by the time anything can resolve it, rather than a half-populated
 // singleton that fills in later.
 var dataSource = NpgsqlDataSource.Create(connectionString);
-await DatabaseSchema.ApplyAsync(dataSource, CancellationToken.None);
 await DemoConfigurationSeeder.SeedIfEmptyAsync(
     dataSource,
     builder.Configuration.GetValue("Modbus:Host", "127.0.0.1")!,
