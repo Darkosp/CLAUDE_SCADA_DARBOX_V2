@@ -17,14 +17,26 @@ the documents it points to, before doing anything else in this repo.
 
 ## Current status
 
-**Phase 0 is complete.** **Phase 1 (core skeleton) is in progress**, on
-branch `phase-1/core-skeleton`: Core, Persistence.TimescaleDb, the Modbus
-TCP driver module, the Gateway (Web API + SignalR), the Angular web client,
-a Modbus simulator, and 33 passing tests all exist. The Phase 1 test gate
-(Driver → Tag engine → historian row + browser update, end to end against
-the simulator) is **not yet confirmed** — it needs TimescaleDB running via
-Docker, which is being set up. Do not treat Phase 1 as done, and do not
-begin Phase 2 scope, until the gate is actually run and confirmed.
+**Phase 0 and Phase 1 are both complete and merged to `main`.** Phase 1
+(core skeleton) shipped Core, Persistence.TimescaleDb, the Modbus TCP
+driver module, the Gateway (Web API + SignalR), schema migrations via DbUp
+(ADR-0007), the Angular web client, a Modbus simulator, and 36 passing
+tests. Its test gate is confirmed (see `phase-plan.md`'s Phase 1 status
+note) against TimescaleDB and a live simulator, including the case of a
+device going offline (Bad quality, not a fabricated value).
+
+**Phase 2 (tag browsing and device management) is now starting.** Scope per
+`phase-plan.md`: the hierarchical browse tree UI (ADR-0001), device
+configuration through the UI — add/edit a Device and its connection, no
+code required to add a device — dimensioned unit display (ADR-0005), and a
+basic historical trend chart for a tag. Test gate: a new device and its
+tags can be added and browsed entirely through the UI, with a working
+trend chart. Don't begin Phase 3 or later scope until this gate is met.
+
+Phase 2 needs config CRUD through the UI, which is exactly the trigger
+CLAUDE.md already flagged for revisiting the "no ORM" choice from Phase 1
+(see "When Phase 1 (or any phase) begins" below) — raise that as an open
+question here rather than picking EF Core/Dapper/raw SQL unilaterally.
 
 ## When Phase 1 (or any phase) begins
 
