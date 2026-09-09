@@ -56,16 +56,17 @@ a tag.
 **Test gate:** a new device and its tags can be added and browsed entirely
 through the UI, with a working trend chart.
 
-**Status: gate met (2026-09-09), PR open for review (#3).** Verified live
-in the browser, not just by test: on a second, empty Site (Bitola), a new
-Device (Bitola Pump 1) and a new Tag (Header Pressure, unit `bar` from the
-dimensioned-unit picker) were created entirely through the UI, appeared in
-the tree immediately, began scanning live at Good quality with no Gateway
-restart, and the trend chart collected history from the moment of
-creation — derived path `Bitola/Bitola Pump 1/Header Pressure` displayed
-correctly. 46 tests pass; the integration tests' database-unavailable skip
-path (see below) was separately confirmed against an unreachable host
-(5 Skipped, 0 Passed, reported as `Skipped!`).
+**Status: gate met (2026-09-09), complete and merged to `main` (PR #3).**
+Verified live in the browser, not just by test: on a second, empty Site
+(Bitola), a new Device (Bitola Pump 1) and a new Tag (Header Pressure,
+unit `bar` from the dimensioned-unit picker) were created entirely
+through the UI, appeared in the tree immediately, began scanning live at
+Good quality with no Gateway restart, and the trend chart collected
+history from the moment of creation — derived path
+`Bitola/Bitola Pump 1/Header Pressure` displayed correctly. 46 tests pass;
+the integration tests' database-unavailable skip path (see below) was
+separately confirmed against an unreachable host (5 Skipped, 0 Passed,
+reported as `Skipped!`).
 
 Two real defects surfaced by using the feature, not by reading the code:
 the trend chart was drawing a straight line through a gap where the
@@ -73,7 +74,9 @@ Gateway had been down for a rebuild, inventing readings no device ever
 produced — the same class of mistake ADR-0003 exists to prevent (missing
 or Bad data must never be presented as if it were a real value), just in
 the chart layer instead of the driver layer this time. Fixed by breaking
-the line at any gap wider than 4× the median sample interval. Separately,
+the line at any gap wider than 4× the median sample interval (with a 5s
+floor, so a fast-scanning tag's normal jitter isn't misread as a gap).
+Separately,
 a form field named `tagName` shadowed the standard
 `HTMLFormElement.tagName` property (named form controls become properties
 of their `<form>` element), which broke a DOM-walking tool relying on
