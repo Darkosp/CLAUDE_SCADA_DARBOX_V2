@@ -1,25 +1,141 @@
-<main>
-  <header>
-    <h1>SCADA_DARBOX</h1>
-    <span class="state" [class]="state()">{{ state() }}</span>
-  </header>
+<header>
+  <h1>SCADA_DARBOX</h1>
 
-  @if (tags().length === 0) {
-    <p class="empty">Waiting for the first scan…</p>
-  } @else {
-    <ul class="tags">
-      @for (tag of tags(); track tag.tagId) {
-        <li [class.bad]="tag.quality !== 'Good'">
-          <span class="path">{{ tag.path }}</span>
-          <span class="reading">
-            <span class="value">{{ value(tag) }}</span>
-            @if (tag.unitSymbol) {
-              <span class="unit">{{ tag.unitSymbol }}</span>
-            }
-          </span>
-          <span class="meta">{{ tag.quality }} · {{ observedAt(tag) }}</span>
-        </li>
+  <label class="site-picker">
+    Site
+    <select [ngModel]="siteId()" (ngModelChange)="selectSite($event)" name="site">
+      @for (site of sites(); track site.id) {
+        <option [value]="site.id">{{ site.name }}</option>
       }
-    </ul>
-  }
+    </select>
+  </label>
+
+  <span class="state" [class]="connection()">{{ connection() }}</span>
+</header>
+
+@if (error()) {
+  <p class="error" role="alert">{{ error() }}</p>
+}
+
+<main>
+  <aside>
+    <div class="pane-head">
+      <h2>Browse</h2>
+      <button type="button" (click)="startNewDevice()">Add device</button>
+    </div>
+
+    <form class="inline" (ngSubmit)="addFolder()">
+      <input
+        name="folderName"
+        placeholder="New folder"
+        [ngModel]="newFolderName()"
+        (ngModelChange)="newFolderName.set($event)" />
+      <button type="submit" [disabled]="newFolderName().trim().length === 0">Add</button>
+    </form>
+
+    @if (tree(); as siteTree) {
+      <app-browse-tree
+        [folders]="siteTree.folders"
+        [devices]="siteTree.devices"
+        [selectedTagId]="selection()?.tag?.id ?? null"
+        (selected)="select($event)" />
+    } @else {
+      <p class="muted">Loading…</p>
+    }
+  </aside>
+
+  <section>
+    @if (deviceDraft(); as draft) {
+      <h2>{{ draft.id ? 'Edit device' : 'New device' }}</h2>
+      <form class="form" (ngSubmit)="saveDevice()">
+        <label>Name<input name="name" required [(ngModel)]="draft.name" /></label>
+        <label>Driver<input name="driverKey" required [(ngModel)]="draft.driverKey" /></label>
+        <label>Host<input name="host" [(ngModel)]="draft.host" /></label>
+        <label>Port<input name="port" [(ngModel)]="draft.port" /></label>
+        <label>Unit ID<input name="unitId" [(ngModel)]="draft.unitId" /></label>
+        <label>Scan interval (ms)
+          <input name="scan" type="number" min="100" [(ngModel)]="draft.scanIntervalMs" />
+        </label>
+        <label>Folder
+          <select name="folder" [(ngModel)]="draft.folderId">
+            @for (choice of folderChoices(); track choice.id) {
+              <option [ngValue]="choice.id">{{ '— '.repeat(choice.depth) }}{{ choice.label }}</option>
+            }
+          </select>
+        </label>
+
+        <div class="actions">
+          <button type="submit" [disabled]="draft.name.trim().length === 0">Save</button>
+          <button type="button" class="ghost" (click)="deviceDraft.set(null)">Cancel</button>
+        </div>
+      </form>
+    } @else if (selection(); as chosen) {
+      <div class="pane-head">
+        <h2>{{ chosen.tag ? chosen.tag.name : chosen.device.name }}</h2>
+        <div>
+          <button type="button" class="ghost" (click)="editDevice(chosen.device)">Edit device</button>
+          <button type="button" (click)="startNewTag()">Add tag</button>
+        </div>
+      </div>
+
+      <p class="muted">{{ chosen.device.name }} · {{ chosen.device.driverKey }}</p>
+
+      @if (tagDraft(); as draft) {
+        <form class="form" (ngSubmit)="saveTag()">
+          <!--
+            Not name="tagName": a named form control becomes a property of its <form>
+            element, so that one shadows the standard form.tagName and breaks anything
+            walking the DOM.
+          -->
+          <label>Name<input name="tagLabel" required [(ngModel)]="draft.name" /></label>
+          <label>Kind
+            <select name="kind" [(ngModel)]="draft.valueKind">
+              <option value="Numeric">Numeric</option>
+              <option value="Boolean">Boolean</option>
+            </select>
+          </label>
+          @if (draft.valueKind === 'Numeric') {
+            <label>Unit
+              <select name="unit" [(ngModel)]="draft.unitSymbol">
+                @for (unit of unitPresets; track unit.symbol) {
+                  <option [value]="unit.symbol">{{ unit.symbol }} · {{ unit.dimension }}</option>
+                }
+              </select>
+            </label>
+          }
+          <label>Source address<input name="address" required [(ngModel)]="draft.sourceAddress" /></label>
+
+          <div class="actions">
+            <button type="submit" [disabled]="draft.name.trim().length === 0">Save</button>
+            <button type="button" class="ghost" (click)="tagDraft.set(null)">Cancel</button>
+          </div>
+        </form>
+      }
+
+      @if (chosen.tag) {
+        @if (liveValue(); as live) {
+          <div class="reading" [class.bad]="live.quality !== 'Good'">
+            <span class="value">{{ format(live) }}</span>
+            @if (live.unitSymbol) { <span class="unit">{{ live.unitSymbol }}</span> }
+            <span class="meta">{{ live.quality }}</span>
+          </div>
+          <p class="muted">{{ live.path }}</p>
+        } @else {
+          <p class="muted">No reading yet.</p>
+        }
+
+        @if (selectedIsNumeric()) {
+          <div class="pane-head">
+            <h3>Last 15 minutes</h3>
+            <button type="button" class="ghost" (click)="loadHistory()">Refresh</button>
+          </div>
+          <app-trend-chart
+            [samples]="history()"
+            [unitSymbol]="chosen.tag.unit?.symbol ?? ''" />
+        }
+      }
+    } @else {
+      <p class="muted">Select a tag to see its live value and trend.</p>
+    }
+  </section>
 </main>

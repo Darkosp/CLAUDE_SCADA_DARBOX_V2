@@ -90,35 +90,73 @@ public class TagEngineTests
         Assert.Empty(subscriber.Received);
     }
 
+    [Fact]
+    public async Task Picks_up_a_replacement_catalogue_without_being_rebuilt()
+    {
+        // What makes adding a device through the UI take effect without a restart: the
+        // engine reads the catalogue in force at ingest time, not one captured at
+        // construction.
+        var (engine, _, subscriber, source) = BuildWithSource();
+
+        var renamed = Rebuild(siteName: "Skopje North");
+        source.Set(renamed);
+
+        await engine.IngestAsync(
+            [new TagReading(TagId, new TagValue.Numeric(4.2), Now, Quality.Good)],
+            CancellationToken.None);
+
+        Assert.Equal(
+            "Skopje North/Pump House/Discharge Pressure",
+            Assert.Single(subscriber.Received).Path);
+    }
+
+    private static readonly Guid TenantId = new("aaaaaaaa-1111-4111-8111-111111111111");
+    private static readonly Guid SiteId = new("bbbbbbbb-1111-4111-8111-111111111111");
+    private static readonly Guid DeviceId = new("cccccccc-1111-4111-8111-111111111111");
+
     private static (TagEngine Engine, RecordingHistorian Historian, RecordingSubscriber Subscriber) Build()
     {
-        var tenant = new Tenant { Id = Guid.NewGuid(), Name = "Darbo" };
-        var site = new Site { Id = Guid.NewGuid(), TenantId = tenant.Id, Name = "Skopje" };
+        var (engine, historian, subscriber, _) = BuildWithSource();
+        return (engine, historian, subscriber);
+    }
+
+    private static (TagEngine Engine, RecordingHistorian Historian, RecordingSubscriber Subscriber, TagCatalogSource Source)
+        BuildWithSource()
+    {
+        var historian = new RecordingHistorian();
+        var subscriber = new RecordingSubscriber();
+        var source = new TagCatalogSource(Rebuild(siteName: "Skopje"));
+
+        var engine = new TagEngine(source, historian, [subscriber], new StubTimeProvider(Now));
+
+        return (engine, historian, subscriber, source);
+    }
+
+    /// <summary>
+    /// A catalogue over the same identities, so a rebuild is the same hierarchy under a
+    /// different name rather than a different hierarchy (ADR-0001).
+    /// </summary>
+    private static TagCatalog Rebuild(string siteName)
+    {
+        var tenant = new Tenant { Id = TenantId, Name = "Darbo" };
+        var site = new Site { Id = SiteId, TenantId = TenantId, Name = siteName };
         var device = new Device
         {
-            Id = Guid.NewGuid(),
-            SiteId = site.Id,
+            Id = DeviceId,
+            SiteId = SiteId,
             Name = "Pump House",
             DriverKey = "modbus-tcp",
         };
         var tag = new Tag
         {
             Id = TagId,
-            DeviceId = device.Id,
+            DeviceId = DeviceId,
             Name = "Discharge Pressure",
             ValueKind = TagValueKind.Numeric,
             Unit = new UnitOfMeasure("bar", Dimension.Pressure, 100_000),
             SourceAddress = "holding:0",
         };
 
-        var historian = new RecordingHistorian();
-        var subscriber = new RecordingSubscriber();
-        var engine = new TagEngine(
-            new TagCatalog(tenant, [site], [device], [tag]),
-            historian,
-            [subscriber],
-            new StubTimeProvider(Now));
-
-        return (engine, historian, subscriber);
+        return new TagCatalog(tenant, [site], [], [device], [tag]);
     }
 }

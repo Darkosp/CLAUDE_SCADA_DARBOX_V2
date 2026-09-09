@@ -12,6 +12,8 @@ public interface IConfigurationStore
 
     Task<IReadOnlyList<Site>> GetSitesAsync(CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<Folder>> GetFoldersAsync(CancellationToken cancellationToken);
+
     Task<IReadOnlyList<Device>> GetDevicesAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<Tag>> GetTagsAsync(CancellationToken cancellationToken);

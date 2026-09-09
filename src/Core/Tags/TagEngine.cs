@@ -10,19 +10,19 @@ namespace ScadaDarbox.Core.Tags;
 /// </summary>
 public sealed class TagEngine : ITagEngine
 {
-    private readonly TagCatalog _catalog;
+    private readonly TagCatalogSource _catalogSource;
     private readonly IHistorian _historian;
     private readonly IReadOnlyList<ITagValueSubscriber> _subscribers;
     private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<Guid, TagSnapshot> _current = new();
 
     public TagEngine(
-        TagCatalog catalog,
+        TagCatalogSource catalogSource,
         IHistorian historian,
         IEnumerable<ITagValueSubscriber> subscribers,
         TimeProvider timeProvider)
     {
-        _catalog = catalog;
+        _catalogSource = catalogSource;
         _historian = historian;
         _subscribers = subscribers.ToList();
         _timeProvider = timeProvider;
@@ -40,12 +40,16 @@ public sealed class TagEngine : ITagEngine
         // reported, which may be older if the device was offline (ADR-0003).
         var ingestedAt = _timeProvider.GetUtcNow();
 
+        // Read the catalogue once: a configuration change mid-batch would otherwise
+        // resolve some readings against the old hierarchy and some against the new.
+        var catalog = _catalogSource.Current;
+
         var snapshots = new List<TagSnapshot>(readings.Count);
         var samples = new List<HistorianSample>(readings.Count);
 
         foreach (var reading in readings)
         {
-            var tag = _catalog.FindTag(reading.TagId);
+            var tag = catalog.FindTag(reading.TagId);
             if (tag is null)
             {
                 // A reading for a tag that is not configured is dropped rather than
@@ -56,7 +60,7 @@ public sealed class TagEngine : ITagEngine
 
             var snapshot = new TagSnapshot(
                 reading.TagId,
-                _catalog.PathOf(reading.TagId),
+                catalog.PathOf(reading.TagId),
                 reading.Value,
                 reading.SourceTimestampUtc,
                 reading.Quality,
