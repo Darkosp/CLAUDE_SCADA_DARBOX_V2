@@ -1,7 +1,9 @@
 using Npgsql;
+using ScadaDarbox.Core.Configuration;
 using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Historian;
 using ScadaDarbox.Core.Tags;
+using ScadaDarbox.Gateway.Configuration;
 using ScadaDarbox.Gateway.Contracts;
 using ScadaDarbox.Gateway.RealTime;
 using ScadaDarbox.Gateway.Scanning;
@@ -29,17 +31,17 @@ await DemoConfigurationSeeder.SeedIfEmptyAsync(
     CancellationToken.None);
 
 var configurationStore = new PostgresConfigurationStore(dataSource);
-var catalog = new TagCatalog(
-    await configurationStore.GetTenantAsync(CancellationToken.None),
-    await configurationStore.GetSitesAsync(CancellationToken.None),
-    await configurationStore.GetFoldersAsync(CancellationToken.None),
-    await configurationStore.GetDevicesAsync(CancellationToken.None),
-    await configurationStore.GetTagsAsync(CancellationToken.None));
+var catalogSource = new TagCatalogSource(
+    await ConfigurationReloader.BuildAsync(configurationStore, CancellationToken.None));
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(dataSource);
-builder.Services.AddSingleton(catalog);
+builder.Services.AddSingleton(catalogSource);
 builder.Services.AddSingleton<IConfigurationStore>(configurationStore);
+builder.Services.AddSingleton<ConfigurationReloader>();
+builder.Services.AddSingleton<IFolderRepository, FolderRepository>();
+builder.Services.AddSingleton<IDeviceRepository, DeviceRepository>();
+builder.Services.AddSingleton<ITagRepository, TagRepository>();
 builder.Services.AddSingleton<IHistorian, TimescaleHistorian>();
 builder.Services.AddSingleton<ITagValueSubscriber, SignalRTagBroadcaster>();
 builder.Services.AddSingleton<ITagEngine, TagEngine>();
@@ -65,8 +67,9 @@ app.UseCors(WebClientCors);
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 
-app.MapGet("/api/tags", (ITagEngine engine, TagCatalog tagCatalog) =>
+app.MapGet("/api/tags", (ITagEngine engine, TagCatalogSource catalogSource) =>
 {
+    var tagCatalog = catalogSource.Current;
     // Tags with no reading yet are still listed, so the client shows the configured
     // hierarchy rather than an empty page until the first scan completes.
     var current = engine.GetAllCurrent().ToDictionary(s => s.TagId);
@@ -113,6 +116,8 @@ app.MapGet("/api/tags/{tagId:guid}/history", async (
         sample.IngestedAtUtc,
         sample.Quality.ToString())));
 });
+
+app.MapConfigurationApi();
 
 app.MapHub<TagHub>("/hubs/tags");
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Model;
 using ScadaDarbox.Core.Tags;
@@ -8,20 +9,31 @@ namespace ScadaDarbox.Gateway.Scanning;
 /// Polls every configured device on its own schedule and feeds the readings into the tag
 /// engine — the driver end of the read path described in the Phase 0 architecture.
 /// </summary>
+/// <remarks>
+/// Each device gets its own scan loop. The set of loops is reconciled against the
+/// catalogue whenever configuration changes, so a device added through the UI starts
+/// reporting without a gateway restart, which is what Phase 2's "no code required to add
+/// a device" actually demands.
+/// </remarks>
 public sealed class DeviceScannerService : BackgroundService
 {
-    private readonly TagCatalog _catalog;
+    private readonly TagCatalogSource _catalogSource;
     private readonly ITagEngine _tagEngine;
     private readonly IReadOnlyDictionary<string, IDeviceDriverFactory> _factoriesByKey;
     private readonly ILogger<DeviceScannerService> _logger;
 
+    private readonly Lock _gate = new();
+    private readonly Dictionary<Guid, RunningScan> _running = [];
+
+    private CancellationToken _stoppingToken = CancellationToken.None;
+
     public DeviceScannerService(
-        TagCatalog catalog,
+        TagCatalogSource catalogSource,
         ITagEngine tagEngine,
         IEnumerable<IDeviceDriverFactory> driverFactories,
         ILogger<DeviceScannerService> logger)
     {
-        _catalog = catalog;
+        _catalogSource = catalogSource;
         _tagEngine = tagEngine;
         _logger = logger;
 
@@ -32,43 +44,137 @@ public sealed class DeviceScannerService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var scans = _catalog.Devices
-            .Select(device => ScanDeviceAsync(device, stoppingToken))
-            .ToList();
+        _stoppingToken = stoppingToken;
+        _catalogSource.Changed += OnCatalogChanged;
 
-        await Task.WhenAll(scans).ConfigureAwait(false);
+        try
+        {
+            Reconcile(_catalogSource.Current);
+
+            // The scan loops do the work; this task only waits for shutdown.
+            await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on shutdown.
+        }
+        finally
+        {
+            _catalogSource.Changed -= OnCatalogChanged;
+            await StopAllAsync().ConfigureAwait(false);
+        }
     }
 
-    private async Task ScanDeviceAsync(Device device, CancellationToken stoppingToken)
+    private void OnCatalogChanged(object? sender, TagCatalog catalog) => Reconcile(catalog);
+
+    /// <summary>
+    /// Brings the running scan loops in line with <paramref name="catalog"/>: starts loops
+    /// for new devices, stops them for removed ones, and restarts a device whose
+    /// configuration changed.
+    /// </summary>
+    private void Reconcile(TagCatalog catalog)
     {
-        if (!_factoriesByKey.TryGetValue(device.DriverKey, out var factory))
+        lock (_gate)
         {
-            _logger.LogError(
-                "Device {DeviceName} needs driver '{DriverKey}', which is not part of this build.",
-                device.Name,
-                device.DriverKey);
-            return;
+            if (_stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            var desired = catalog.Devices.ToDictionary(device => device.Id);
+
+            foreach (var (deviceId, scan) in _running.ToList())
+            {
+                var stillWanted = desired.TryGetValue(deviceId, out var device)
+                                  && SignatureOf(device, catalog) == scan.Signature;
+
+                if (stillWanted)
+                {
+                    continue;
+                }
+
+                // Restarting on any change is deliberately blunt. A driver holds a live
+                // connection built from the device's settings, so reusing it after an edit
+                // would mean reasoning about which fields can be changed underneath an
+                // open socket.
+                scan.Cancellation.Cancel();
+                _running.Remove(deviceId);
+            }
+
+            foreach (var device in desired.Values)
+            {
+                if (_running.ContainsKey(device.Id))
+                {
+                    continue;
+                }
+
+                var tags = catalog.TagsOfDevice(device.Id)
+                    .Select(tag => new DriverTag(tag.Id, tag.SourceAddress, tag.ValueKind))
+                    .ToList();
+
+                if (tags.Count == 0)
+                {
+                    // A device with no tags has nothing to poll. It reappears here as soon
+                    // as its first tag is configured, because that changes the catalogue.
+                    continue;
+                }
+
+                if (!_factoriesByKey.TryGetValue(device.DriverKey, out var factory))
+                {
+                    _logger.LogError(
+                        "Device {DeviceName} needs driver '{DriverKey}', which is not part of this build.",
+                        device.Name,
+                        device.DriverKey);
+                    continue;
+                }
+
+                var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_stoppingToken);
+                var task = Task.Run(
+                    () => ScanDeviceAsync(device, factory, tags, cancellation.Token),
+                    CancellationToken.None);
+
+                _running[device.Id] = new RunningScan(cancellation, task, SignatureOf(device, catalog));
+            }
         }
+    }
 
-        var driverTags = _catalog.TagsOfDevice(device.Id)
-            .Select(tag => new DriverTag(tag.Id, tag.SourceAddress, tag.ValueKind))
-            .ToList();
+    /// <summary>
+    /// A value that changes whenever anything the scan loop depends on changes.
+    /// </summary>
+    private static string SignatureOf(Device device, TagCatalog catalog)
+    {
+        var settings = string.Join(
+            ';',
+            device.ConnectionSettings.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                .Select(pair => $"{pair.Key}={pair.Value}"));
 
-        if (driverTags.Count == 0)
-        {
-            return;
-        }
+        var tags = string.Join(
+            ';',
+            catalog.TagsOfDevice(device.Id)
+                .OrderBy(tag => tag.Id)
+                .Select(tag => $"{tag.Id}:{tag.SourceAddress}:{tag.ValueKind}"));
 
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{device.DriverKey}|{settings}|{device.ScanInterval.TotalMilliseconds}|{tags}");
+    }
+
+    private async Task ScanDeviceAsync(
+        Device device,
+        IDeviceDriverFactory factory,
+        IReadOnlyList<DriverTag> driverTags,
+        CancellationToken cancellationToken)
+    {
         await using var driver = factory.Create(device);
         var connected = false;
 
-        while (!stoppingToken.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested)
         {
             if (!connected)
             {
                 try
                 {
-                    await driver.ConnectAsync(stoppingToken).ConfigureAwait(false);
+                    await driver.ConnectAsync(cancellationToken).ConfigureAwait(false);
                     connected = true;
                     _logger.LogInformation("Connected to device {DeviceName}.", device.Name);
                 }
@@ -86,8 +192,8 @@ public sealed class DeviceScannerService : BackgroundService
 
             try
             {
-                var readings = await driver.ReadAsync(driverTags, stoppingToken).ConfigureAwait(false);
-                await _tagEngine.IngestAsync(readings, stoppingToken).ConfigureAwait(false);
+                var readings = await driver.ReadAsync(driverTags, cancellationToken).ConfigureAwait(false);
+                await _tagEngine.IngestAsync(readings, cancellationToken).ConfigureAwait(false);
 
                 // Any Bad reading means the link is suspect: drop it so the next cycle
                 // reconnects rather than polling a dead socket forever.
@@ -96,7 +202,7 @@ public sealed class DeviceScannerService : BackgroundService
                     connected = false;
                 }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
             }
@@ -108,7 +214,7 @@ public sealed class DeviceScannerService : BackgroundService
 
             try
             {
-                await Task.Delay(device.ScanInterval, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(device.ScanInterval, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -116,4 +222,31 @@ public sealed class DeviceScannerService : BackgroundService
             }
         }
     }
+
+    private async Task StopAllAsync()
+    {
+        List<RunningScan> scans;
+
+        lock (_gate)
+        {
+            scans = _running.Values.ToList();
+            _running.Clear();
+        }
+
+        foreach (var scan in scans)
+        {
+            await scan.Cancellation.CancelAsync().ConfigureAwait(false);
+        }
+
+        // Let the loops unwind before the host tears the process down, so a driver gets
+        // to close its connection rather than having it dropped.
+        await Task.WhenAll(scans.Select(scan => scan.Task)).ConfigureAwait(false);
+
+        foreach (var scan in scans)
+        {
+            scan.Cancellation.Dispose();
+        }
+    }
+
+    private sealed record RunningScan(CancellationTokenSource Cancellation, Task Task, string Signature);
 }

@@ -18,6 +18,16 @@ public static class DemoConfigurationSeeder
 {
     public static readonly Guid TenantId = new("0f7a1b2c-0000-4000-8000-000000000001");
     public static readonly Guid SiteId = new("0f7a1b2c-0000-4000-8000-000000000002");
+
+    /// <summary>
+    /// A second site with no devices of its own. ADR-0001 requires every demo dataset to
+    /// contain at least two sites, so that multi-site handling is exercised from the
+    /// start rather than discovered to be broken at the first two-site deployment.
+    /// </summary>
+    public static readonly Guid SecondSiteId = new("0f7a1b2c-0000-4000-8000-000000000006");
+
+    /// <summary>A folder in the second site, so the browse tree has nesting to show.</summary>
+    public static readonly Guid SecondSiteFolderId = new("0f7a1b2c-0000-4000-8000-000000000007");
     public static readonly Guid DeviceId = new("0f7a1b2c-0000-4000-8000-000000000003");
     public static readonly Guid DischargePressureTagId = new("0f7a1b2c-0000-4000-8000-000000000004");
     public static readonly Guid PumpRunningTagId = new("0f7a1b2c-0000-4000-8000-000000000005");
@@ -56,7 +66,11 @@ public static class DemoConfigurationSeeder
             INSERT INTO tenant (id, name) VALUES (@id, @name);
 
             INSERT INTO site (id, tenant_id, name, time_zone_id)
-            VALUES (@site_id, @id, 'Skopje', 'Europe/Skopje');
+            VALUES (@site_id, @id, 'Skopje', 'Europe/Skopje'),
+                   (@second_site_id, @id, 'Bitola', 'Europe/Skopje');
+
+            INSERT INTO folder (id, site_id, parent_folder_id, name)
+            VALUES (@second_site_folder_id, @second_site_id, NULL, 'Water Works');
 
             INSERT INTO device (id, site_id, name, driver_key, connection_settings, scan_interval_ms)
             VALUES (@device_id, @site_id, 'Pump House', 'modbus-tcp', @settings, 1000);
@@ -72,6 +86,8 @@ public static class DemoConfigurationSeeder
             command.Parameters.AddWithValue("id", TenantId);
             command.Parameters.AddWithValue("name", "Darbo");
             command.Parameters.AddWithValue("site_id", SiteId);
+            command.Parameters.AddWithValue("second_site_id", SecondSiteId);
+            command.Parameters.AddWithValue("second_site_folder_id", SecondSiteFolderId);
             command.Parameters.AddWithValue("device_id", DeviceId);
             command.Parameters.Add(new NpgsqlParameter("settings", NpgsqlDbType.Jsonb) { Value = connectionSettings });
             command.Parameters.AddWithValue("pressure_id", DischargePressureTagId);
