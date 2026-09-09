@@ -67,14 +67,22 @@ through the UI, with a working trend chart.
   Name)` — `SiteId` required (Site is the mandatory root per ADR-0001 §2/§4),
   `ParentFolderId` nullable and self-referential (null = directly under
   Site), no depth limit, matching ADR-0001 §4's "free-form nested folders".
+  `Folder` carries `UNIQUE(SiteId, Id)`, and its self-referential FK is the
+  composite `(SiteId, ParentFolderId) REFERENCES Folder(SiteId, Id)` — a
+  folder must not be nestable under a parent folder from a different Site,
+  same reasoning as the Device invariant below, one level up.
 - `Device.FolderId` is nullable and purely organizational (ADR-0001 §6:
   folders carry no functional behavior); `Device.SiteId` stays required and
   is the actual tenant/security scope (ADR-0004). A Device with no
   `FolderId` sits directly under its Site, matching Phase 1's flat layout
-  unchanged. Invariant to enforce in the Dapper/DbUp layer: when
-  `FolderId` is set, that Folder's `SiteId` must equal the Device's
-  `SiteId` — a Device must never be placeable, even accidentally, into a
-  Folder belonging to a different Site.
+  unchanged. The invariant that a Device's Folder must belong to the same
+  Site as the Device is enforced as a **database-level composite foreign
+  key** — `(SiteId, FolderId) REFERENCES Folder(SiteId, Id)` — not an
+  application-level check. This is a security boundary (cross-tenant/
+  cross-site placement), and a check living only in application or
+  repository code is exactly the kind of thing a future code path (bulk
+  import, a new endpoint, a repository bug) can silently bypass; the same
+  composite-FK pattern applies to Folder's own self-referential FK above.
 - Browse tree API is one recursive `GET /api/sites/{siteId}/tree` returning
   the whole Folder/Device/Tag tree for that Site in a single response, not
   lazy per-node children. Phase 2's test gate is deliberately small (one
