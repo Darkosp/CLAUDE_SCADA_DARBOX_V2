@@ -52,3 +52,18 @@ ADRs.
   in a commit message or a runbook.
 - DbUp's journal table exists, and migrations apply cleanly, in order,
   starting from a completely fresh database.
+
+## Implementation note (2026-09-09)
+
+Implemented against a fresh database (journal created, both scripts applied
+in order, hypertable with compression off) and, more importantly, against
+the existing dev database that already carried the manual `ALTER` from the
+Phase 1 fix but no journal — the harder case this ADR exists for. Both
+scripts recorded as applied with no data loss (2188 samples, 2 tags, the
+tenant row all unchanged), and a second run correctly applied nothing.
+`DatabaseSchema.cs` (the prior hand-written schema setup) was removed;
+migration scripts are embedded as assembly resources so a deployment can
+never be separated from the migrations it depends on, while still living
+under `migrations/` in the repo for review. A failed migration throws
+rather than letting the host start serving against a schema in an unknown
+state.
