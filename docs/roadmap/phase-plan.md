@@ -63,7 +63,27 @@ through the UI, with a working trend chart.
   ADR-0001's tag hierarchy — a Folder is a display/organizational node the
   existing hierarchy already allows, not a new kind of identity requiring
   its own decision. Config CRUD for it goes through the same Dapper path
-  as Tenant/Site/Device/Tag (ADR-0008).
+  as Tenant/Site/Device/Tag (ADR-0008). Shape: `Folder(Id, SiteId, ParentFolderId,
+  Name)` — `SiteId` required (Site is the mandatory root per ADR-0001 §2/§4),
+  `ParentFolderId` nullable and self-referential (null = directly under
+  Site), no depth limit, matching ADR-0001 §4's "free-form nested folders".
+- `Device.FolderId` is nullable and purely organizational (ADR-0001 §6:
+  folders carry no functional behavior); `Device.SiteId` stays required and
+  is the actual tenant/security scope (ADR-0004). A Device with no
+  `FolderId` sits directly under its Site, matching Phase 1's flat layout
+  unchanged. Invariant to enforce in the Dapper/DbUp layer: when
+  `FolderId` is set, that Folder's `SiteId` must equal the Device's
+  `SiteId` — a Device must never be placeable, even accidentally, into a
+  Folder belonging to a different Site.
+- Browse tree API is one recursive `GET /api/sites/{siteId}/tree` returning
+  the whole Folder/Device/Tag tree for that Site in a single response, not
+  lazy per-node children. Phase 2's test gate is deliberately small (one
+  new device and its tags), and CLAUDE.md's "build only what the phase
+  scopes" applies here too — lazy pagination solves a scale problem this
+  phase doesn't have yet. Revisit (add a lazy `children` endpoint alongside,
+  not instead of, this one) only if a real deployment's tree size makes the
+  eager fetch a demonstrated problem — no new ADR needed for that either,
+  since it wouldn't remove or break the existing endpoint.
 - Adding a Device through the UI must make its tags live without a Gateway
   restart (TagCatalog reload / hot-add on new-device-saved). This is a
   service lifecycle detail within Phase 2's own scope ("no code required"
