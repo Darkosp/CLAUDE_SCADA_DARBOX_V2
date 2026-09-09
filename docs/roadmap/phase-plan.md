@@ -56,6 +56,31 @@ a tag.
 **Test gate:** a new device and its tags can be added and browsed entirely
 through the UI, with a working trend chart.
 
+**Status: gate met (2026-09-09), PR open for review (#3).** Verified live
+in the browser, not just by test: on a second, empty Site (Bitola), a new
+Device (Bitola Pump 1) and a new Tag (Header Pressure, unit `bar` from the
+dimensioned-unit picker) were created entirely through the UI, appeared in
+the tree immediately, began scanning live at Good quality with no Gateway
+restart, and the trend chart collected history from the moment of
+creation — derived path `Bitola/Bitola Pump 1/Header Pressure` displayed
+correctly. 46 tests pass; the integration tests' database-unavailable skip
+path (see below) was separately confirmed against an unreachable host
+(5 Skipped, 0 Passed, reported as `Skipped!`).
+
+Two real defects surfaced by using the feature, not by reading the code:
+the trend chart was drawing a straight line through a gap where the
+Gateway had been down for a rebuild, inventing readings no device ever
+produced — the same class of mistake ADR-0003 exists to prevent (missing
+or Bad data must never be presented as if it were a real value), just in
+the chart layer instead of the driver layer this time. Fixed by breaking
+the line at any gap wider than 4× the median sample interval. Separately,
+a form field named `tagName` shadowed the standard
+`HTMLFormElement.tagName` property (named form controls become properties
+of their `<form>` element), which broke a DOM-walking tool relying on
+`element.tagName`; renamed the field. The demo seed dataset was also found
+with only one Site, short of ADR-0001's own review criterion ("any test or
+demo dataset includes at least two Sites") — fixed in the seeder.
+
 **Implementation notes (no new ADR needed):**
 
 - The browse tree needs a Folder concept (a grouping node above Device/Tag
@@ -97,6 +122,20 @@ through the UI, with a working trend chart.
   service lifecycle detail within Phase 2's own scope ("no code required"
   to add a device), not an architectural decision — it doesn't get a
   separate ADR.
+- The trend chart is a small hand-written inline SVG line chart, not a
+  charting library. ADR-0006 doesn't name one, and adding one would be
+  exactly the kind of dependency-outside-the-table CLAUDE.md requires an
+  ADR for. Revisit only via a new ADR if a real need (zoom/pan, multiple
+  overlaid series) makes a library clearly worth the dependency — the
+  Phase 2 gate doesn't need one.
+
+**Before Phase 3 starts:** deletion semantics for Folder/Device/Tag config
+were deliberately left out of Phase 2 — what happens to a deleted Device's
+historian rows (which ADR-0001 says must outlive its config) and to a
+Folder's contents when the Folder is deleted is a decision, not an
+implementation detail, and it wasn't required by Phase 2's test gate. It
+needs to be closed, in the design conversation, before Phase 3 scope
+begins.
 
 ## Phase 3 — Alarms
 

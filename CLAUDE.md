@@ -25,20 +25,26 @@ tests. Its test gate is confirmed (see `phase-plan.md`'s Phase 1 status
 note) against TimescaleDB and a live simulator, including the case of a
 device going offline (Bad quality, not a fabricated value).
 
-**Phase 2 (tag browsing and device management) is now starting.** Scope per
-`phase-plan.md`: the hierarchical browse tree UI (ADR-0001), device
-configuration through the UI — add/edit a Device and its connection, no
-code required to add a device — dimensioned unit display (ADR-0005), and a
-basic historical trend chart for a tag. Test gate: a new device and its
-tags can be added and browsed entirely through the UI, with a working
-trend chart. Don't begin Phase 3 or later scope until this gate is met.
+**Phase 2 (tag browsing and device management) has met its test gate**
+(see `phase-plan.md`'s Phase 2 status note) — a new Device and Tag created,
+browsed, and live-scanning entirely through the UI on a second Site, with a
+working trend chart, no Gateway restart required. **Not yet merged** — PR
+#3 is open for review. Two real defects were caught by using the feature
+in the browser rather than by reading the code: the trend chart was
+fabricating a straight line through a Gateway-downtime gap (fixed — same
+class of mistake ADR-0003 exists to prevent, just in the chart layer), and
+a form field named `tagName` was shadowing `HTMLFormElement.tagName` (also
+fixed).
 
-Phase 2 needs config CRUD through the UI, which was exactly the trigger
-CLAUDE.md flagged for revisiting the "no ORM" choice from Phase 1. That
-question is now closed: ADR-0008 adopts Dapper for the Tenant/Site/Device/
-Tag config tables, with DbUp (ADR-0007) still owning schema and the
-historian staying on plain Npgsql. See "When Phase 1 (or any phase)
-begins" below.
+ADR-0008 closed the "no ORM" question this phase raised: Dapper for the
+Tenant/Site/Device/Tag/Folder config tables, DbUp (ADR-0007) still owning
+schema, historian staying on plain Npgsql.
+
+**Before Phase 3 (Alarms) starts:** deletion semantics for Folder/Device/
+Tag config are an open decision, deliberately deferred out of Phase 2's
+scope (see phase-plan.md's Phase 2 note) — what happens to a deleted
+Device's historian rows and to a Folder's contents needs to be resolved in
+the design conversation, not decided unilaterally inside a Phase 3 PR.
 
 ## When Phase 1 (or any phase) begins
 
