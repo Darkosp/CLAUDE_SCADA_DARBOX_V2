@@ -20,7 +20,20 @@ var dataStore = new SlaveDataStore();
 var factory = new ModbusFactory();
 
 var listener = new TcpListener(IPAddress.Loopback, port);
-listener.Start();
+
+try
+{
+    listener.Start();
+}
+catch (SocketException exception) when (exception.SocketErrorCode == SocketError.AddressAlreadyInUse)
+{
+    // Almost always another copy of this simulator left running. A stack trace tells the
+    // reader nothing they can act on; the port number does.
+    Console.Error.WriteLine(
+        $"Port {port} is already in use — another simulator is probably still running. "
+        + $"Stop it, or pass a different port: dotnet run --project tools/ModbusSimulator -- {port + 1}");
+    return 1;
+}
 
 var network = factory.CreateSlaveNetwork(listener);
 network.AddSlave(factory.CreateSlave(UnitId, dataStore));
