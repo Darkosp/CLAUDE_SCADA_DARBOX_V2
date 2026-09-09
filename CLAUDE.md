@@ -17,14 +17,14 @@ the documents it points to, before doing anything else in this repo.
 
 ## Current status
 
-As of this writing: **Phase 0 is complete** (architecture and ADRs are in
-place). **Phase 1 has not started.** Do not begin writing application code —
-including scaffolding a solution, adding NuGet/npm packages, or creating
-`src/`/`tests/` content — until explicitly told a phase has begun. Until
-then, this repo's working scope is limited to committing and pushing the
-planning documents produced in the accompanying design conversation
-(README, ADRs, architecture, roadmap, this file) — plain git housekeeping,
-not implementation or design work.
+**Phase 0 is complete.** **Phase 1 (core skeleton) is in progress**, on
+branch `phase-1/core-skeleton`: Core, Persistence.TimescaleDb, the Modbus
+TCP driver module, the Gateway (Web API + SignalR), the Angular web client,
+a Modbus simulator, and 33 passing tests all exist. The Phase 1 test gate
+(Driver → Tag engine → historian row + browser update, end to end against
+the simulator) is **not yet confirmed** — it needs TimescaleDB running via
+Docker, which is being set up. Do not treat Phase 1 as done, and do not
+begin Phase 2 scope, until the gate is actually run and confirmed.
 
 ## When Phase 1 (or any phase) begins
 
@@ -37,34 +37,59 @@ not implementation or design work.
 - Respect the core/module boundary from ADR-0002: core code never references
   a specific protocol, a domain vocabulary, or an industry regulation.
   Modules are separate projects, composed at compile time — no
-  reflection-based dynamic plugin loading.
+  reflection-based dynamic plugin loading. This also means the ASP.NET host
+  (Web API, SignalR) and the concrete persistence implementation live
+  outside Core, as their own projects — see Solution layout below — so that
+  a module never has to reference a hosting or persistence dependency to
+  satisfy Core's contracts.
 - Tag identity is the stable ID from ADR-0001, never the display path.
   Historian and alarm code must reference tags by ID.
 - Every tag value carries the typed union, source timestamp, and quality
   fields from ADR-0003 — don't simplify a driver to always report "Good" or
-  drop the source timestamp for convenience.
+  drop the source timestamp for convenience. Where a protocol doesn't supply
+  a device-side timestamp (e.g. Modbus), use the time of successful read and
+  document that explicitly rather than silently treating it as equivalent
+  to a real source timestamp.
 - Every Site-scoped entity is transitively Tenant-scoped (ADR-0004), even
   though a given deployment has exactly one Tenant row.
 - Units are dimension + SI factor (ADR-0005) — never a bare unit string in
-  the data model.
+  the data model. Raw-value scaling needed to decode a protocol's wire
+  format (e.g. a fixed-point Modbus register) is a driver-level concern,
+  separate from and prior to a tag's engineering unit.
+- Don't add an ORM or another data-access layer without an ADR — ADR-0006
+  doesn't name one, so Phase 1 uses plain Npgsql/SQL. Revisit this
+  explicitly (new ADR) when Phase 2 needs config CRUD through the UI.
 
-## Solution layout (once Phase 1 starts)
+## Solution layout
 
 ```
 src/
-  Core/               tag engine, driver framework contracts, historian
-                       abstraction, alarm engine, users/roles/auth, Web API, SignalR
+  Core/                     tag engine, driver framework contracts, historian
+                            abstraction, alarm engine, users/roles/auth — no
+                            ASP.NET host, no concrete persistence dependency
+  Persistence.TimescaleDb/  concrete historian implementation (plain Npgsql/SQL,
+                            hypertable) behind Core's storage abstraction
+  Gateway/                  Web API host, SignalR hub, the scan service wiring
+                            drivers + tag engine + historian together
   Modules/
-    Drivers.Modbus/    (Phase 1)
-    Drivers.OpcUa/      (Phase 4)
-    Drivers.Mqtt/       (Phase 4)
-  EdgeAgent/          .NET Native AOT edge process (cloud topology)
-  Web/                Angular application
+    Drivers.Modbus/          Modbus TCP driver (Phase 1)
+    Drivers.OpcUa/           (Phase 4)
+    Drivers.Mqtt/            (Phase 4)
+  EdgeAgent/                .NET Native AOT edge process (cloud topology,
+                            not needed until that topology is built)
+  Web/                      Angular application
+tools/
+  ModbusSimulator/          simulated device used by the Phase 1 test gate
 tests/
-docs/                 (already established — architecture, decisions, roadmap)
+docs/                       (already established — architecture, decisions, roadmap)
 ```
 
-Adjust only with a reason tied back to an ADR; don't restructure for taste.
+Gateway and Persistence.TimescaleDb are separate from Core by design: if
+Core hosted the ASP.NET/SignalR layer or a concrete database dependency,
+every module would have to reference that just to satisfy Core's contracts
+— the reverse of ADR-0002's rule that a module depends only on Core's public
+contracts. Adjust this layout only with a reason tied back to an ADR; don't
+restructure for taste.
 
 ## Open questions you will hit
 
@@ -96,8 +121,9 @@ acting on that assumption, and commit/push it yourself.
 
 **Rule:** design-conversation documents (README, ADRs, architecture docs,
 `phase-plan.md`, this file) are committed directly to `main`, no PR. The
-PR/review process starts once Phase 1 begins and there is real application
-code to review.
+PR/review process applies to implementation code (Phase 1 onward) — open a
+PR (draft, if the phase's test gate isn't confirmed yet) rather than
+committing application code straight to main.
 
 ## Commits
 

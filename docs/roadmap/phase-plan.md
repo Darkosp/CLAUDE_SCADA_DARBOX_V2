@@ -28,6 +28,17 @@ browser. No alarms, no auth, no UDTs, no tag browse tree yet.
 Driver → Tag engine → (historian row + browser update) end-to-end, verified
 against a live simulator.
 
+**Status: gate met (2026-09-09).** Verified against TimescaleDB 2.17.2 and
+a live Modbus simulator: live browser updates via SignalR, 145 historian
+rows each with distinct source/ingestion timestamps, zero continuous
+aggregates and compression disabled on the hypertable, and — the gate's
+most important check — a device going offline surfaces as Bad quality on
+its tags, not a fabricated zero/false. That last check caught a real defect
+(see ADR-0003's rationale): the driver was fabricating `NaN`/`false` for
+unreadable values, which both broke JSON serialization and defeated the
+whole point of a quality field. Fixed by making tag values genuinely
+nullable end to end when quality is Bad.
+
 **Constraint:** historian writes use plain TimescaleDB hypertables only —
 no continuous aggregates and no native compression. ADR-0006 flags those
 specific features as TSL-licensed, pending legal review before the product

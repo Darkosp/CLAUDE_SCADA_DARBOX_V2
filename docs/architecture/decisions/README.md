@@ -12,6 +12,7 @@ add a new ADR that supersedes it and state why the original no longer holds.
 | [0004](0004-tenant-scoping.md) | Tenant scoping exists from day one, above Site, even in single-tenant deployments |
 | [0005](0005-dimensioned-units.md) | Units are a dimension + SI factor, never a free-text label |
 | [0006](0006-technology-stack.md) | .NET + Angular + PostgreSQL/TimescaleDB + SignalR + OPC UA/Modbus/MQTT + Docker |
+| [0007](0007-schema-migrations.md) | Schema migrations via DbUp — numbered SQL scripts, no manual ALTERs |
 
 ## Template
 
