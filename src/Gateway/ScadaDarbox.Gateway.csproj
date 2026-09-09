@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\ScadaDarbox.Core.csproj" />
+    <ProjectReference Include="..\Persistence.TimescaleDb\ScadaDarbox.Persistence.TimescaleDb.csproj" />
+    <ProjectReference Include="..\Modules\Drivers.Modbus\ScadaDarbox.Modules.Drivers.Modbus.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,27 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Core/">
+    <Project Path="src/Core/ScadaDarbox.Core.csproj" />
+  </Folder>
+  <Folder Name="/src/Gateway/">
+    <Project Path="src/Gateway/ScadaDarbox.Gateway.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/" />
+  <Folder Name="/src/Modules/Drivers.Modbus/">
+    <Project Path="src/Modules/Drivers.Modbus/ScadaDarbox.Modules.Drivers.Modbus.csproj" />
+  </Folder>
+  <Folder Name="/src/Persistence.TimescaleDb/">
+    <Project Path="src/Persistence.TimescaleDb/ScadaDarbox.Persistence.TimescaleDb.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/Core.Tests/">
+    <Project Path="tests/Core.Tests/ScadaDarbox.Core.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Drivers.Modbus.Tests/">
+    <Project Path="tests/Drivers.Modbus.Tests/ScadaDarbox.Drivers.Modbus.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/" />
+  <Folder Name="/tools/ModbusSimulator/">
+    <Project Path="tools/ModbusSimulator/ScadaDarbox.Tools.ModbusSimulator.csproj" />
+  </Folder>
+</Solution>

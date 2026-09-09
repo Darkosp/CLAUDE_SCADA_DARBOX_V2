@@ -1,0 +1,12 @@
+# .NET build output
+bin/
+obj/
+*.user
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+
+# Local overrides
+appsettings.Development.local.json
