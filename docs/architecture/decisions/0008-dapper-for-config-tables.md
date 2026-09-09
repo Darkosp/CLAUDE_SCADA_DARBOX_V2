@@ -46,8 +46,9 @@ persistence-free boundary from ADR-0002 is untouched.
 
 Dapper does not remove all boilerplate. It replaces fragile positional
 column-to-property mapping with named mapping, but a domain-shaped
-projection — for example materializing a Tag's `UnitOfMeasure` (dimension
-+ SI factor + symbol + display name, ADR-0005) from four flat columns
+projection — for example materializing a Tag's `UnitOfMeasure` (symbol,
+dimension, SI factor, and offset — `unit_symbol`, `unit_dimension`,
+`unit_factor_to_si`, `unit_offset_to_si`, ADR-0005) from four flat columns
 back into that value object — is still written by hand in each query that
 needs it. Dapper's benefit here is narrower than "no more boilerplate": it
 removes one specific failure mode (a column reorder silently shifting
@@ -70,9 +71,9 @@ itself, preserving ADR-0002's boundary.
 
 Config CRUD gets named result-mapping instead of hand-rolled
 `IDataReader` column-index reads, at the cost of one small added
-dependency (Dapper). Hand-written domain projections (e.g. `UnitOfMeasure`
-from ADR-0005) remain hand-written — Dapper narrows one failure mode, it
-doesn't eliminate the projection code. Schema for the four config tables
+dependency (Dapper). Hand-written domain projections (e.g. `UnitOfMeasure`'s
+symbol/dimension/factor/offset from ADR-0005) remain hand-written — Dapper
+narrows one failure mode, it doesn't eliminate the projection code. Schema for the four config tables
 continues to live exclusively in DbUp migration scripts; there is no
 second tool (an EF model, a second migrations mechanism) with an opinion
 about that schema to drift out of sync.
