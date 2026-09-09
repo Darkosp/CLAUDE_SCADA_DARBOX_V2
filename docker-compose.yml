@@ -1,0 +1,23 @@
+# The database Phase 1 runs against. Packaging the whole stack for both deployment
+# topologies is Phase 6; this brings up only what the Phase 1 test gate needs.
+services:
+  timescaledb:
+    # Pinned rather than :latest so every machine runs the same engine.
+    image: timescale/timescaledb:2.17.2-pg17
+    container_name: scada-timescaledb
+    environment:
+      POSTGRES_DB: scada
+      POSTGRES_USER: scada
+      POSTGRES_PASSWORD: scada
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scada -d scada"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  timescale-data:
