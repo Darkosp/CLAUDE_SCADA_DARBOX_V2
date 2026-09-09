@@ -12,6 +12,14 @@ public sealed class Device
     /// <summary>Owning site, and through it the tenant (ADR-0001, ADR-0004).</summary>
     public required Guid SiteId { get; init; }
 
+    /// <summary>
+    /// Folder this device appears in, or null when it sits directly under its site.
+    /// Purely organisational (ADR-0001 §6) — the security and tenant scope is
+    /// <see cref="SiteId"/>, never this. The database enforces that a folder named here
+    /// belongs to the same site as the device.
+    /// </summary>
+    public Guid? FolderId { get; set; }
+
     /// <summary>Display name. Mutable and identity-neutral.</summary>
     public required string Name { get; set; }
 

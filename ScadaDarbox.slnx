@@ -23,6 +23,9 @@
   <Folder Name="/tests/Gateway.Tests/">
     <Project Path="tests/Gateway.Tests/ScadaDarbox.Gateway.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/Persistence.Tests/">
+    <Project Path="tests/Persistence.Tests/ScadaDarbox.Persistence.Tests.csproj" />
+  </Folder>
   <Folder Name="/tools/" />
   <Folder Name="/tools/ModbusSimulator/">
     <Project Path="tools/ModbusSimulator/ScadaDarbox.Tools.ModbusSimulator.csproj" />

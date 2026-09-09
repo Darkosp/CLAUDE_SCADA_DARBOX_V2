@@ -32,6 +32,7 @@ var configurationStore = new PostgresConfigurationStore(dataSource);
 var catalog = new TagCatalog(
     await configurationStore.GetTenantAsync(CancellationToken.None),
     await configurationStore.GetSitesAsync(CancellationToken.None),
+    await configurationStore.GetFoldersAsync(CancellationToken.None),
     await configurationStore.GetDevicesAsync(CancellationToken.None),
     await configurationStore.GetTagsAsync(CancellationToken.None));
 

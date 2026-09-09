@@ -114,7 +114,7 @@ public class TagEngineTests
         var historian = new RecordingHistorian();
         var subscriber = new RecordingSubscriber();
         var engine = new TagEngine(
-            new TagCatalog(tenant, [site], [device], [tag]),
+            new TagCatalog(tenant, [site], [], [device], [tag]),
             historian,
             [subscriber],
             new StubTimeProvider(Now));
