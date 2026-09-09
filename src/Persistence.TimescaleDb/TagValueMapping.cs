@@ -10,9 +10,10 @@ namespace ScadaDarbox.Persistence.TimescaleDb;
 internal static class TagValueMapping
 {
     /// <summary>Splits a value into the typed columns, leaving the others null.</summary>
-    internal static (double? Numeric, bool? Boolean, string? Text, int? Code, string? Label) ToColumns(TagValue value) =>
+    internal static (double? Numeric, bool? Boolean, string? Text, int? Code, string? Label) ToColumns(TagValue? value) =>
         value switch
         {
+            null => (null, null, null, null, null),
             TagValue.Numeric n => (n.Value, null, null, null, null),
             TagValue.Boolean b => (null, b.Value, null, null, null),
             TagValue.Text t => (null, null, t.Value, null, null),
@@ -20,9 +21,9 @@ internal static class TagValueMapping
             _ => throw new NotSupportedException($"Unmapped tag value kind: {value.Kind}."),
         };
 
-    /// <summary>Rebuilds a value from the discriminator and the typed columns.</summary>
-    internal static TagValue FromColumns(
-        TagValueKind kind,
+    /// <summary>Rebuilds a value from the discriminator and the typed columns, or null when there was none.</summary>
+    internal static TagValue? FromColumns(
+        TagValueKind? kind,
         double? numeric,
         bool? boolean,
         string? text,
@@ -30,6 +31,7 @@ internal static class TagValueMapping
         string? label) =>
         kind switch
         {
+            null => null,
             TagValueKind.Numeric => new TagValue.Numeric(
                 numeric ?? throw new InvalidDataException("Numeric sample has no numeric_value.")),
             TagValueKind.Boolean => new TagValue.Boolean(

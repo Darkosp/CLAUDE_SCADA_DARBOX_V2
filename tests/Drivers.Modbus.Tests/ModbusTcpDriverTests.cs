@@ -56,7 +56,9 @@ public class ModbusTcpDriverTests
 
         var readings = await driver.ReadAsync([PressureTag], CancellationToken.None);
 
-        Assert.Equal(Quality.Bad, Assert.Single(readings).Quality);
+        var reading = Assert.Single(readings);
+        Assert.Equal(Quality.Bad, reading.Quality);
+        Assert.Null(reading.Value);
     }
 
     [Fact]

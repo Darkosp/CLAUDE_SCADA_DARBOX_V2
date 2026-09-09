@@ -73,7 +73,7 @@ app.MapGet("/api/tags", (ITagEngine engine, TagCatalog tagCatalog) =>
             : new TagSnapshotDto(
                 tag.Id,
                 tagCatalog.PathOf(tag.Id),
-                new TagValueDto("none"),
+                TagValueDto.None,
                 DateTimeOffset.MinValue,
                 "Bad",
                 tag.Unit?.Symbol));

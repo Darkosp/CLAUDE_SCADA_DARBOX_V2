@@ -60,7 +60,9 @@ public static class DatabaseSchema
             source_time    timestamptz NOT NULL,
             ingested_at    timestamptz NOT NULL,
             quality        smallint NOT NULL,
-            value_kind     smallint NOT NULL,
+            -- Null when the reading carried no value at all, which is what a Bad
+            -- quality reading looks like: no kind, no typed column set.
+            value_kind     smallint,
             numeric_value  double precision,
             boolean_value  boolean,
             text_value     text,

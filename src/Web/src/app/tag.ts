@@ -32,6 +32,10 @@ export function formatValue(snapshot: TagSnapshot): string {
   }
 
   const value = snapshot.value;
+  if (!value) {
+    return '—';
+  }
+
   switch (value.kind) {
     case 'numeric':
       return value.numeric == null || Number.isNaN(value.numeric)

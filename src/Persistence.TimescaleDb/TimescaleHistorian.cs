@@ -43,7 +43,8 @@ public sealed class TimescaleHistorian : IHistorian
             await writer.WriteAsync(sample.SourceTimestampUtc, NpgsqlDbType.TimestampTz, cancellationToken).ConfigureAwait(false);
             await writer.WriteAsync(sample.IngestedAtUtc, NpgsqlDbType.TimestampTz, cancellationToken).ConfigureAwait(false);
             await writer.WriteAsync((short)sample.Quality, NpgsqlDbType.Smallint, cancellationToken).ConfigureAwait(false);
-            await writer.WriteAsync((short)sample.Value.Kind, NpgsqlDbType.Smallint, cancellationToken).ConfigureAwait(false);
+            await WriteNullableAsync(
+                writer, (short?)sample.Value?.Kind, NpgsqlDbType.Smallint, cancellationToken).ConfigureAwait(false);
             await WriteNullableAsync(writer, numeric, NpgsqlDbType.Double, cancellationToken).ConfigureAwait(false);
             await WriteNullableAsync(writer, boolean, NpgsqlDbType.Boolean, cancellationToken).ConfigureAwait(false);
             await WriteNullableAsync(writer, text, NpgsqlDbType.Text, cancellationToken).ConfigureAwait(false);
@@ -77,7 +78,7 @@ public sealed class TimescaleHistorian : IHistorian
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var kind = (TagValueKind)reader.GetInt16(3);
+            TagValueKind? kind = reader.IsDBNull(3) ? null : (TagValueKind)reader.GetInt16(3);
             var value = TagValueMapping.FromColumns(
                 kind,
                 reader.IsDBNull(4) ? null : reader.GetDouble(4),

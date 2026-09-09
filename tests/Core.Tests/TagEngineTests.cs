@@ -43,16 +43,23 @@ public class TagEngineTests
     }
 
     [Fact]
-    public async Task Preserves_bad_quality_rather_than_discarding_the_reading()
+    public async Task Preserves_bad_quality_and_the_absence_of_a_value()
     {
+        // A Bad reading carries no value at all. Historising a placeholder instead would
+        // put a number in the record that no device ever reported.
         var (engine, historian, subscriber) = Build();
 
         await engine.IngestAsync(
-            [new TagReading(TagId, new TagValue.Numeric(double.NaN), Now, Quality.Bad)],
+            [new TagReading(TagId, null, Now, Quality.Bad)],
             CancellationToken.None);
 
-        Assert.Equal(Quality.Bad, Assert.Single(historian.Written).Quality);
-        Assert.Equal(Quality.Bad, Assert.Single(subscriber.Received).Quality);
+        var sample = Assert.Single(historian.Written);
+        Assert.Equal(Quality.Bad, sample.Quality);
+        Assert.Null(sample.Value);
+
+        var snapshot = Assert.Single(subscriber.Received);
+        Assert.Equal(Quality.Bad, snapshot.Quality);
+        Assert.Null(snapshot.Value);
     }
 
     [Fact]

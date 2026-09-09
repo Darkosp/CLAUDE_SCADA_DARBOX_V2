@@ -16,9 +16,18 @@ public sealed record TagValueDto(
     int? Code = null,
     string? Label = null)
 {
-    public static TagValueDto From(TagValue value) => value switch
+    /// <summary>The wire form of "no value", used when a reading carried none.</summary>
+    public static readonly TagValueDto None = new("none");
+
+    public static TagValueDto From(TagValue? value) => value switch
     {
-        TagValue.Numeric n => new TagValueDto("numeric", Numeric: n.Value),
+        null => None,
+        // JSON has no way to express NaN or infinity. A non-finite reading is a fault, not
+        // a measurement, so it goes out as "no value" — otherwise serialisation throws
+        // part-way through a response whose headers have already been sent.
+        TagValue.Numeric n => double.IsFinite(n.Value)
+            ? new TagValueDto("numeric", Numeric: n.Value)
+            : None,
         TagValue.Boolean b => new TagValueDto("boolean", Boolean: b.Value),
         TagValue.Text t => new TagValueDto("text", Text: t.Value),
         TagValue.Discrete d => new TagValueDto("discrete", Code: d.Code, Label: d.Label),

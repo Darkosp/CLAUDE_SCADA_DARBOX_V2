@@ -18,7 +18,7 @@ namespace ScadaDarbox.Core.Tags;
 public sealed record TagSnapshot(
     Guid TagId,
     string Path,
-    TagValue Value,
+    TagValue? Value,
     DateTimeOffset SourceTimestampUtc,
     Quality Quality,
     string? UnitSymbol);

@@ -11,7 +11,7 @@ namespace ScadaDarbox.Core.Historian;
 /// <param name="IngestedAtUtc">When the value reached the server.</param>
 public sealed record HistorianSample(
     Guid TagId,
-    TagValue Value,
+    TagValue? Value,
     DateTimeOffset SourceTimestampUtc,
     DateTimeOffset IngestedAtUtc,
     Quality Quality);

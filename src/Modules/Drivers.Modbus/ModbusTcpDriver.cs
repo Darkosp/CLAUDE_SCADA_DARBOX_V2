@@ -135,17 +135,12 @@ public sealed class ModbusTcpDriver : IDeviceDriver
         }
     }
 
-    private TagReading Bad(DriverTag tag) => new(
-        tag.TagId,
-        tag.ValueKind switch
-        {
-            TagValueKind.Boolean => new TagValue.Boolean(false),
-            TagValueKind.Text => new TagValue.Text(string.Empty),
-            TagValueKind.Discrete => new TagValue.Discrete(0),
-            _ => new TagValue.Numeric(double.NaN),
-        },
-        _timeProvider.GetUtcNow(),
-        Quality.Bad);
+    /// <remarks>
+    /// No value is supplied — not a zero, not a false, not an empty string. A fabricated
+    /// placeholder is indistinguishable from a real reading of the same shape, which is
+    /// precisely the confusion ADR-0003 exists to prevent.
+    /// </remarks>
+    private TagReading Bad(DriverTag tag) => new(tag.TagId, null, _timeProvider.GetUtcNow(), Quality.Bad);
 
     public async ValueTask DisposeAsync() => await DisposeConnectionAsync().ConfigureAwait(false);
 
