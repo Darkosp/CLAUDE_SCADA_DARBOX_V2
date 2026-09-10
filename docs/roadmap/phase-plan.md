@@ -132,13 +132,14 @@ demo dataset includes at least two Sites") — fixed in the seeder.
   overlaid series) makes a library clearly worth the dependency — the
   Phase 2 gate doesn't need one.
 
-**Before Phase 3 starts:** deletion semantics for Folder/Device/Tag config
-were deliberately left out of Phase 2 — what happens to a deleted Device's
-historian rows (which ADR-0001 says must outlive its config) and to a
-Folder's contents when the Folder is deleted is a decision, not an
-implementation detail, and it wasn't required by Phase 2's test gate. It
-needs to be closed, in the design conversation, before Phase 3 scope
-begins.
+**Resolved before Phase 3 (2026-09-09):** deletion semantics for
+Folder/Device/Tag config were deliberately left out of Phase 2's own
+scope and closed separately in the design conversation — see ADR-0009.
+Soft delete via a `deleted_at` column and an `_active` view per table
+(not application-level filtering), a Folder can only be deleted when
+empty (no cascade, no implicit reparenting), and deleting a Device
+cascades to its owned Tags. Historian rows are unaffected either way —
+ADR-0001's decision that history outlives config stands.
 
 ## Phase 3 — Alarms
 
