@@ -15,6 +15,7 @@ add a new ADR that supersedes it and state why the original no longer holds.
 | [0007](0007-schema-migrations.md) | Schema migrations via DbUp — numbered SQL scripts, no manual ALTERs |
 | [0008](0008-dapper-for-config-tables.md) | Dapper for configuration-table (Tenant/Site/Device/Tag) data access, schema still owned by DbUp |
 | [0009](0009-soft-delete-via-active-view.md) | Soft delete for Folder/Device/Tag via a database view, not app-level filtering |
+| [0010](0010-udt-live-reference-semantics.md) | UDTs are a live-reference type with materialized per-instance tags; template edits propagate immediately |
 
 ## Template
 

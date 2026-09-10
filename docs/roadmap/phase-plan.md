@@ -207,6 +207,26 @@ templates (UDTs) — a device type defined once, instantiated many times.
 **Test gate:** three devices are instantiated from one UDT through
 configuration alone, no code changes.
 
+**Implementation notes:**
+
+- OPC UA first, not MQTT — decided in the design conversation, not just
+  an implementation detail. The driver contract today is pull (the
+  scanner calls `ReadAsync` on `ScanInterval`); OPC UA fits it directly.
+  MQTT/Sparkplug B is push — the broker delivers on the device's own
+  schedule, and there is nothing to poll. Forcing MQTT into `ReadAsync`
+  would mean buffering the last-received value and replaying it every
+  scan, which either re-historizes a value that didn't recur or requires
+  the driver to fabricate a timestamp — both conflict with ADR-0003.
+  OPC UA proves the module boundary holds for a second protocol without
+  reshaping Core; MQTT is deferred until a push-capable driver contract
+  gets its own ADR — which the cloud topology's edge agent will need
+  anyway (Phase 0 Architecture, outbound MQTT), so one ADR will serve
+  both needs instead of two.
+- UDT semantics (live-reference type, materialized per-instance tags,
+  template edits propagating immediately) are ADR-0010, not an
+  implementation detail — this was a real data-model decision, not
+  something to decide unilaterally inside the implementation PR.
+
 ## Phase 5 — Users, roles and security
 
 **Scope:** token-based authentication, role-based permissions (needs its
