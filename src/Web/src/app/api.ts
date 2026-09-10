@@ -1,5 +1,13 @@
 import { Injectable } from '@angular/core';
-import { Alarm, AlarmDefinition, Site, SiteTree, TagHistory } from './models';
+import {
+  Alarm,
+  AlarmDefinition,
+  DeviceTemplate,
+  Site,
+  SiteTree,
+  TagHistory,
+  TemplateTag,
+} from './models';
 
 /** Base URL of the gateway. The Angular dev server and the gateway run separately. */
 export const GATEWAY_URL = 'http://localhost:5220';
@@ -43,6 +51,34 @@ export class Api {
     return tagId === null
       ? this.send('POST', `/api/devices/${deviceId}/tags`, body)
       : this.send('PUT', `/api/devices/${deviceId}/tags/${tagId}`, body);
+  }
+
+  templates(): Promise<DeviceTemplate[]> {
+    return this.get<DeviceTemplate[]>('/api/templates');
+  }
+
+  templateTags(templateId: string): Promise<TemplateTag[]> {
+    return this.get<TemplateTag[]>(`/api/templates/${templateId}/tags`);
+  }
+
+  createTemplate(name: string): Promise<unknown> {
+    return this.send('POST', '/api/templates', { name });
+  }
+
+  addTemplateTag(templateId: string, body: unknown): Promise<{ instancesUpdated: number }> {
+    return this.send('POST', `/api/templates/${templateId}/tags`, body) as Promise<{
+      instancesUpdated: number;
+    }>;
+  }
+
+  deleteTemplateTag(templateId: string, tagId: string): Promise<{ instancesUpdated: number }> {
+    return this.send('DELETE', `/api/templates/${templateId}/tags/${tagId}`, null) as Promise<{
+      instancesUpdated: number;
+    }>;
+  }
+
+  instantiate(siteId: string, body: unknown): Promise<unknown> {
+    return this.send('POST', `/api/sites/${siteId}/devices/from-template`, body);
   }
 
   alarmsOf(tagId: string): Promise<AlarmDefinition[]> {

@@ -61,6 +61,44 @@ export interface HistorySample {
   quality: string;
 }
 
+/** A device type, instantiated many times (ADR-0010). */
+export interface DeviceTemplate {
+  id: string;
+  name: string;
+}
+
+/** One tag on a template, with the parameters its address needs. */
+export interface TemplateTag {
+  id: string;
+  name: string;
+  valueKind: 'Numeric' | 'Boolean' | 'Text' | 'Discrete';
+  unit: Unit | null;
+  addressTemplate: string;
+  isWritable: boolean;
+  parameterNames: string[];
+}
+
+/** A connection setting as the UI edits it — a name and a value, nothing driver-specific. */
+export interface SettingEntry {
+  key: string;
+  value: string;
+}
+
+/** Turns the editable pairs back into the map the API expects, dropping blank names. */
+export function settingsToMap(entries: SettingEntry[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const entry of entries) {
+    if (entry.key.trim().length > 0) {
+      map[entry.key.trim()] = entry.value;
+    }
+  }
+  return map;
+}
+
+export function mapToSettings(map: Record<string, string>): SettingEntry[] {
+  return Object.entries(map).map(([key, value]) => ({ key, value }));
+}
+
 export type AlarmState = 'Active' | 'Acknowledged' | 'Cleared' | 'Shelved';
 
 /** One standing alarm, as pushed by the gateway. */
