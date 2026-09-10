@@ -12,4 +12,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+
+  <ItemGroup>
+    <!-- The tree builder is an internal detail of the host, but its behaviour when the
+         hierarchy is inconsistent is worth asserting directly. -->
+    <InternalsVisibleTo Include="ScadaDarbox.Gateway.Tests" />
+  </ItemGroup>
+
 </Project>

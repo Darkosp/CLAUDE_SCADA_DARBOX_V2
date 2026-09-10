@@ -166,6 +166,33 @@ public sealed class SoftDeleteTests : IClassFixture<TestDatabase>
             () => tags.UpdateAsync(revived, CancellationToken.None));
     }
 
+    [RequiresDatabaseFact]
+    public async Task A_tag_is_never_live_when_its_device_is_deleted_even_without_the_cascade()
+    {
+        // Deleting a device cascades to its tags in one transaction, so a crash between
+        // the two statements commits nothing. What a transaction cannot cover is a tag
+        // inserted by another transaction committing after the cascade's UPDATE has run:
+        // that row is never seen, and would survive as a live tag on a dead device.
+        //
+        // This reproduces that end state directly — the device row soft-deleted, the tag
+        // untouched — and asserts the view refuses to hand it out anyway.
+        var world = await SeedAsync();
+        var store = new PostgresConfigurationStore(_database.DataSource);
+        var tags = new TagRepository(_database.DataSource);
+
+        await using (var connection = await _database.DataSource.OpenConnectionAsync())
+        {
+            await connection.ExecuteAsync(
+                "UPDATE device SET deleted_at = now() WHERE id = @deviceId",
+                new { deviceId = world.DeviceId });
+        }
+
+        Assert.DoesNotContain(
+            await store.GetTagsAsync(CancellationToken.None),
+            tag => tag.Id == world.TagId);
+        Assert.Empty(await tags.GetByDeviceAsync(world.DeviceId, CancellationToken.None));
+    }
+
     private sealed record World(Guid SiteId, Guid FolderId, Guid DeviceId, Guid TagId);
 
     /// <summary>One site with a folder, a device and a tag, all live.</summary>
