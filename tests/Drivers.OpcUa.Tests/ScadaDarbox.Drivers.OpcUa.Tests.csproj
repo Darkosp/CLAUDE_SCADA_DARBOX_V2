@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Modules\Drivers.OpcUa\ScadaDarbox.Modules.Drivers.OpcUa.csproj" />
+    <ProjectReference Include="..\..\tools\OpcUaSimulator\ScadaDarbox.Tools.OpcUaSimulator.csproj" />
   </ItemGroup>
 
 </Project>

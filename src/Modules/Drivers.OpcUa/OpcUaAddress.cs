@@ -28,7 +28,12 @@ public static class OpcUaAddress
         {
             nodeId = NodeId.Parse(sourceAddress);
         }
-        catch (Exception exception) when (exception is ServiceResultException or FormatException)
+        // ArgumentException belongs here as much as the other two: NodeId.Parse throws it
+        // for an identifier it cannot make sense of, and letting that escape would abort
+        // the whole device scan over one mistyped address — the opposite of what this
+        // method exists to do. A test caught exactly that.
+        catch (Exception exception)
+            when (exception is ServiceResultException or FormatException or ArgumentException)
         {
             error = $"'{sourceAddress}' is not an OPC UA node id — expected something like 'ns=2;s=Pump1.Pressure'.";
             return false;

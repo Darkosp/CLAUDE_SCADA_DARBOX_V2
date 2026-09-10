@@ -9,6 +9,7 @@ using ScadaDarbox.Gateway.Contracts;
 using ScadaDarbox.Gateway.RealTime;
 using ScadaDarbox.Gateway.Scanning;
 using ScadaDarbox.Modules.Drivers.Modbus;
+using ScadaDarbox.Modules.Drivers.OpcUa;
 using ScadaDarbox.Persistence.TimescaleDb;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -60,6 +61,7 @@ builder.Services.AddSingleton<ITagValueSubscriber>(services => services.GetRequi
 // Compile-time composition of driver modules (ADR-0002): each is referenced as a project
 // and registered here by hand. Nothing is scanned for or loaded dynamically.
 builder.Services.AddSingleton<IDeviceDriverFactory, ModbusTcpDriverFactory>();
+builder.Services.AddSingleton<IDeviceDriverFactory, OpcUaDriverFactory>();
 
 builder.Services.AddHostedService<DeviceScannerService>();
 builder.Services.AddSignalR();
