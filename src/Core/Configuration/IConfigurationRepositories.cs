@@ -59,6 +59,19 @@ public interface IDeviceRepository
     Task DeleteAsync(Guid deviceId, CancellationToken cancellationToken);
 }
 
+/// <summary>Reads and writes the alarm conditions watching a tag.</summary>
+public interface IAlarmDefinitionRepository
+{
+    Task<IReadOnlyList<AlarmDefinition>> GetByTagAsync(Guid tagId, CancellationToken cancellationToken);
+
+    Task AddAsync(AlarmDefinition definition, CancellationToken cancellationToken);
+
+    Task UpdateAsync(AlarmDefinition definition, CancellationToken cancellationToken);
+
+    /// <summary>Soft-deletes one definition (ADR-0009).</summary>
+    Task DeleteAsync(Guid definitionId, CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// A tag's names as recorded, whether or not it is still live.
 /// </summary>

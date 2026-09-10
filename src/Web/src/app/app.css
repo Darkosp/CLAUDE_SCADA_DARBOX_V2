@@ -176,3 +176,71 @@ button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
 @media (max-width: 48rem) {
   main { grid-template-columns: 1fr; }
 }
+
+/* --- alarms ------------------------------------------------------------- */
+
+.banner {
+  /* Sticky for the same reason as the delete confirmation: an alarm the operator
+     has to scroll to find is one they will miss. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  gap: 1px;
+  background: #f0c7c4;
+  border-bottom: 1px solid #e0a9a4;
+}
+
+.alarm {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 1.25rem;
+  background: #fff6f5;
+  font-size: 0.85rem;
+}
+
+/* An alarm that corrected itself still needs acknowledging, but it is not the
+   thing demanding attention right now. */
+.alarm.cleared { background: #fbf7ee; }
+
+.badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: #96261f;
+  color: #fff;
+}
+
+.alarm.cleared .badge { background: #8a6d1f; }
+
+.where { font-weight: 600; }
+.what { font-variant-numeric: tabular-nums; }
+.limit { color: #6b7580; }
+.when { color: #8a94a0; font-size: 0.75rem; margin-left: auto; }
+
+.summary-head { margin: 1.5rem 0 0.5rem; }
+
+.summary {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.summary th {
+  text-align: left;
+  font-weight: 600;
+  color: #6b7580;
+  border-bottom: 1px solid #e3e7ec;
+  padding: 0.35rem 0.5rem 0.35rem 0;
+}
+
+.summary td {
+  padding: 0.35rem 0.5rem 0.35rem 0;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.summary tr.settled td { color: #8a94a0; }

@@ -17,4 +17,6 @@ public interface IConfigurationStore
     Task<IReadOnlyList<Device>> GetDevicesAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<Tag>> GetTagsAsync(CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<AlarmDefinition>> GetAlarmDefinitionsAsync(CancellationToken cancellationToken);
 }
