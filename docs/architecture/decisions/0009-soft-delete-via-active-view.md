@@ -122,8 +122,16 @@ views, columns enumerated explicitly rather than `SELECT *`, since
 Postgres freezes a view's column list at creation time and `SELECT *`
 would silently drop any column added by a later migration) and a
 follow-up migration 0005, both applied cleanly against the live dev
+<<<<<<< Updated upstream
 database. 58 tests pass, including 8 new integration tests matching this
 ADR's review criteria exactly.
+=======
+database. 58 tests pass, including 9 new integration tests in
+`SoftDeleteTests` matching this ADR's review criteria (the ninth,
+`A_tag_is_never_live_when_its_device_is_deleted_even_without_the_cascade`,
+added with the migration 0005 fix below) plus 3 new unit tests in
+`SiteTreeBuilderTests` for the Folder-race fallback.
+>>>>>>> Stashed changes
 
 Two race conditions were found by testing the actual database behavior
 rather than trusting the transaction boundary — both are the same lesson
