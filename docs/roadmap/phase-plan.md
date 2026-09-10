@@ -154,8 +154,9 @@ Verified against a real simulated out-of-range value, through the API and
 in the browser: a threshold on Discharge Pressure (Skopje) produced an
 Active alarm, shown in the banner as `HIGH · Skopje/Pump House/Discharge
 Pressure · 3.90 bar (≥ 3)`; acknowledging it while still out of range moved
-it from the banner into the summary as Acknowledged; it retired to Cleared
-once the value recovered. 71 tests pass.
+it from the banner into the summary as Acknowledged; it disappeared
+entirely once the value recovered. An unacknowledged alarm instead becomes
+Cleared and stays listed (see below). 71 tests pass.
 
 Two behaviors verified live are load-bearing, not incidental: a Device
 going Bad (offline) does not clear its alarm — a Bad reading has no value
