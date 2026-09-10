@@ -12,7 +12,7 @@ public sealed class DeviceRepository : IDeviceRepository
     private const string SelectColumns = """
         SELECT id, site_id, folder_id, name, driver_key,
                connection_settings::text AS connection_settings, scan_interval_ms
-        FROM device
+        FROM device_active
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -78,7 +78,7 @@ public sealed class DeviceRepository : IDeviceRepository
                 driver_key = @DriverKey,
                 connection_settings = @ConnectionSettings::jsonb,
                 scan_interval_ms = @ScanIntervalMs
-            WHERE id = @Id
+            WHERE id = @Id AND deleted_at IS NULL
             """,
             ToParameters(device),
             cancellationToken: cancellationToken))
@@ -88,6 +88,38 @@ public sealed class DeviceRepository : IDeviceRepository
         {
             throw new ConfigurationConflictException($"Device {device.Id} no longer exists.");
         }
+    }
+
+    public async Task DeleteAsync(Guid deviceId, CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Device and tags go in one transaction. Half a delete — a device gone while its
+        // tags remain, or the reverse — would leave configuration in a state no operator
+        // asked for and no screen renders sensibly.
+        var deleted = await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE device SET deleted_at = now() WHERE id = @deviceId AND deleted_at IS NULL",
+            new { deviceId },
+            transaction,
+            cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        if (deleted == 0)
+        {
+            throw new ConfigurationConflictException($"Device {deviceId} no longer exists.");
+        }
+
+        // Cascading is right here where it is wrong for a folder: a tag has no placement
+        // of its own to preserve, since its device owns it (ADR-0001 §3).
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE tag SET deleted_at = now() WHERE device_id = @deviceId AND deleted_at IS NULL",
+            new { deviceId },
+            transaction,
+            cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static object ToParameters(Device device) => new

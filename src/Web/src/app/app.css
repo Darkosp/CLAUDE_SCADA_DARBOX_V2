@@ -126,6 +126,28 @@ input, select {
 
 .actions { display: flex; gap: 0.5rem; }
 
+button.danger { border-color: #96261f; background: #96261f; }
+button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
+
+.confirm {
+  /* Sticky because the button that raises it can be far down a long tree: a
+     confirmation the operator has to scroll to find is worse than none. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0.8rem 1.25rem;
+  background: #fff6f5;
+  border-bottom: 1px solid #f0c7c4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.confirm p { margin: 0; font-size: 0.85rem; color: #4a5560; }
+
 .reading {
   display: flex;
   align-items: baseline;

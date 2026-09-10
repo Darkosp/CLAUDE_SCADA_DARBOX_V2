@@ -17,6 +17,19 @@
   <p class="error" role="alert">{{ error() }}</p>
 }
 
+@if (pendingDelete(); as pending) {
+  <div class="confirm" role="alertdialog">
+    <p>
+      <strong>Delete the {{ pending.label }}?</strong>
+      {{ pending.warning }}
+    </p>
+    <div class="actions">
+      <button type="button" class="danger" (click)="confirmDelete()">Delete</button>
+      <button type="button" class="ghost" (click)="pendingDelete.set(null)">Cancel</button>
+    </div>
+  </div>
+}
+
 <main>
   <aside>
     <div class="pane-head">
@@ -38,7 +51,8 @@
         [folders]="siteTree.folders"
         [devices]="siteTree.devices"
         [selectedTagId]="selection()?.tag?.id ?? null"
-        (selected)="select($event)" />
+        (selected)="select($event)"
+        (deleteFolder)="askDeleteFolder($event.id, $event.name)" />
     } @else {
       <p class="muted">Loading…</p>
     }
@@ -72,9 +86,20 @@
     } @else if (selection(); as chosen) {
       <div class="pane-head">
         <h2>{{ chosen.tag ? chosen.tag.name : chosen.device.name }}</h2>
-        <div>
+        <div class="actions">
           <button type="button" class="ghost" (click)="editDevice(chosen.device)">Edit device</button>
           <button type="button" (click)="startNewTag()">Add tag</button>
+          @if (chosen.tag) {
+            <button
+              type="button"
+              class="ghost danger"
+              (click)="askDeleteTag(chosen.device.id, chosen.tag.id, chosen.tag.name)">Delete tag</button>
+          } @else {
+            <button
+              type="button"
+              class="ghost danger"
+              (click)="askDeleteDevice(chosen.device)">Delete device</button>
+          }
         </div>
       </div>
 

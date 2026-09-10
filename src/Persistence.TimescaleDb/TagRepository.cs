@@ -24,7 +24,7 @@ public sealed class TagRepository : ITagRepository
                 """
                 SELECT id, device_id, name, value_kind, unit_symbol, unit_dimension,
                        unit_factor_to_si, unit_offset_to_si, source_address, is_writable
-                FROM tag
+                FROM tag_active
                 WHERE device_id = @deviceId
                 ORDER BY name
                 """,
@@ -68,7 +68,7 @@ public sealed class TagRepository : ITagRepository
                 unit_offset_to_si = @UnitOffsetToSi,
                 source_address = @SourceAddress,
                 is_writable = @IsWritable
-            WHERE id = @Id
+            WHERE id = @Id AND deleted_at IS NULL
             """,
             ToParameters(tag),
             cancellationToken: cancellationToken))
@@ -78,6 +78,46 @@ public sealed class TagRepository : ITagRepository
         {
             throw new ConfigurationConflictException($"Tag {tag.Id} no longer exists.");
         }
+    }
+
+    public async Task DeleteAsync(Guid tagId, CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var deleted = await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE tag SET deleted_at = now() WHERE id = @tagId AND deleted_at IS NULL",
+            new { tagId },
+            cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        if (deleted == 0)
+        {
+            throw new ConfigurationConflictException($"Tag {tagId} no longer exists.");
+        }
+    }
+
+    public async Task<TagIdentity?> FindIdentityIncludingDeletedAsync(
+        Guid tagId,
+        CancellationToken cancellationToken)
+    {
+        // Deliberately the base tables, not the active views — this is the one read that
+        // must see past a deletion, so a trend for a device retired last year reads as
+        // its name rather than a UUID (ADR-0009).
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        return await connection.QuerySingleOrDefaultAsync<TagIdentity>(new CommandDefinition(
+            """
+            SELECT t.id AS tag_id,
+                   t.name AS tag_name,
+                   d.name AS device_name,
+                   (t.deleted_at IS NOT NULL OR d.deleted_at IS NOT NULL) AS is_deleted
+            FROM tag t
+            JOIN device d ON d.id = t.device_id
+            WHERE t.id = @tagId
+            """,
+            new { tagId },
+            cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
     }
 
     private static object ToParameters(Tag tag) => new

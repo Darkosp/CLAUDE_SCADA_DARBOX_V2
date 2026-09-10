@@ -17,13 +17,21 @@ export interface Selection {
   template: `
     @for (folder of folders(); track folder.id) {
       <div class="folder">
-        <span class="label">{{ folder.name }}</span>
+        <span class="label">
+          {{ folder.name }}
+          <button
+            type="button"
+            class="remove"
+            [attr.aria-label]="'Delete folder ' + folder.name"
+            (click)="deleteFolder.emit({ id: folder.id, name: folder.name })">×</button>
+        </span>
         <app-browse-tree
           [folders]="folder.folders"
           [devices]="folder.devices"
           [selectedTagId]="selectedTagId()"
           (selected)="selected.emit($event)"
-          (addDeviceHere)="addDeviceHere.emit($event)" />
+          (addDeviceHere)="addDeviceHere.emit($event)"
+          (deleteFolder)="deleteFolder.emit($event)" />
       </div>
     }
 
@@ -97,6 +105,16 @@ export interface Selection {
     .tag:hover { background: #eef1f4; }
     .tag.selected { border-left-color: #2f6f4f; background: #e8f2ec; font-weight: 600; }
     .unit { color: #8a94a0; margin-left: 0.3rem; font-size: 0.75rem; }
+    .remove {
+      background: none;
+      border: 0;
+      color: #a0a8b0;
+      font: inherit;
+      line-height: 1;
+      padding: 0 0.2rem;
+      cursor: pointer;
+    }
+    .remove:hover { color: #96261f; }
     .none { font-size: 0.75rem; color: #a0a8b0; margin: 0.2rem 0 0 1rem; }
   `,
 })
@@ -107,4 +125,5 @@ export class BrowseTree {
 
   readonly selected = output<Selection>();
   readonly addDeviceHere = output<string | null>();
+  readonly deleteFolder = output<{ id: string; name: string }>();
 }
