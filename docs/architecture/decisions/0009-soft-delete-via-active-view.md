@@ -107,3 +107,56 @@ the view.
 - Deleting a Device soft-deletes its owned Tags in the same transaction.
 - A historian query for a soft-deleted Device's or Tag's samples still
   resolves and displays its name.
+- `tag_active` returns no row for a Tag whose owning Device has been
+  soft-deleted, even when that Tag was inserted by a separate transaction
+  that committed after the Device's soft-delete — the check does not rely
+  on the cascade having seen the Tag.
+- A Device whose Folder has been soft-deleted (including via a race with a
+  concurrent move into that Folder) is never lost from the browse tree —
+  it appears at its Site's root, the same as a Device with no Folder.
+
+## Implementation note (2026-09-10)
+
+Implemented as migration 0004 (`deleted_at` plus the three `_active`
+views, columns enumerated explicitly rather than `SELECT *`, since
+Postgres freezes a view's column list at creation time and `SELECT *`
+would silently drop any column added by a later migration) and a
+follow-up migration 0005, both applied cleanly against the live dev
+database. 58 tests pass, including 8 new integration tests matching this
+ADR's review criteria exactly.
+
+Two race conditions were found by testing the actual database behavior
+rather than trusting the transaction boundary — both are the same lesson
+this ADR is built on, applied one level deeper than expected: an
+invariant that depends on a write path having touched every affected row
+is not reliable, even inside a transaction.
+
+1. The Device→Tag cascade (one transaction, both `UPDATE`s or neither)
+   guards against a crash between its two steps, but not against a
+   concurrent `INSERT` of a new Tag for that Device committing, under
+   READ COMMITTED, *after* the cascade's `UPDATE` has already run — that
+   Tag is never touched by the cascade and remains visible as live.
+   Reproduced directly against the database before being fixed. Fixed in
+   migration 0005: `tag_active` no longer filters on `tag.deleted_at`
+   alone — it joins to `device` and requires the owning Device to also be
+   live. The Tag's liveness is now derived at read time from both rows'
+   actual state, never asserted once by the delete operation, which is
+   exactly the reasoning the view-based design already rested on, just
+   applied across the ownership relationship instead of within one table.
+2. The analogous race exists for Folder→Device: a Device moved into a
+   Folder by a concurrent operation that commits after a Folder-delete's
+   emptiness check can leave a live Device pointing at a now-deleted
+   Folder. This one is deliberately *not* closed the same way, by a join
+   in `device_active` — a Device's Folder is optional and organizational
+   (ADR-0001 §6), not an ownership relationship the way a Device owns its
+   Tags (ADR-0001 §3), so a Device with an unresolvable Folder is still a
+   fully valid Device, not a corrupted one. `SiteTreeBuilder` now treats
+   such a Device as unplaced and shows it at its Site's root — the
+   rendering already used for a Device with no Folder at all — surfacing
+   the inconsistency for an operator to fix rather than hiding it. Hiding
+   it would have reproduced the exact defect this ADR exists to prevent:
+   a live Device quietly missing from every view that lists them.
+
+Two stray U+200B zero-width characters, introduced by the editing tool
+while applying the `SiteTreeBuilder` fix, were found and removed as part
+of the same verification pass.
