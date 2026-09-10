@@ -92,4 +92,17 @@ public sealed class PostgresConfigurationStore : IConfigurationStore
 
         return rows.Select(r => r.ToDomain()).ToList();
     }
+
+    public async Task<IReadOnlyList<AlarmDefinition>> GetAlarmDefinitionsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var rows = await connection.QueryAsync<AlarmDefinitionRow>(
+            new CommandDefinition(
+                "SELECT id, tag_id, high_limit, low_limit FROM alarm_definition_active",
+                cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        return rows.Select(r => r.ToDomain()).ToList();
+    }
 }

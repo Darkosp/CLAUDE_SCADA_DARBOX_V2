@@ -17,6 +17,28 @@
   <p class="error" role="alert">{{ error() }}</p>
 }
 
+@if (unacknowledged().length > 0) {
+  <section class="banner" role="alert" aria-label="Unacknowledged alarms">
+    @for (alarm of unacknowledged(); track alarm.definitionId) {
+      <div class="alarm" [class.cleared]="alarm.state === 'Cleared'">
+        <span class="badge">{{ alarm.state === 'Cleared' ? 'RETURNED' : alarm.limit === 'High' ? 'HIGH' : 'LOW' }}</span>
+        <span class="where">{{ alarm.tagPath }}</span>
+        <span class="what">
+          {{ alarm.valueAtRaise.toFixed(2) }}{{ alarm.unitSymbol ? ' ' + alarm.unitSymbol : '' }}
+          <span class="limit">
+            ({{ alarm.limit === 'High' ? '≥' : '≤' }} {{ alarm.limitValue }})
+          </span>
+        </span>
+        <span class="when">{{ alarm.raisedAtUtc | date: 'HH:mm:ss' }}</span>
+        <button type="button" (click)="acknowledge(alarm)">Acknowledge</button>
+        @if (alarm.state !== 'Cleared') {
+          <button type="button" class="ghost" (click)="shelve(alarm)">Shelve</button>
+        }
+      </div>
+    }
+  </section>
+}
+
 @if (pendingDelete(); as pending) {
   <div class="confirm" role="alertdialog">
     <p>
@@ -151,6 +173,43 @@
 
         @if (selectedIsNumeric()) {
           <div class="pane-head">
+            <h3>Alarm threshold</h3>
+            @if (alarmDraft() === null) {
+              <div class="actions">
+                <button type="button" class="ghost" (click)="startEditingAlarm()">
+                  {{ tagAlarm() ? 'Edit' : 'Add' }}
+                </button>
+                @if (tagAlarm()) {
+                  <button type="button" class="ghost danger" (click)="removeAlarm()">Remove</button>
+                }
+              </div>
+            }
+          </div>
+
+          @if (alarmDraft(); as draft) {
+            <form class="form" (ngSubmit)="saveAlarm()">
+              <label>High limit (blank for none)
+                <input name="high" type="number" step="any" [(ngModel)]="draft.high" />
+              </label>
+              <label>Low limit (blank for none)
+                <input name="low" type="number" step="any" [(ngModel)]="draft.low" />
+              </label>
+              <div class="actions">
+                <button type="submit">Save</button>
+                <button type="button" class="ghost" (click)="alarmDraft.set(null)">Cancel</button>
+              </div>
+            </form>
+          } @else if (tagAlarm(); as definition) {
+            <p class="muted">
+              @if (definition.highLimit !== null) { High ≥ {{ definition.highLimit }} }
+              @if (definition.highLimit !== null && definition.lowLimit !== null) { · }
+              @if (definition.lowLimit !== null) { Low ≤ {{ definition.lowLimit }} }
+            </p>
+          } @else {
+            <p class="muted">No threshold configured.</p>
+          }
+
+          <div class="pane-head">
             <h3>Last 15 minutes</h3>
             <button type="button" class="ghost" (click)="loadHistory()">Refresh</button>
           </div>
@@ -161,6 +220,27 @@
       }
     } @else {
       <p class="muted">Select a tag to see its live value and trend.</p>
+    }
+
+    @if (alarms().length > 0) {
+      <h3 class="summary-head">Alarm summary</h3>
+      <table class="summary">
+        <thead>
+          <tr><th>Tag</th><th>Condition</th><th>Raised</th><th>State</th></tr>
+        </thead>
+        <tbody>
+          @for (alarm of alarms(); track alarm.definitionId) {
+            <tr [class.settled]="alarm.state === 'Acknowledged' || alarm.state === 'Shelved'">
+              <td>{{ alarm.tagPath }}</td>
+              <td>
+                {{ alarm.limit === 'High' ? '≥' : '≤' }} {{ alarm.limitValue }}{{ alarm.unitSymbol ? ' ' + alarm.unitSymbol : '' }}
+              </td>
+              <td>{{ alarm.raisedAtUtc | date: 'HH:mm:ss' }}</td>
+              <td>{{ alarm.state }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
     }
   </section>
 </main>

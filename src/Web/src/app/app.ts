@@ -1,9 +1,19 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Api, ApiError } from './api';
 import { BrowseTree, Selection } from './browse-tree';
 import { TrendChart } from './trend-chart';
-import { FolderOption, HistorySample, Site, SiteTree, TreeDevice, folderOptions } from './models';
+import {
+  Alarm,
+  AlarmDefinition,
+  FolderOption,
+  HistorySample,
+  Site,
+  SiteTree,
+  TreeDevice,
+  folderOptions,
+} from './models';
 import { TagStream } from './tag-stream';
 import { formatValue, TagSnapshot } from './tag';
 import { UNIT_PRESETS, unitBySymbol } from './units';
@@ -38,7 +48,7 @@ interface TagDraft {
 
 @Component({
   selector: 'app-root',
-  imports: [BrowseTree, TrendChart, FormsModule],
+  imports: [BrowseTree, TrendChart, FormsModule, DatePipe],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -69,6 +79,17 @@ export class App implements OnInit {
   protected readonly newFolderName = signal('');
 
   protected readonly unitPresets = UNIT_PRESETS;
+
+  protected readonly alarms = this.stream.alarms;
+
+  /** Alarms worth interrupting for: raised, not yet seen, not shelved. */
+  protected readonly unacknowledged = computed(() =>
+    this.alarms().filter((alarm) => alarm.state === 'Active' || alarm.state === 'Cleared'),
+  );
+
+  /** The threshold configured on the selected tag, if any. */
+  protected readonly tagAlarm = signal<AlarmDefinition | null>(null);
+  protected readonly alarmDraft = signal<{ high: string; low: string } | null>(null);
 
   protected readonly folderChoices = computed<FolderOption[]>(() => folderOptions(this.tree()));
 
@@ -129,9 +150,84 @@ export class App implements OnInit {
     this.deviceDraft.set(null);
     this.history.set([]);
 
+    this.tagAlarm.set(null);
+    this.alarmDraft.set(null);
+
     if (selection.tag?.valueKind === 'Numeric') {
       await this.loadHistory();
+      await this.loadTagAlarm();
     }
+  }
+
+  // ---- alarms -------------------------------------------------------------
+
+  protected async acknowledge(alarm: Alarm): Promise<void> {
+    await this.withErrorHandling(() => this.api.acknowledge(alarm.definitionId).then(() => undefined));
+  }
+
+  protected async shelve(alarm: Alarm): Promise<void> {
+    await this.withErrorHandling(() => this.api.shelve(alarm.definitionId).then(() => undefined));
+  }
+
+  private async loadTagAlarm(): Promise<void> {
+    const tag = this.selection()?.tag;
+    if (!tag) {
+      return;
+    }
+
+    try {
+      const definitions = await this.api.alarmsOf(tag.id);
+      this.tagAlarm.set(definitions[0] ?? null);
+    } catch (error) {
+      this.report(error);
+    }
+  }
+
+  protected startEditingAlarm(): void {
+    const existing = this.tagAlarm();
+    this.alarmDraft.set({
+      high: existing?.highLimit?.toString() ?? '',
+      low: existing?.lowLimit?.toString() ?? '',
+    });
+  }
+
+  protected async saveAlarm(): Promise<void> {
+    const tag = this.selection()?.tag;
+    const draft = this.alarmDraft();
+
+    if (!tag || !draft) {
+      return;
+    }
+
+    await this.withErrorHandling(async () => {
+      // An empty box means "no limit on this side", which is different from zero — and
+      // zero is a perfectly ordinary threshold, so the two must not collapse together.
+      const toLimit = (raw: string): number | null =>
+        raw.trim().length === 0 ? null : Number(raw);
+
+      await this.api.saveAlarm(tag.id, this.tagAlarm()?.id ?? null, {
+        highLimit: toLimit(draft.high),
+        lowLimit: toLimit(draft.low),
+      });
+
+      this.alarmDraft.set(null);
+      await this.loadTagAlarm();
+    });
+  }
+
+  protected async removeAlarm(): Promise<void> {
+    const tag = this.selection()?.tag;
+    const definition = this.tagAlarm();
+
+    if (!tag || !definition) {
+      return;
+    }
+
+    await this.withErrorHandling(async () => {
+      await this.api.deleteAlarm(tag.id, definition.id);
+      this.tagAlarm.set(null);
+      this.alarmDraft.set(null);
+    });
   }
 
   protected async loadHistory(): Promise<void> {

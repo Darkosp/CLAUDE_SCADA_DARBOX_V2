@@ -61,6 +61,32 @@ export interface HistorySample {
   quality: string;
 }
 
+export type AlarmState = 'Active' | 'Acknowledged' | 'Cleared' | 'Shelved';
+
+/** One standing alarm, as pushed by the gateway. */
+export interface Alarm {
+  definitionId: string;
+  tagId: string;
+  tagPath: string;
+  limit: 'High' | 'Low';
+  limitValue: number;
+  valueAtRaise: number;
+  unitSymbol: string | null;
+  raisedAtUtc: string;
+  state: AlarmState;
+  /** No actor: acknowledgement is anonymous until Phase 5 brings users. */
+  acknowledgedAtUtc: string | null;
+  clearedAtUtc: string | null;
+}
+
+/** A configured threshold on a tag. */
+export interface AlarmDefinition {
+  id: string;
+  tagId: string;
+  highLimit: number | null;
+  lowLimit: number | null;
+}
+
 /**
  * A tag's history plus the names it was recorded under.
  *

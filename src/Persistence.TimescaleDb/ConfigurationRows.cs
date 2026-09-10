@@ -54,6 +54,17 @@ internal static class ConfigurationRows
         };
     }
 
+    internal sealed record AlarmDefinitionRow(Guid Id, Guid TagId, double? HighLimit, double? LowLimit)
+    {
+        internal AlarmDefinition ToDomain() => new()
+        {
+            Id = Id,
+            TagId = TagId,
+            HighLimit = HighLimit,
+            LowLimit = LowLimit,
+        };
+    }
+
     internal sealed record TagRow(
         Guid Id,
         Guid DeviceId,

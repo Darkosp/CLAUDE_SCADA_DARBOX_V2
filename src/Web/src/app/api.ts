@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Site, SiteTree, TagHistory } from './models';
+import { Alarm, AlarmDefinition, Site, SiteTree, TagHistory } from './models';
 
 /** Base URL of the gateway. The Angular dev server and the gateway run separately. */
 export const GATEWAY_URL = 'http://localhost:5220';
@@ -43,6 +43,36 @@ export class Api {
     return tagId === null
       ? this.send('POST', `/api/devices/${deviceId}/tags`, body)
       : this.send('PUT', `/api/devices/${deviceId}/tags/${tagId}`, body);
+  }
+
+  alarmsOf(tagId: string): Promise<AlarmDefinition[]> {
+    return this.get<AlarmDefinition[]>(`/api/tags/${tagId}/alarms`);
+  }
+
+  alarms(): Promise<Alarm[]> {
+    return this.get<Alarm[]>('/api/alarms');
+  }
+
+  acknowledge(definitionId: string): Promise<unknown> {
+    return this.send('POST', `/api/alarms/${definitionId}/acknowledge`, null);
+  }
+
+  shelve(definitionId: string): Promise<unknown> {
+    return this.send('POST', `/api/alarms/${definitionId}/shelve`, null);
+  }
+
+  saveAlarm(
+    tagId: string,
+    definitionId: string | null,
+    body: { highLimit: number | null; lowLimit: number | null },
+  ): Promise<unknown> {
+    return definitionId === null
+      ? this.send('POST', `/api/tags/${tagId}/alarms`, body)
+      : this.send('PUT', `/api/tags/${tagId}/alarms/${definitionId}`, body);
+  }
+
+  deleteAlarm(tagId: string, definitionId: string): Promise<unknown> {
+    return this.send('DELETE', `/api/tags/${tagId}/alarms/${definitionId}`, null);
   }
 
   deleteFolder(siteId: string, folderId: string): Promise<unknown> {

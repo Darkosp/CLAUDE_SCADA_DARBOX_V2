@@ -26,19 +26,25 @@ public sealed class TagCatalog
     private readonly Dictionary<Guid, Site> _sitesById;
     private readonly Dictionary<Guid, Folder> _foldersById;
     private readonly Dictionary<Guid, string> _pathsByTagId;
+    private readonly Dictionary<Guid, List<AlarmDefinition>> _alarmsByTagId;
 
     public TagCatalog(
         Tenant tenant,
         IReadOnlyList<Site> sites,
         IReadOnlyList<Folder> folders,
         IReadOnlyList<Device> devices,
-        IReadOnlyList<Tag> tags)
+        IReadOnlyList<Tag> tags,
+        IReadOnlyList<AlarmDefinition>? alarms = null)
     {
         Tenant = tenant;
         _sitesById = sites.ToDictionary(s => s.Id);
         _foldersById = folders.ToDictionary(f => f.Id);
         _devicesById = devices.ToDictionary(d => d.Id);
         _tagsById = tags.ToDictionary(t => t.Id);
+
+        _alarmsByTagId = (alarms ?? [])
+            .GroupBy(alarm => alarm.TagId)
+            .ToDictionary(group => group.Key, group => group.ToList());
 
         _pathsByTagId = new Dictionary<Guid, string>(tags.Count);
         foreach (var tag in tags)
@@ -62,6 +68,17 @@ public sealed class TagCatalog
     public Device? FindDevice(Guid deviceId) => _devicesById.GetValueOrDefault(deviceId);
 
     public Folder? FindFolder(Guid folderId) => _foldersById.GetValueOrDefault(folderId);
+
+    /// <summary>Every configured alarm, across all tags.</summary>
+    public IReadOnlyCollection<AlarmDefinition> Alarms =>
+        _alarmsByTagId.Values.SelectMany(list => list).ToList();
+
+    /// <summary>
+    /// The alarm conditions watching one tag. Empty for a tag with none, which is the
+    /// common case, so the alarm engine can ask about every value cheaply.
+    /// </summary>
+    public IReadOnlyList<AlarmDefinition> AlarmsOfTag(Guid tagId) =>
+        _alarmsByTagId.TryGetValue(tagId, out var alarms) ? alarms : [];
 
     /// <summary>Tags belonging to one device, in configuration order.</summary>
     public IReadOnlyList<Tag> TagsOfDevice(Guid deviceId) =>

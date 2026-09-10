@@ -1,4 +1,5 @@
 using Npgsql;
+using ScadaDarbox.Core.Alarms;
 using ScadaDarbox.Core.Configuration;
 using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Historian;
@@ -40,11 +41,20 @@ builder.Services.AddSingleton(catalogSource);
 builder.Services.AddSingleton<IConfigurationStore>(configurationStore);
 builder.Services.AddSingleton<ConfigurationReloader>();
 builder.Services.AddSingleton<IFolderRepository, FolderRepository>();
+builder.Services.AddSingleton<IAlarmDefinitionRepository, AlarmDefinitionRepository>();
 builder.Services.AddSingleton<IDeviceRepository, DeviceRepository>();
 builder.Services.AddSingleton<ITagRepository, TagRepository>();
 builder.Services.AddSingleton<IHistorian, TimescaleHistorian>();
 builder.Services.AddSingleton<ITagValueSubscriber, SignalRTagBroadcaster>();
 builder.Services.AddSingleton<ITagEngine, TagEngine>();
+
+// One AlarmEngine wearing two hats: it is fed by the tag engine's fan-out and read by
+// the API, so it must be the same instance in both roles rather than two that disagree
+// about which alarms are standing.
+builder.Services.AddSingleton<IAlarmSubscriber, SignalRAlarmBroadcaster>();
+builder.Services.AddSingleton<AlarmEngine>();
+builder.Services.AddSingleton<IAlarmEngine>(services => services.GetRequiredService<AlarmEngine>());
+builder.Services.AddSingleton<ITagValueSubscriber>(services => services.GetRequiredService<AlarmEngine>());
 
 // Compile-time composition of driver modules (ADR-0002): each is referenced as a project
 // and registered here by hand. Nothing is scanned for or loaded dynamically.
@@ -128,6 +138,7 @@ app.MapGet("/api/tags/{tagId:guid}/history", async (
 });
 
 app.MapConfigurationApi();
+app.MapAlarmApi();
 
 app.MapHub<TagHub>("/hubs/tags");
 
