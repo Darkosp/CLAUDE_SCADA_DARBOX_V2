@@ -61,6 +61,20 @@ export interface HistorySample {
   quality: string;
 }
 
+/**
+ * A tag's history plus the names it was recorded under.
+ *
+ * The names resolve even when the tag or its device has been deleted, so a trend for
+ * retired equipment reads as a name rather than an identifier.
+ */
+export interface TagHistory {
+  tagId: string;
+  tagName: string | null;
+  deviceName: string | null;
+  isDeleted: boolean;
+  samples: HistorySample[];
+}
+
 /** A folder option in a picker, with its depth so the list can read as a tree. */
 export interface FolderOption {
   id: string | null;

@@ -28,6 +28,7 @@ internal static class ConfigurationEndpoints
         MapFolders(app);
         MapDevices(app);
         MapTags(app);
+        MapTagDeletion(app);
     }
 
     private static void MapFolders(WebApplication app)
@@ -53,6 +54,16 @@ internal static class ConfigurationEndpoints
                 cancellationToken,
                 () => Results.Created($"/api/sites/{siteId}/tree", folder.Id));
         });
+
+        app.MapDelete("/api/sites/{siteId:guid}/folders/{folderId:guid}", async (
+            Guid folderId,
+            IFolderRepository folders,
+            ConfigurationReloader reloader,
+            CancellationToken cancellationToken) => await SaveAsync(
+                () => folders.DeleteAsync(folderId, cancellationToken),
+                reloader,
+                cancellationToken,
+                Results.NoContent));
 
         app.MapPut("/api/sites/{siteId:guid}/folders/{folderId:guid}", async (
             Guid siteId,
@@ -104,6 +115,16 @@ internal static class ConfigurationEndpoints
             ConfigurationReloader reloader,
             CancellationToken cancellationToken) => await SaveAsync(
                 () => devices.UpdateAsync(ToDomain(deviceId, siteId, request), cancellationToken),
+                reloader,
+                cancellationToken,
+                Results.NoContent));
+
+        app.MapDelete("/api/sites/{siteId:guid}/devices/{deviceId:guid}", async (
+            Guid deviceId,
+            IDeviceRepository devices,
+            ConfigurationReloader reloader,
+            CancellationToken cancellationToken) => await SaveAsync(
+                () => devices.DeleteAsync(deviceId, cancellationToken),
                 reloader,
                 cancellationToken,
                 Results.NoContent));
@@ -160,6 +181,17 @@ internal static class ConfigurationEndpoints
                 Results.NoContent);
         });
     }
+
+    private static void MapTagDeletion(WebApplication app) =>
+        app.MapDelete("/api/devices/{deviceId:guid}/tags/{tagId:guid}", async (
+            Guid tagId,
+            ITagRepository tags,
+            ConfigurationReloader reloader,
+            CancellationToken cancellationToken) => await SaveAsync(
+                () => tags.DeleteAsync(tagId, cancellationToken),
+                reloader,
+                cancellationToken,
+                Results.NoContent));
 
     /// <summary>
     /// Runs a configuration write, reloads the catalogue on success, and turns the

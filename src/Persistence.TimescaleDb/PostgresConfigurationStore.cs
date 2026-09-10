@@ -50,7 +50,7 @@ public sealed class PostgresConfigurationStore : IConfigurationStore
 
         var rows = await connection.QueryAsync<FolderRow>(
             new CommandDefinition(
-                "SELECT id, site_id, parent_folder_id, name FROM folder ORDER BY name",
+                "SELECT id, site_id, parent_folder_id, name FROM folder_active ORDER BY name",
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
 
@@ -66,7 +66,7 @@ public sealed class PostgresConfigurationStore : IConfigurationStore
                 """
                 SELECT id, site_id, folder_id, name, driver_key,
                        connection_settings::text AS connection_settings, scan_interval_ms
-                FROM device
+                FROM device_active
                 ORDER BY name
                 """,
                 cancellationToken: cancellationToken))
@@ -84,7 +84,7 @@ public sealed class PostgresConfigurationStore : IConfigurationStore
                 """
                 SELECT id, device_id, name, value_kind, unit_symbol, unit_dimension,
                        unit_factor_to_si, unit_offset_to_si, source_address, is_writable
-                FROM tag
+                FROM tag_active
                 ORDER BY name
                 """,
                 cancellationToken: cancellationToken))

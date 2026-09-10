@@ -55,6 +55,24 @@ public sealed record TagSnapshotDto(
         snapshot.UnitSymbol);
 }
 
+/// <summary>
+/// A tag's history together with the names it was recorded under.
+/// </summary>
+/// <param name="TagName">
+/// Resolved even for a deleted tag, so old data reads as a name rather than an
+/// identifier. Null only if the tag never existed.
+/// </param>
+/// <param name="IsDeleted">
+/// Whether the tag or its device has been deleted. The history is still real; the
+/// client can say so rather than presenting it as live configuration.
+/// </param>
+public sealed record TagHistoryDto(
+    Guid TagId,
+    string? TagName,
+    string? DeviceName,
+    bool IsDeleted,
+    IReadOnlyList<HistorySampleDto> Samples);
+
 /// <summary>Wire form of one historized sample.</summary>
 public sealed record HistorySampleDto(
     TagValueDto Value,

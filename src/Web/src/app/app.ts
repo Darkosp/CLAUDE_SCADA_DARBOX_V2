@@ -3,8 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Api, ApiError } from './api';
 import { BrowseTree, Selection } from './browse-tree';
 import { TrendChart } from './trend-chart';
-import { FolderOption, Site, SiteTree, TreeDevice, folderOptions } from './models';
-import { HistorySample } from './models';
+import { FolderOption, HistorySample, Site, SiteTree, TreeDevice, folderOptions } from './models';
 import { TagStream } from './tag-stream';
 import { formatValue, TagSnapshot } from './tag';
 import { UNIT_PRESETS, unitBySymbol } from './units';
@@ -19,6 +18,15 @@ interface DeviceDraft {
   unitId: string;
   scanIntervalMs: number;
   folderId: string | null;
+}
+
+/** A delete the operator has started but not yet confirmed. */
+interface PendingDelete {
+  kind: 'folder' | 'device' | 'tag';
+  id: string;
+  ownerId: string;
+  label: string;
+  warning: string;
 }
 
 interface TagDraft {
@@ -46,6 +54,15 @@ export class App implements OnInit {
   protected readonly selection = signal<Selection | null>(null);
   protected readonly history = signal<HistorySample[]>([]);
   protected readonly error = signal<string | null>(null);
+
+  /**
+   * What a Delete button is currently asking the operator to confirm.
+   *
+   * Deletion is confirmed inline rather than through window.confirm: the dialog gives no
+   * room to name what is about to happen, and for a folder the rule — contents are never
+   * removed with it — is exactly what needs saying at that moment.
+   */
+  protected readonly pendingDelete = signal<PendingDelete | null>(null);
 
   protected readonly deviceDraft = signal<DeviceDraft | null>(null);
   protected readonly tagDraft = signal<TagDraft | null>(null);
@@ -107,6 +124,7 @@ export class App implements OnInit {
 
   protected async select(selection: Selection): Promise<void> {
     this.selection.set(selection);
+    this.pendingDelete.set(null);
     this.tagDraft.set(null);
     this.deviceDraft.set(null);
     this.history.set([]);
@@ -125,7 +143,7 @@ export class App implements OnInit {
     try {
       const to = new Date();
       const from = new Date(to.getTime() - 15 * 60 * 1000);
-      this.history.set(await this.api.history(tag.id, from, to));
+      this.history.set((await this.api.history(tag.id, from, to)).samples);
     } catch (error) {
       this.report(error);
     }
@@ -232,6 +250,60 @@ export class App implements OnInit {
       });
 
       this.tagDraft.set(null);
+      await this.reloadTree();
+    });
+  }
+
+  // ---- deletion -----------------------------------------------------------
+
+  protected askDeleteFolder(folderId: string, name: string): void {
+    this.pendingDelete.set({
+      kind: 'folder',
+      id: folderId,
+      ownerId: this.siteId() ?? '',
+      label: `folder "${name}"`,
+      warning: 'Anything inside it must be moved or deleted first — deleting a folder never removes its contents.',
+    });
+  }
+
+  protected askDeleteDevice(device: TreeDevice): void {
+    this.pendingDelete.set({
+      kind: 'device',
+      id: device.id,
+      ownerId: this.siteId() ?? '',
+      label: `device "${device.name}"`,
+      warning: 'Its tags are deleted with it. Recorded history is kept and still shows their names.',
+    });
+  }
+
+  protected askDeleteTag(deviceId: string, tagId: string, name: string): void {
+    this.pendingDelete.set({
+      kind: 'tag',
+      id: tagId,
+      ownerId: deviceId,
+      label: `tag "${name}"`,
+      warning: 'Recorded history is kept and still shows this name.',
+    });
+  }
+
+  protected async confirmDelete(): Promise<void> {
+    const pending = this.pendingDelete();
+    if (!pending) {
+      return;
+    }
+
+    await this.withErrorHandling(async () => {
+      if (pending.kind === 'folder') {
+        await this.api.deleteFolder(pending.ownerId, pending.id);
+      } else if (pending.kind === 'device') {
+        await this.api.deleteDevice(pending.ownerId, pending.id);
+      } else {
+        await this.api.deleteTag(pending.ownerId, pending.id);
+      }
+
+      this.pendingDelete.set(null);
+      this.selection.set(null);
+      this.history.set([]);
       await this.reloadTree();
     });
   }

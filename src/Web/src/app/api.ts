@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HistorySample, Site, SiteTree } from './models';
+import { Site, SiteTree, TagHistory } from './models';
 
 /** Base URL of the gateway. The Angular dev server and the gateway run separately. */
 export const GATEWAY_URL = 'http://localhost:5220';
@@ -24,9 +24,9 @@ export class Api {
     return this.get<SiteTree>(`/api/sites/${siteId}/tree`);
   }
 
-  history(tagId: string, from: Date, to: Date): Promise<HistorySample[]> {
+  history(tagId: string, from: Date, to: Date): Promise<TagHistory> {
     const query = `from=${from.toISOString()}&to=${to.toISOString()}`;
-    return this.get<HistorySample[]>(`/api/tags/${tagId}/history?${query}`);
+    return this.get<TagHistory>(`/api/tags/${tagId}/history?${query}`);
   }
 
   createFolder(siteId: string, body: { name: string; parentFolderId: string | null }): Promise<unknown> {
@@ -45,6 +45,18 @@ export class Api {
       : this.send('PUT', `/api/devices/${deviceId}/tags/${tagId}`, body);
   }
 
+  deleteFolder(siteId: string, folderId: string): Promise<unknown> {
+    return this.send('DELETE', `/api/sites/${siteId}/folders/${folderId}`, null);
+  }
+
+  deleteDevice(siteId: string, deviceId: string): Promise<unknown> {
+    return this.send('DELETE', `/api/sites/${siteId}/devices/${deviceId}`, null);
+  }
+
+  deleteTag(deviceId: string, tagId: string): Promise<unknown> {
+    return this.send('DELETE', `/api/devices/${deviceId}/tags/${tagId}`, null);
+  }
+
   private async get<T>(path: string): Promise<T> {
     const response = await fetch(`${GATEWAY_URL}${path}`);
     if (!response.ok) {
@@ -56,8 +68,8 @@ export class Api {
   private async send(method: string, path: string, body: unknown): Promise<unknown> {
     const response = await fetch(`${GATEWAY_URL}${path}`, {
       method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: body === null ? undefined : { 'Content-Type': 'application/json' },
+      body: body === null ? undefined : JSON.stringify(body),
     });
 
     if (!response.ok) {

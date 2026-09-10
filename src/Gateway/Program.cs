@@ -100,6 +100,7 @@ app.MapGet("/api/tags/{tagId:guid}/history", async (
     DateTimeOffset? from,
     DateTimeOffset? to,
     IHistorian historian,
+    ITagRepository tags,
     TimeProvider timeProvider,
     CancellationToken cancellationToken) =>
 {
@@ -110,11 +111,20 @@ app.MapGet("/api/tags/{tagId:guid}/history", async (
         to ?? now,
         cancellationToken);
 
-    return Results.Ok(samples.Select(sample => new HistorySampleDto(
-        TagValueDto.From(sample.Value),
-        sample.SourceTimestampUtc,
-        sample.IngestedAtUtc,
-        sample.Quality.ToString())));
+    // Resolved past any deletion, so history for a device retired last year still reads
+    // as its name rather than a bare identifier (ADR-0001, ADR-0009).
+    var identity = await tags.FindIdentityIncludingDeletedAsync(tagId, cancellationToken);
+
+    return Results.Ok(new TagHistoryDto(
+        tagId,
+        identity?.TagName,
+        identity?.DeviceName,
+        identity?.IsDeleted ?? false,
+        samples.Select(sample => new HistorySampleDto(
+            TagValueDto.From(sample.Value),
+            sample.SourceTimestampUtc,
+            sample.IngestedAtUtc,
+            sample.Quality.ToString())).ToList()));
 });
 
 app.MapConfigurationApi();
