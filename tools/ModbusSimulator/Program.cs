@@ -7,8 +7,10 @@ using NModbus.Data;
 // without physical hardware. Not part of the product: it lives under tools/ and nothing
 // in src/ references it.
 //
-//   holding register 0 — discharge pressure, in hundredths of a bar
-//   coil 0            — pump running
+//   holding registers 0, 10, 20 — three pumps' discharge pressure, in hundredths of a
+//                                 bar, each on its own phase so a UDT instantiated three
+//                                 times at different offsets shows three distinct values
+//   coil 0                      — pump running
 //
 // The register is scaled because a Modbus register is a raw 16-bit integer; the tag's
 // source address (holding:0?scale=0.01) is what gives it engineering meaning.
@@ -88,6 +90,17 @@ static async Task SimulateAsync(SlaveDataStore dataStore, CancellationToken canc
 
             dataStore.HoldingRegisters.WritePoints(0, [(ushort)Math.Round(pressureBar * 100.0)]);
             dataStore.CoilDiscretes.WritePoints(0, [running]);
+
+            // Two more pumps, offset in phase. Without distinct values here, three devices
+            // instantiated from one template would read identically and the template would
+            // look like it worked while proving nothing.
+            foreach (var (register, phase) in new[] { (10, 2.0), (20, 4.0) })
+            {
+                var value = MeanBar + (AmplitudeBar * Math.Sin((elapsedSeconds + phase) / 8.0));
+                dataStore.HoldingRegisters.WritePoints(
+                    (ushort)register,
+                    [(ushort)Math.Round(value * 100.0)]);
+            }
 
             await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
         }

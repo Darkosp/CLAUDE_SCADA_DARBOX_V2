@@ -42,6 +42,7 @@ builder.Services.AddSingleton<IConfigurationStore>(configurationStore);
 builder.Services.AddSingleton<ConfigurationReloader>();
 builder.Services.AddSingleton<IFolderRepository, FolderRepository>();
 builder.Services.AddSingleton<IAlarmDefinitionRepository, AlarmDefinitionRepository>();
+builder.Services.AddSingleton<IDeviceTemplateRepository, DeviceTemplateRepository>();
 builder.Services.AddSingleton<IDeviceRepository, DeviceRepository>();
 builder.Services.AddSingleton<ITagRepository, TagRepository>();
 builder.Services.AddSingleton<IHistorian, TimescaleHistorian>();
@@ -139,6 +140,7 @@ app.MapGet("/api/tags/{tagId:guid}/history", async (
 
 app.MapConfigurationApi();
 app.MapAlarmApi();
+app.MapTemplateApi();
 
 app.MapHub<TagHub>("/hubs/tags");
 

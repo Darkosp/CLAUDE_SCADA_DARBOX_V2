@@ -11,7 +11,8 @@ public sealed class DeviceRepository : IDeviceRepository
 {
     private const string SelectColumns = """
         SELECT id, site_id, folder_id, name, driver_key,
-               connection_settings::text AS connection_settings, scan_interval_ms
+               connection_settings::text AS connection_settings, scan_interval_ms,
+               template_id
         FROM device_active
         """;
 

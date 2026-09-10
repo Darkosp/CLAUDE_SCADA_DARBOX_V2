@@ -23,7 +23,8 @@ public sealed class TagRepository : ITagRepository
             new CommandDefinition(
                 """
                 SELECT id, device_id, name, value_kind, unit_symbol, unit_dimension,
-                       unit_factor_to_si, unit_offset_to_si, source_address, is_writable
+                       unit_factor_to_si, unit_offset_to_si, source_address, is_writable,
+                       template_tag_id
                 FROM tag_active
                 WHERE device_id = @deviceId
                 ORDER BY name

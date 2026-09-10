@@ -39,4 +39,18 @@ public sealed class Device
 
     /// <summary>How often the driver polls this device's tags.</summary>
     public TimeSpan ScanInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// The template this device was instantiated from, or null for a device configured
+    /// directly. The reference is live (ADR-0010): editing the template changes this
+    /// device's tags.
+    /// </summary>
+    public Guid? TemplateId { get; set; }
+
+    /// <summary>
+    /// What makes this instance differ from its siblings — the values its template's
+    /// address placeholders resolve to. Opaque named strings as far as core is concerned.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> TemplateParameters { get; init; } =
+        new Dictionary<string, string>();
 }
