@@ -149,6 +149,30 @@ and an alarm banner/summary screen in the web client.
 **Test gate:** a simulated out-of-range value produces a visible alarm that
 can be acknowledged.
 
+**Status: gate met (2026-09-10), complete and merged to `main` (PR #5).**
+Verified against a real simulated out-of-range value, through the API and
+in the browser: a threshold on Discharge Pressure (Skopje) produced an
+Active alarm, shown in the banner as `HIGH · Skopje/Pump House/Discharge
+Pressure · 3.90 bar (≥ 3)`; acknowledging it while still out of range moved
+it from the banner into the summary as Acknowledged; it retired to Cleared
+once the value recovered. 71 tests pass.
+
+Two behaviors verified live are load-bearing, not incidental: a Device
+going Bad (offline) does not clear its alarm — a Bad reading has no value
+to compare (ADR-0003), so a standing alarm is left untouched rather than
+being misread as "back to normal" at the exact moment an operator has the
+least information. And an unacknowledged alarm survives its own recovery
+(it becomes Cleared but stays visible) rather than disappearing — a
+self-resolved excursion that happened while nobody was watching is
+exactly the kind of thing that needs to remain visible after the fact.
+
+**Known gap, to close before Phase 6 (deployment):** alarm state
+(Active/Acknowledged/Cleared) lives in memory only and does not survive a
+Gateway restart. Out of Phase 3's own scope, but not something to leave
+unresolved once this is meant to run somewhere real — an alarm journal
+needs a decision (what persists, at what granularity, historian table or
+separate) before Phase 6's deployment packaging.
+
 **Implementation notes (no new ADR needed):**
 
 - Threshold shape for Phase 3 is a single high/low pair per tag, no
