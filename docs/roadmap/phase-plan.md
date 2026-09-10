@@ -149,6 +149,31 @@ and an alarm banner/summary screen in the web client.
 **Test gate:** a simulated out-of-range value produces a visible alarm that
 can be acknowledged.
 
+**Implementation notes (no new ADR needed):**
+
+- Threshold shape for Phase 3 is a single high/low pair per tag, no
+  hysteresis or deadband — the test gate only needs one simulated
+  out-of-range value to produce an alarm, and hysteresis can be added
+  later without breaking this shape. Same discipline as the Phase 2
+  chart (no library) and tree API (eager, not lazy): build only what the
+  gate needs.
+- Threshold config lives in a new `alarm_definition` table referencing
+  `tag`, through the same Dapper/DbUp path as the other config tables
+  (ADR-0008), not as columns on `tag` itself — a tag may later need more
+  than one alarm condition (HighHigh/High/Low/LowLow), and a separate
+  table extends without reshaping `tag`. If `alarm_definition` rows
+  become deletable, they follow ADR-0009's soft-delete-via-view pattern
+  like the other config entities.
+- Acknowledging an alarm in Phase 3 is anonymous — a state transition and
+  a timestamp, no actor identity — because Phase 5 (users/roles/auth)
+  hasn't started yet. How an ack ties to a specific user is Phase 5's
+  decision to make, not something to guess at now.
+- Notification channels (email/SMS/push) are explicitly out of scope.
+  Phase 3's own scope is limited to thresholds, state, and an in-app
+  banner/summary screen; `phase-0-architecture.md` already lists alarm
+  notification channels as an open question for later, not something
+  this phase's test gate requires.
+
 ## Phase 4 — Additional drivers and UDTs
 
 **Scope:** at least one more driver module (OPC UA and/or MQTT), and device
