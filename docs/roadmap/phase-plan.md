@@ -225,10 +225,11 @@ ADR-0010 integration tests — plus 6 new OPC UA driver tests).
 Three real defects surfaced by the work, not by inspection:
 `NodeId.Parse` throws `ArgumentException` for an address it can't parse,
 which the driver's catch didn't cover — one bad tag address stopped an
-entire device's scan, the same failure shape already fixed once in the
-Modbus driver (Phase 1), just a different exception type this time,
-underscoring exactly why a second protocol was worth adding now rather
-than hitting this a third time in a future driver. The first attempt to
+entire device's scan. The Modbus driver has guarded against exactly this
+since Phase 1's first commit; OPC UA's own guard had a gap of the same
+shape, just a different exception type, caught by a test before it
+shipped — underscoring exactly why a second protocol was worth adding
+now rather than hitting this same gap a third time in a future driver. The first attempt to
 demonstrate the UDT gate proved nothing — all three instances were given
 offset `0` and the simulator exposed only one register, so all three
 silently read the same address; this is the literal scenario ADR-0010's
