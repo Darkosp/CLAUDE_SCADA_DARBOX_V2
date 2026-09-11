@@ -273,12 +273,24 @@ below, which does not exist yet.
 
 ## Phase 5 — Users, roles and security
 
-**Scope:** token-based authentication, role-based permissions (needs its
-own ADR before this phase starts), and an audit trail. Not started until a
-permissions-model ADR exists.
+**Scope:** token-based authentication, role-based permissions, and an
+audit trail, per ADR-0011 (JWT identity only with server-resolved,
+cached authorization; Site-scoped Operator/Viewer; tenant-wide Admin;
+append-only `audit_log`). The permissions-model blocker is closed —
+ADR-0011 exists.
+
+Scope also explicitly includes building the tag-write endpoint itself:
+driver modules already implement `WriteAsync`, but nothing in the
+Gateway called it before this phase, so "a non-privileged user cannot
+write to a tag" had nothing to test against. And it includes moving both
+SignalR broadcasters (tags and alarms) from `Clients.All` to per-Site
+groups, plus filtering `GetCurrentValues`/`GetCurrentAlarms` — found
+during ADR-0011's own review to be the only places site-scoping could
+otherwise leak around, REST-only enforcement notwithstanding.
 
 **Test gate:** a non-privileged user cannot write to a tag or view a site
-outside their permitted scope.
+outside their permitted scope — checked over both REST and the live
+SignalR push, not REST alone (see ADR-0011's review criteria).
 
 ## Phase 6 — Deployment packaging for both topologies
 
