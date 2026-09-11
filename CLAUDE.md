@@ -37,13 +37,33 @@ exists to prevent, just in the chart layer), and a form field named
 
 ADR-0008 closed the "no ORM" question this phase raised: Dapper for the
 Tenant/Site/Device/Tag/Folder config tables, DbUp (ADR-0007) still owning
-schema, historian staying on plain Npgsql.
+schema, historian staying on plain Npgsql. The deletion-semantics
+question Phase 2 deliberately deferred was closed separately in the
+design conversation as ADR-0009 (soft delete via an active-row database
+view) before Phase 3 began.
 
-**Before Phase 3 (Alarms) starts:** deletion semantics for Folder/Device/
-Tag config are an open decision, deliberately deferred out of Phase 2's
-scope (see phase-plan.md's Phase 2 note) — what happens to a deleted
-Device's historian rows and to a Folder's contents needs to be resolved in
-the design conversation, not decided unilaterally inside a Phase 3 PR.
+**Phase 3 (Alarms) is complete and merged to `main`** (PR #5; see
+`phase-plan.md`'s Phase 3 status note) — a threshold on a live tag
+produces an Active alarm, acknowledging it while still out of range
+moves it to Acknowledged, and it either disappears (if acknowledged) or
+becomes Cleared and stays listed (if not) once the value recovers. A
+Device going Bad never clears its alarm — a Bad reading has no value to
+compare (ADR-0003). Alarm state is in-memory only and does not survive a
+Gateway restart; flagged to close before Phase 6 (deployment), not
+blocking Phase 4.
+
+**Phase 4 (additional drivers and UDTs) is complete and merged to
+`main`** (PR #6; see `phase-plan.md`'s Phase 4 status note) — OPC UA runs
+alongside Modbus in one Gateway (ADR-0002's module boundary holds for a
+second protocol), and three Devices are instantiated from one UDT
+through configuration alone (ADR-0010's live-reference semantics:
+editing a template propagates to every instance immediately). MQTT
+remains deferred until it gets its own push-capable driver contract and
+ADR.
+
+**Next up: Phase 5 (users, roles and security)** — per `phase-plan.md`,
+this needs its own permissions-model ADR before implementation starts;
+don't begin it unilaterally inside a PR.
 
 ## When Phase 1 (or any phase) begins
 

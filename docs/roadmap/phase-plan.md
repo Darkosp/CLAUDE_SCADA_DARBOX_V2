@@ -207,6 +207,49 @@ templates (UDTs) — a device type defined once, instantiated many times.
 **Test gate:** three devices are instantiated from one UDT through
 configuration alone, no code changes.
 
+**Status: gate met (2026-09-11), complete and merged to `main` (PR #6).**
+Verified two ways: three Devices instantiated from one template via the
+API, each at a distinct address with a distinct live value; and a fourth
+instantiated entirely through the browser, resolving
+`holding:10?scale=0.01` from its offset parameter and scanning at
+4.45 bar. OPC UA runs against a real in-process `StandardServer`, not a
+mock — 6 driver tests, the most important asserting that a value's
+source timestamp comes from the server, not the driver's clock (proven
+by giving the driver a clock fixed to the year 2000, so a substituted
+timestamp could never pass by coincidence). Both drivers — Modbus and
+OPC UA — scan side by side in one Gateway, every tag Good: ADR-0002's
+module boundary holds for two protocols at once, not just one. 90 tests
+pass in total (13 new for the UDT half — 7 address-resolution, 6
+ADR-0010 integration tests — plus 6 new OPC UA driver tests).
+
+Three real defects surfaced by the work, not by inspection:
+`NodeId.Parse` throws `ArgumentException` for an address it can't parse,
+which the driver's catch didn't cover — one bad tag address stopped an
+entire device's scan, the same failure shape already fixed once in the
+Modbus driver (Phase 1), just a different exception type this time,
+underscoring exactly why a second protocol was worth adding now rather
+than hitting this a third time in a future driver. The first attempt to
+demonstrate the UDT gate proved nothing — all three instances were given
+offset `0` and the simulator exposed only one register, so all three
+silently read the same address; this is the literal scenario ADR-0010's
+Consequences section warns about, caught before being mistaken for a
+passing gate. And the Device form had no way to configure an OPC UA
+device at all — host/port/unitId were hardcoded to Modbus's shape.
+
+Two smaller findings worth keeping: config-row records lost their
+default parameter values, because a defaulted parameter let a Dapper
+query that forgot a column bind successfully and fail somewhere else
+entirely, instead of at the point of the mistake — the same "make the
+wrong thing fail loudly, close to the mistake" reasoning as the
+composite FKs and `deleted_at IS NULL` checks elsewhere. And migration
+0007 had to recreate three views, not one — `alarm_definition_active` is
+built on `tag_active`, so changing `tag`'s shape cascades through a
+dependency chain that explicit per-column view definitions (ADR-0009's
+own choice, over `SELECT *`) make visible instead of hiding.
+
+MQTT remains deferred — it needs the push-capable driver contract noted
+below, which does not exist yet.
+
 **Implementation notes:**
 
 - OPC UA first, not MQTT — decided in the design conversation, not just
