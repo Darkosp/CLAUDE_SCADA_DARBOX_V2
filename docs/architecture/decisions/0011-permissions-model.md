@@ -38,9 +38,19 @@ external identity provider. ADR-0006 doesn't name an identity provider,
 and the primary on-premises topology (Docker Compose, no guaranteed
 internet access) makes a self-contained mechanism the right default;
 OIDC/enterprise SSO stays a future ADR if a customer deployment ever
-needs it. The token reaches the server as an ordinary
-`Authorization: Bearer` header, so the client cannot tell the difference
-between this and a JWT. Passwords are hashed with
+needs it.
+
+The token reaches the server as an `Authorization: Bearer` header on
+REST calls. It cannot on the SignalR hub: a browser cannot set headers
+on a WebSocket handshake, so the SignalR client sends the token as an
+`access_token` query parameter. That is accepted **only on the hub
+path**, and the Gateway must not log query strings for that path —
+a token in a URL is a token that ends up in proxy and server logs.
+This is also a second, unplanned argument for the opaque-token decision
+recorded below: a leaked URL-borne session token can be revoked the
+instant it is noticed, while a leaked JWT stays valid until it expires.
+
+Passwords are hashed with
 `Microsoft.AspNetCore.Identity`'s `PasswordHasher<TUser>`
 (PBKDF2-HMAC-SHA256) rather than a third-party algorithm such as
 Argon2id — a first-party .NET component with no dependency on the rest
@@ -62,6 +72,21 @@ equipment, how fast access actually stops matters more than saving one
 lookup per request. Because sessions are server-side rows, logging out
 genuinely ends a session and a single stolen token can be revoked
 without touching the user's other sessions.
+
+**Sessions expire, on two clocks.** Revocation is not expiry: without a
+lifetime, a stolen token stays valid until someone thinks to log out.
+Each `session` row carries both a creation time and a last-seen time,
+and is invalid once either an **idle timeout (default 12 hours)** or an
+**absolute lifetime (default 7 days)** has passed, whichever comes
+first. Idle time is measured against any authenticated use, and an open
+hub connection counts as use — an operator watching a screen through a
+shift must not be logged out mid-shift, because security that fights the
+job it protects gets switched off. Twelve hours covers a long shift plus
+handover; seven days forces re-authentication about weekly on a system
+that can write to equipment. Both values are configuration, not
+architecture: a deployment can tighten them without a new ADR. An
+expired session is rejected and its token can never be revived — a new
+login issues a new one.
 
 **Revised during pre-implementation review (2026-09-11).** This ADR
 originally specified a signed JWT. Checking the code before starting
@@ -116,15 +141,26 @@ rule; the list below is an inventory of what exists today, not the
 definition — an endpoint added later is covered by the rule the moment
 it exists, and is never exempt because it postdates this list.
 
-As of this ADR the paths needing filtering are: `/api/tags`,
-`/api/tags/{tagId}`, `/api/tags/{tagId}/alarms`, `/api/tags/{tagId}/history`,
-`/api/alarms`, `/api/devices/{deviceId}`, `/api/sites`,
-`/api/sites/{siteId}/tree`, both template GET endpoints, and the hub's
+As of this ADR the Site-scoped paths needing filtering are:
+`/api/tags`, `/api/tags/{tagId}`, `/api/tags/{tagId}/alarms`,
+`/api/tags/{tagId}/history`, `/api/alarms`, `/api/devices/{deviceId}`,
+`/api/sites`, `/api/sites/{siteId}/tree`, and the hub's
 `GetCurrentValues` and `GetCurrentAlarms`. The site tree is the one most
 easily overlooked and the most literal reading of the gate — it returns
 an entire Site's configuration, so an unfiltered `/api/sites/{siteId}/tree`
 *is* "viewing a site outside your permitted scope," whatever the other
 endpoints do.
+
+The template endpoints are **not** on that list, because Site-filtering
+is meaningless for them: templates belong to the Tenant, not to a Site
+(ADR-0010). They are gated by role instead — **Admin only**, for reading
+as well as editing, consistent with Viewer and Operator having no
+configuration rights at all. A device instantiated from a template is
+still visible to whoever can see its Site; the template definition
+behind it is not.
+
+`/api/health` is deliberately unauthenticated and returns no
+Site-scoped data.
 
 **SignalR is in scope, not just REST.** Tag and alarm broadcasts move
 from `Clients.All` to a SignalR group per Site; a connection joins only
@@ -174,6 +210,15 @@ a migration script, which is committed and reviewable by design and is
 therefore the wrong place for a credential. This means two connection
 strings, which Phase 6's deployment packaging has to carry.
 
+This role split is also why migrations no longer run inside the Gateway:
+if the serving process held the privileged credential in order to
+migrate at startup (ADR-0007), it would hold the key that bypasses this
+guarantee, and the guarantee would only cover application bugs rather
+than a compromised process. See
+[ADR-0012](0012-migrations-run-outside-the-gateway.md), which supersedes
+that one clause of ADR-0007 and adds a startup schema-version check so
+nothing is lost by the move.
+
 Acknowledging an alarm now writes a permanent `audit_log` entry naming
 the acknowledging user, closing the "who acknowledged" gap Phase 3
 deliberately left open — but only that gap: alarm *state* itself remains
@@ -212,10 +257,11 @@ audit table that a superuser can rewrite is not an audit table.
   that Site from *any* listed path — `/api/tags`, `/api/tags/{tagId}`,
   `/api/tags/{tagId}/alarms`, `/api/tags/{tagId}/history`,
   `/api/alarms`, `/api/devices/{deviceId}`, `/api/sites`,
-  `/api/sites/{siteId}/tree`, both template GET endpoints,
-  `GetCurrentValues`, `GetCurrentAlarms` — with `/api/sites/{siteId}/tree`
-  covered explicitly, since an unfiltered site tree alone defeats the
-  gate.
+  `/api/sites/{siteId}/tree`, `GetCurrentValues`, `GetCurrentAlarms` —
+  with `/api/sites/{siteId}/tree` covered explicitly, since an
+  unfiltered site tree alone defeats the gate.
+- A Viewer or Operator token is refused by both template GET endpoints,
+  which are Admin-only rather than Site-filtered.
 - Revocation reaches a live connection: with a SignalR connection
   already open and receiving a Site's values, removing that user's
   `user_site_role` row stops the values arriving **on that same
@@ -224,6 +270,12 @@ audit table that a superuser can rewrite is not an audit table.
 - Deactivating a user blocks their next REST request without waiting for
   their existing token to expire, and logging out ends that session
   server-side while the user's other sessions keep working.
+- A session past its idle timeout is rejected, and so is one past its
+  absolute lifetime even if it has been in continuous use; neither
+  token works again afterwards.
+- A token presented as an `access_token` query parameter is accepted on
+  the hub path and rejected everywhere else, and does not appear in the
+  Gateway's request logs.
 - The write endpoint calls the correct driver's `WriteAsync` and is
   rejected for a caller without Operator or Admin on that tag's Site.
 - No password is ever stored or logged in a reversible form, and no

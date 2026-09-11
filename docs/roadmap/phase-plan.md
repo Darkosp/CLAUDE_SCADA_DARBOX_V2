@@ -299,16 +299,36 @@ merely gates:
   privileged one; its password comes from an environment variable, never
   a migration script. This means two connection strings, which **Phase 6
   packaging must carry**.
+- **Migrations move out of the Gateway** (ADR-0012, superseding that one
+  clause of ADR-0007) — otherwise the serving process would still hold
+  the privileged credential that bypasses the guarantee above. A
+  migrator CLI/container applies them; the Gateway instead reads DbUp's
+  journal at startup and refuses to start if the schema is behind the
+  version its build expects.
+
+Sessions also expire on two clocks (ADR-0011): an idle timeout (default
+12 hours, with an open hub connection counting as use so an operator is
+never logged out mid-shift) and an absolute lifetime (default 7 days).
+Revocation alone is not expiry.
 
 **Test gate:** a non-privileged user cannot write to a tag or view a site
 outside their permitted scope — checked over both REST and the live
-SignalR push, not REST alone (see ADR-0011's review criteria).
+SignalR push, not REST alone, and with the `audit_log` append-only check
+executed over the application's own connection rather than a superuser
+one (see ADR-0011's review criteria).
 
 ## Phase 6 — Deployment packaging for both topologies
 
 **Scope:** Docker Compose packaging for the on-premises topology, and the
 edge-agent-plus-cloud-Gateway split with MQTT store-and-forward for the
 cloud topology (Phase 0 Architecture, "Deployment topologies").
+
+Carried in from Phase 5: both topologies run the migrator to completion
+before the Gateway container starts, and the privileged connection
+string exists only in the migrator's environment — the Gateway gets the
+non-privileged one (ADR-0011, ADR-0012). Also still open from Phase 3:
+alarm state is in-memory and does not survive a Gateway restart, which
+needs an alarm-journal decision before this phase ships.
 
 **Test gate:** the full stack runs in Docker Compose, locally, in both
 configurations.

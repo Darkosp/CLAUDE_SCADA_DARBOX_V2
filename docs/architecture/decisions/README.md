@@ -4,6 +4,17 @@ Binding decisions for SCADA_DARBOX. Every pull request is reviewed against them.
 An ADR is superseded, never edited into a different decision — to change one,
 add a new ADR that supersedes it and state why the original no longer holds.
 
+The one exception: an Accepted ADR may be revised in place **while nothing has
+been implemented against it yet**, provided the revision and its reason are
+recorded inside that ADR rather than silently replacing the old text. Once code
+depends on a decision, it is superseded, never revised. Both shapes exist here
+and are worth contrasting: ADR-0011's token mechanism was revised in place
+(decided and rewritten the same day, no code had been written against it), while
+ADR-0007's migration-execution clause was superseded by ADR-0012 (it had shipped
+in Phase 1 and everything since ran on it). A superseding ADR may also supersede
+a single clause rather than a whole decision, as ADR-0012 does — say so in its
+header, and mark the clause in the original.
+
 | ADR | Decision |
 |---|---|
 | [0001](0001-tag-identity-and-hierarchy.md) | Tags have a stable ID; the hierarchical path is a mutable display label |
@@ -17,6 +28,7 @@ add a new ADR that supersedes it and state why the original no longer holds.
 | [0009](0009-soft-delete-via-active-view.md) | Soft delete for Folder/Device/Tag via a database view, not app-level filtering |
 | [0010](0010-udt-live-reference-semantics.md) | UDTs are a live-reference type with materialized per-instance tags; template edits propagate immediately |
 | [0011](0011-permissions-model.md) | Opaque session token, roles/Site-scope resolved server-side per request; Site-scoped Operator/Viewer, tenant-wide Admin |
+| [0012](0012-migrations-run-outside-the-gateway.md) | Migrations run as a separate privileged step; the Gateway checks the schema version and refuses to start if behind (supersedes ADR-0007's execution clause) |
 
 ## Template
 

@@ -1,6 +1,10 @@
 # ADR-0007 — Schema migrations via DbUp
 
-**Status:** Accepted
+**Status:** Accepted — except the migration-execution clause
+("migrations run automatically as a startup step in the Gateway host"),
+which is superseded by
+[ADR-0012](0012-migrations-run-outside-the-gateway.md) now that ADR-0011
+splits the database roles. Everything else here stands unchanged.
 **Date:** 2026-09-09
 
 ## Context
