@@ -1,7 +1,8 @@
-# ADR-0011 — Permissions model: JWT identity, Site-scoped roles, server-resolved authorization
+# ADR-0011 — Permissions model: opaque session token, Site-scoped roles, server-resolved authorization
 
 **Status:** Accepted
-**Date:** 2026-09-11
+**Date:** 2026-09-11 (token mechanism revised 2026-09-11, before any
+implementation existed — see "Revised during pre-implementation review")
 
 ## Context
 
@@ -30,12 +31,16 @@ feature this ADR merely gates.
 
 ## Decision
 
-**Authentication.** The Gateway issues its own signed token (JWT) after
-a username/password login — no external identity provider. ADR-0006
-doesn't name one, and the primary on-premises topology (Docker Compose,
-no guaranteed internet access) makes a self-contained mechanism the
-right default; OIDC/enterprise SSO stays a future ADR if a customer
-deployment ever needs it. Passwords are hashed with
+**Authentication.** The Gateway issues its own **opaque session token**
+after a username/password login — a 128-bit cryptographically random
+value, stored hashed in a `session` table, never a JWT and never an
+external identity provider. ADR-0006 doesn't name an identity provider,
+and the primary on-premises topology (Docker Compose, no guaranteed
+internet access) makes a self-contained mechanism the right default;
+OIDC/enterprise SSO stays a future ADR if a customer deployment ever
+needs it. The token reaches the server as an ordinary
+`Authorization: Bearer` header, so the client cannot tell the difference
+between this and a JWT. Passwords are hashed with
 `Microsoft.AspNetCore.Identity`'s `PasswordHasher<TUser>`
 (PBKDF2-HMAC-SHA256) rather than a third-party algorithm such as
 Argon2id — a first-party .NET component with no dependency on the rest
@@ -44,22 +49,56 @@ external package under ADR-0006, and PBKDF2 through a maintained,
 standard implementation is adequate here. Passwords are never stored or
 logged in reversible form.
 
-**Token scope and revocation.** The token carries identity only
-(`UserId`) — never baked-in roles or Site assignments. Every request
-resolves current roles and Site scope from the database, cached and
-invalidated the same way `TagCatalog` already reloads on a config change
-(Phase 2). Deactivating a user (soft-delete, ADR-0009) or changing their
-role takes effect on their very next request, not whenever a long-lived
-token happens to expire — for a system that can write to real equipment,
-how fast access actually stops matters more than saving one lookup per
-request.
+**Token scope and revocation.** The token resolves to identity only
+(`UserId`) — it carries no roles or Site assignments of its own. Every
+request resolves current roles and Site scope from the database, cached
+and invalidated the same way `TagCatalog` already reloads on a config
+change (Phase 2); the session lookup rides the same cache, so validating
+a token costs nothing beyond the permission resolution that has to
+happen anyway. Deactivating a user (soft-delete, ADR-0009) or changing
+their role takes effect on their very next request, not whenever a
+long-lived token happens to expire — for a system that can write to real
+equipment, how fast access actually stops matters more than saving one
+lookup per request. Because sessions are server-side rows, logging out
+genuinely ends a session and a single stolen token can be revoked
+without touching the user's other sessions.
 
-**Roles.** Three fixed roles: Admin, Operator, Viewer. Viewer reads
-within permitted Sites only; Operator additionally writes tags and
-acknowledges alarms within permitted Sites; Admin is unrestricted,
-including UDT template management. No custom/configurable roles in
-Phase 5 — nothing here forecloses adding them later if a real need
-arises.
+**Revised during pre-implementation review (2026-09-11).** This ADR
+originally specified a signed JWT. Checking the code before starting
+implementation surfaced that `Microsoft.AspNetCore.Authentication.JwtBearer`
+is a separate NuGet package (pulling the `Microsoft.IdentityModel.*`
+chain), which ADR-0006 would require this ADR to name. Re-reading the
+decision above made the better answer obvious: a token that carries no
+claims and is resolved server-side on every request gets nothing from
+being a JWT — the one thing a JWT buys, stateless claim verification,
+is exactly what this model already discards — while costing a
+dependency and making logout a client-side fiction without a denylist.
+The mechanism was therefore changed to an opaque session token before
+any code was written against the original. This is recorded here rather
+than in a superseding ADR because no implementation ever relied on the
+earlier text and the permissions model is otherwise unchanged; splitting
+one coherent model across two documents would cost a future reader more
+than it records.
+
+**Roles.** Three fixed roles, with every capability assigned explicitly
+so nothing is left to a reader's inference:
+
+- **Viewer** — reads tags, alarms and history within permitted Sites.
+  Nothing else.
+- **Operator** — everything Viewer can do, plus operational actions
+  within permitted Sites: writing a tag value, acknowledging an alarm,
+  and shelving an alarm. Shelving sits with acknowledging because both
+  are operational responses to a live alarm, not changes to how the
+  system is configured.
+- **Admin** — unrestricted, and the *only* role that may change
+  configuration: Folders, Devices, Tags, UDT templates, alarm
+  thresholds, and user/role assignment itself. An Operator cannot add a
+  device or move an alarm setpoint; changing what the system watches, or
+  at what level it alarms, is an engineering action, not an operating
+  one.
+
+No custom or configurable roles in Phase 5 — nothing here forecloses
+adding them later if a real need arises.
 
 **Scope granularity.** Operator and Viewer are scoped per Site via a
 `user_site_role` table (`UserId`, `SiteId`, `Role`) — a user can hold
@@ -71,13 +110,31 @@ tenant-wide Admin already covers "manages this whole installation,"
 which is what Admin is for. Admin is a flag on the user, not a row in
 `user_site_role`.
 
+**The rule, stated generically.** *Every* path that returns or mutates
+Site-scoped data filters by the caller's permitted Sites. That is the
+rule; the list below is an inventory of what exists today, not the
+definition — an endpoint added later is covered by the rule the moment
+it exists, and is never exempt because it postdates this list.
+
+As of this ADR the paths needing filtering are: `/api/tags`,
+`/api/tags/{tagId}`, `/api/tags/{tagId}/alarms`, `/api/tags/{tagId}/history`,
+`/api/alarms`, `/api/devices/{deviceId}`, `/api/sites`,
+`/api/sites/{siteId}/tree`, both template GET endpoints, and the hub's
+`GetCurrentValues` and `GetCurrentAlarms`. The site tree is the one most
+easily overlooked and the most literal reading of the gate — it returns
+an entire Site's configuration, so an unfiltered `/api/sites/{siteId}/tree`
+*is* "viewing a site outside your permitted scope," whatever the other
+endpoints do.
+
 **SignalR is in scope, not just REST.** Tag and alarm broadcasts move
-from `Clients.All` to a SignalR group per Site; a connection only joins
-the groups for Sites its user is currently permitted to see, resolved
-and re-checked the same way as any other request.
-`GetCurrentValues`/`GetCurrentAlarms` and the `/api/tags`, `/api/alarms`,
-and `/history` endpoints all filter by the caller's permitted Sites —
-there is no path, push or pull, that bypasses this.
+from `Clients.All` to a SignalR group per Site; a connection joins only
+the groups for Sites its user is currently permitted to see. Permission
+changes must drive group membership on **already-open connections**, not
+just future ones: the same cache invalidation that makes a revocation
+take effect on the next request also removes the affected connections
+from that Site's group (or drops them). A live connection that keeps
+receiving a Site's values after the permission is revoked is the same
+defect as an unfiltered endpoint, arriving through a different door.
 
 **The write path.** A new endpoint accepts a tag write, checks the
 caller holds Operator or Admin on that tag's Site, and calls the owning
@@ -101,6 +158,22 @@ existing ones. The table is append-only at the database level (the
 application's database role has no `UPDATE`/`DELETE` grant on it) — the
 same "make the wrong thing impossible, not just discouraged" reasoning
 as the composite FKs and `deleted_at IS NULL` checks elsewhere.
+
+**That requires splitting the database roles, which this deployment does
+not currently do.** Today the application and DbUp both connect as
+`scada`, which is a Postgres superuser — and a superuser bypasses every
+grant, so an append-only guarantee expressed as "no `UPDATE`/`DELETE`
+grant" would be worth exactly nothing while the app connects that way.
+A review criterion tested under a superuser connection would pass while
+proving nothing, the same shape of false pass as three earlier findings
+in this project. So: migrations keep a privileged role, and the
+application connects as a **separate non-superuser role** whose grants
+on `audit_log` are `INSERT` and `SELECT` only. That role's password
+comes from an environment variable, like the first Admin's — never from
+a migration script, which is committed and reviewable by design and is
+therefore the wrong place for a credential. This means two connection
+strings, which Phase 6's deployment packaging has to carry.
+
 Acknowledging an alarm now writes a permanent `audit_log` entry naming
 the acknowledging user, closing the "who acknowledged" gap Phase 3
 deliberately left open — but only that gap: alarm *state* itself remains
@@ -121,25 +194,43 @@ finer-grained or custom roles. Tenant-wide Admin means there is
 currently no way to grant "Admin over just one Site" — if that need
 arises, it is a new decision, not an extension of this one. SignalR
 group membership adds a small amount of connection-management
-complexity (joining/leaving groups as a user's Site permissions change)
-that a naive `Clients.All` broadcast never had to think about.
+complexity (joining/leaving groups as a user's Site permissions change,
+including on connections that are already open) that a naive
+`Clients.All` broadcast never had to think about. Splitting the database
+roles means every environment — a developer's machine included — now
+needs two connection strings and a provisioning step that creates the
+application role; that is real friction, accepted because an append-only
+audit table that a superuser can rewrite is not an audit table.
 
 ## Verified in review by
 
-- A Viewer-role token cannot write to a tag (rejected) and cannot
-  acknowledge an alarm.
+- A Viewer-role token cannot write to a tag, acknowledge an alarm, or
+  shelve one; an Operator can do all three within a permitted Site but
+  cannot create, edit or delete a Folder, Device, Tag, UDT template or
+  alarm threshold.
 - A user with no `user_site_role` row for a Site receives no data for
-  that Site from `/api/tags`, `/api/alarms`, `/history`,
-  `GetCurrentValues`, `GetCurrentAlarms`, or the SignalR push stream —
-  checked with an actual open SignalR connection receiving nothing for a
-  Site the connected user is not permitted to see, not just a REST call.
-- Deactivating a user (or removing their `user_site_role` row) blocks
-  their next request without waiting for their existing token to expire.
+  that Site from *any* listed path — `/api/tags`, `/api/tags/{tagId}`,
+  `/api/tags/{tagId}/alarms`, `/api/tags/{tagId}/history`,
+  `/api/alarms`, `/api/devices/{deviceId}`, `/api/sites`,
+  `/api/sites/{siteId}/tree`, both template GET endpoints,
+  `GetCurrentValues`, `GetCurrentAlarms` — with `/api/sites/{siteId}/tree`
+  covered explicitly, since an unfiltered site tree alone defeats the
+  gate.
+- Revocation reaches a live connection: with a SignalR connection
+  already open and receiving a Site's values, removing that user's
+  `user_site_role` row stops the values arriving **on that same
+  connection**, without waiting for a reconnect, a new request, or token
+  expiry.
+- Deactivating a user blocks their next REST request without waiting for
+  their existing token to expire, and logging out ends that session
+  server-side while the user's other sessions keep working.
 - The write endpoint calls the correct driver's `WriteAsync` and is
   rejected for a caller without Operator or Admin on that tag's Site.
-- No password is ever stored or logged in a reversible form.
-- `audit_log` rejects an `UPDATE` or `DELETE` from the application's own
-  database role.
+- No password is ever stored or logged in a reversible form, and no
+  session token is stored in the `session` table in recoverable form.
+- `audit_log` rejects an `UPDATE` and a `DELETE` **executed over the
+  application's own connection** — a test that runs this as a superuser
+  proves nothing and does not satisfy this criterion.
 - An alarm acknowledgment produces exactly one `audit_log` entry naming
   the acknowledging user.
 - Starting the Gateway against an empty `app_user` table creates no

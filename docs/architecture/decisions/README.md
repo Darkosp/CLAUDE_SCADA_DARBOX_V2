@@ -16,7 +16,7 @@ add a new ADR that supersedes it and state why the original no longer holds.
 | [0008](0008-dapper-for-config-tables.md) | Dapper for configuration-table (Tenant/Site/Device/Tag) data access, schema still owned by DbUp |
 | [0009](0009-soft-delete-via-active-view.md) | Soft delete for Folder/Device/Tag via a database view, not app-level filtering |
 | [0010](0010-udt-live-reference-semantics.md) | UDTs are a live-reference type with materialized per-instance tags; template edits propagate immediately |
-| [0011](0011-permissions-model.md) | JWT identity only, roles/Site-scope resolved server-side per request; Site-scoped Operator/Viewer, tenant-wide Admin |
+| [0011](0011-permissions-model.md) | Opaque session token, roles/Site-scope resolved server-side per request; Site-scoped Operator/Viewer, tenant-wide Admin |
 
 ## Template
 

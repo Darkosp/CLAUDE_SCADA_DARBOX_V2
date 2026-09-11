@@ -274,19 +274,31 @@ below, which does not exist yet.
 ## Phase 5 — Users, roles and security
 
 **Scope:** token-based authentication, role-based permissions, and an
-audit trail, per ADR-0011 (JWT identity only with server-resolved,
-cached authorization; Site-scoped Operator/Viewer; tenant-wide Admin;
-append-only `audit_log`). The permissions-model blocker is closed —
-ADR-0011 exists.
+audit trail, per ADR-0011 (opaque server-side session token with
+server-resolved, cached authorization; Site-scoped Operator/Viewer;
+tenant-wide Admin; append-only `audit_log`). The permissions-model
+blocker is closed — ADR-0011 exists.
 
-Scope also explicitly includes building the tag-write endpoint itself:
-driver modules already implement `WriteAsync`, but nothing in the
-Gateway called it before this phase, so "a non-privileged user cannot
-write to a tag" had nothing to test against. And it includes moving both
-SignalR broadcasters (tags and alarms) from `Clients.All` to per-Site
-groups, plus filtering `GetCurrentValues`/`GetCurrentAlarms` — found
-during ADR-0011's own review to be the only places site-scoping could
-otherwise leak around, REST-only enforcement notwithstanding.
+Three things found by checking the code during ADR-0011's own review add
+to this phase's scope, rather than being pre-existing features the ADR
+merely gates:
+
+- **The tag-write path does not exist.** Driver modules implement
+  `WriteAsync`, but nothing in the Gateway ever called it, so "a
+  non-privileged user cannot write to a tag" had nothing to test
+  against. Building that endpoint is part of this phase.
+- **Both SignalR broadcasters push to `Clients.All`.** They move to
+  per-Site groups, with `GetCurrentValues`/`GetCurrentAlarms` filtered
+  too — and permission changes must reach connections that are already
+  open, not only future ones. REST-only enforcement would let the gate
+  pass on paper while every value still reached every browser.
+- **The application connects to Postgres as a superuser**, which
+  bypasses every grant and would make an append-only `audit_log`
+  unenforceable. The app moves to a separate non-superuser role
+  (`INSERT`/`SELECT` on `audit_log` only) while migrations keep the
+  privileged one; its password comes from an environment variable, never
+  a migration script. This means two connection strings, which **Phase 6
+  packaging must carry**.
 
 **Test gate:** a non-privileged user cannot write to a tag or view a site
 outside their permitted scope — checked over both REST and the live
