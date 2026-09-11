@@ -65,7 +65,8 @@ public sealed class PostgresConfigurationStore : IConfigurationStore
             new CommandDefinition(
                 """
                 SELECT id, site_id, folder_id, name, driver_key,
-                       connection_settings::text AS connection_settings, scan_interval_ms
+                       connection_settings::text AS connection_settings, scan_interval_ms,
+                       template_id
                 FROM device_active
                 ORDER BY name
                 """,
@@ -83,7 +84,8 @@ public sealed class PostgresConfigurationStore : IConfigurationStore
             new CommandDefinition(
                 """
                 SELECT id, device_id, name, value_kind, unit_symbol, unit_dimension,
-                       unit_factor_to_si, unit_offset_to_si, source_address, is_writable
+                       unit_factor_to_si, unit_offset_to_si, source_address, is_writable,
+                       template_tag_id
                 FROM tag_active
                 ORDER BY name
                 """,

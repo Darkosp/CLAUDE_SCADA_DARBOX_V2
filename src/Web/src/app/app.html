@@ -10,6 +10,13 @@
     </select>
   </label>
 
+  <nav class="views">
+    <button type="button" class="ghost" [class.current]="view() === 'browse'"
+            (click)="view.set('browse')">Browse</button>
+    <button type="button" class="ghost" [class.current]="view() === 'templates'"
+            (click)="showTemplates()">Templates</button>
+  </nav>
+
   <span class="state" [class]="connection()">{{ connection() }}</span>
 </header>
 
@@ -52,6 +59,142 @@
   </div>
 }
 
+@if (view() === 'templates') {
+  <main>
+    <aside>
+      <div class="pane-head"><h2>Templates</h2></div>
+
+      <form class="inline" (ngSubmit)="createTemplate()">
+        <input name="templateName" placeholder="New template"
+               [ngModel]="newTemplateName()" (ngModelChange)="newTemplateName.set($event)" />
+        <button type="submit" [disabled]="newTemplateName().trim().length === 0">Add</button>
+      </form>
+
+      @for (template of templates(); track template.id) {
+        <button type="button" class="template"
+                [class.selected]="template.id === selectedTemplate()?.id"
+                (click)="selectTemplate(template)">{{ template.name }}</button>
+      } @empty {
+        <p class="muted">No templates yet.</p>
+      }
+    </aside>
+
+    <section>
+      @if (selectedTemplate(); as template) {
+        <div class="pane-head">
+          <h2>{{ template.name }}</h2>
+          <div class="actions">
+            <button type="button" class="ghost" (click)="startNewTemplateTag()">Add tag</button>
+            <button type="button" (click)="startInstantiate()">Create device</button>
+          </div>
+        </div>
+
+        @if (propagationNote(); as note) {
+          <p class="note">{{ note }}</p>
+        }
+
+        <p class="muted">Editing this template changes every device made from it, immediately.</p>
+
+        <table class="summary">
+          <thead>
+            <tr><th>Tag</th><th>Kind</th><th>Address template</th><th>Needs</th><th></th></tr>
+          </thead>
+          <tbody>
+            @for (tag of templateTags(); track tag.id) {
+              <tr>
+                <td>{{ tag.name }}</td>
+                <td>{{ tag.valueKind }}{{ tag.unit ? ' · ' + tag.unit.symbol : '' }}</td>
+                <td><code>{{ tag.addressTemplate }}</code></td>
+                <td>{{ tag.parameterNames.join(', ') || '—' }}</td>
+                <td>
+                  <button type="button" class="ghost danger"
+                          (click)="removeTemplateTag(tag)">Remove</button>
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="5" class="muted">No tags on this template yet.</td></tr>
+            }
+          </tbody>
+        </table>
+
+        @if (templateTagDraft(); as draft) {
+          <form class="form" (ngSubmit)="saveTemplateTag()">
+            <label>Name<input name="ttName" required [(ngModel)]="draft.name" /></label>
+            <label>Kind
+              <select name="ttKind" [(ngModel)]="draft.valueKind">
+                <option value="Numeric">Numeric</option>
+                <option value="Boolean">Boolean</option>
+              </select>
+            </label>
+            @if (draft.valueKind === 'Numeric') {
+              <label>Unit
+                <select name="ttUnit" [(ngModel)]="draft.unitSymbol">
+                  @for (unit of unitPresets; track unit.symbol) {
+                    <option [value]="unit.symbol">{{ unit.symbol }} · {{ unit.dimension }}</option>
+                  }
+                </select>
+              </label>
+            }
+            <label>Address template — braces mark per-device values
+              <input name="ttAddress" required [(ngModel)]="draft.addressTemplate" />
+            </label>
+            <div class="actions">
+              <button type="submit" [disabled]="draft.name.trim().length === 0">Save</button>
+              <button type="button" class="ghost" (click)="templateTagDraft.set(null)">Cancel</button>
+            </div>
+          </form>
+        }
+
+        @if (instantiateDraft(); as draft) {
+          <h3 class="summary-head">New device from this template</h3>
+          <form class="form" (ngSubmit)="saveInstance()">
+            <label>Name<input name="inName" required [(ngModel)]="draft.name" /></label>
+            <label>Driver<input name="inDriver" required [(ngModel)]="draft.driverKey" /></label>
+
+            <fieldset class="settings">
+              <legend>Connection settings</legend>
+              @for (entry of draft.settings; track $index) {
+                <div class="setting">
+                  <input [name]="'ik' + $index" placeholder="name" [(ngModel)]="entry.key" />
+                  <input [name]="'iv' + $index" placeholder="value" [(ngModel)]="entry.value" />
+                  <button type="button" class="remove"
+                          (click)="removeSetting(draft.settings, $index)">×</button>
+                </div>
+              }
+              <button type="button" class="ghost" (click)="addSetting(draft.settings)">Add setting</button>
+            </fieldset>
+
+            <fieldset class="settings">
+              <legend>Template parameters</legend>
+              @for (entry of draft.parameters; track $index) {
+                <label>{{ entry.key }}
+                  <input [name]="'pv' + $index" required [(ngModel)]="entry.value" />
+                </label>
+              } @empty {
+                <p class="muted">This template needs no parameters.</p>
+              }
+            </fieldset>
+
+            <label>Folder
+              <select name="inFolder" [(ngModel)]="draft.folderId">
+                @for (choice of folderChoices(); track choice.id) {
+                  <option [ngValue]="choice.id">{{ '— '.repeat(choice.depth) }}{{ choice.label }}</option>
+                }
+              </select>
+            </label>
+
+            <div class="actions">
+              <button type="submit" [disabled]="draft.name.trim().length === 0">Create</button>
+              <button type="button" class="ghost" (click)="instantiateDraft.set(null)">Cancel</button>
+            </div>
+          </form>
+        }
+      } @else {
+        <p class="muted">Select a template, or add one.</p>
+      }
+    </section>
+  </main>
+} @else {
 <main>
   <aside>
     <div class="pane-head">
@@ -86,9 +229,23 @@
       <form class="form" (ngSubmit)="saveDevice()">
         <label>Name<input name="name" required [(ngModel)]="draft.name" /></label>
         <label>Driver<input name="driverKey" required [(ngModel)]="draft.driverKey" /></label>
-        <label>Host<input name="host" [(ngModel)]="draft.host" /></label>
-        <label>Port<input name="port" [(ngModel)]="draft.port" /></label>
-        <label>Unit ID<input name="unitId" [(ngModel)]="draft.unitId" /></label>
+        <!--
+          Named settings rather than fixed fields: Modbus wants host/port/unitId and
+          OPC UA wants endpointUrl. Hard-coding one driver's fields made the other
+          impossible to configure at all.
+        -->
+        <fieldset class="settings">
+          <legend>Connection settings</legend>
+          @for (entry of draft.settings; track $index) {
+            <div class="setting">
+              <input [name]="'sk' + $index" placeholder="name" [(ngModel)]="entry.key" />
+              <input [name]="'sv' + $index" placeholder="value" [(ngModel)]="entry.value" />
+              <button type="button" class="remove"
+                      (click)="removeSetting(draft.settings, $index)">×</button>
+            </div>
+          }
+          <button type="button" class="ghost" (click)="addSetting(draft.settings)">Add setting</button>
+        </fieldset>
         <label>Scan interval (ms)
           <input name="scan" type="number" min="100" [(ngModel)]="draft.scanIntervalMs" />
         </label>
@@ -244,3 +401,4 @@
     }
   </section>
 </main>
+}

@@ -40,7 +40,8 @@ internal static class ConfigurationRows
         string Name,
         string DriverKey,
         string ConnectionSettings,
-        int ScanIntervalMs)
+        int ScanIntervalMs,
+        Guid? TemplateId)
     {
         internal Device ToDomain() => new()
         {
@@ -51,6 +52,47 @@ internal static class ConfigurationRows
             DriverKey = DriverKey,
             ConnectionSettings = ConnectionSettingsJson.Deserialize(ConnectionSettings),
             ScanInterval = TimeSpan.FromMilliseconds(ScanIntervalMs),
+            TemplateId = TemplateId,
+        };
+    }
+
+    internal sealed record DeviceTemplateRow(Guid Id, Guid TenantId, string Name)
+    {
+        internal DeviceTemplate ToDomain() => new()
+        {
+            Id = Id,
+            TenantId = TenantId,
+            Name = Name,
+        };
+    }
+
+    internal sealed record DeviceTemplateTagRow(
+        Guid Id,
+        Guid TemplateId,
+        string Name,
+        short ValueKind,
+        string? UnitSymbol,
+        short? UnitDimension,
+        double? UnitFactorToSi,
+        double? UnitOffsetToSi,
+        string AddressTemplate,
+        bool IsWritable)
+    {
+        internal DeviceTemplateTag ToDomain() => new()
+        {
+            Id = Id,
+            TemplateId = TemplateId,
+            Name = Name,
+            ValueKind = (TagValueKind)ValueKind,
+            Unit = UnitDimension is null || UnitFactorToSi is null
+                ? null
+                : new UnitOfMeasure(
+                    UnitSymbol ?? string.Empty,
+                    (Dimension)UnitDimension.Value,
+                    UnitFactorToSi.Value,
+                    UnitOffsetToSi ?? 0.0),
+            AddressTemplate = AddressTemplate,
+            IsWritable = IsWritable,
         };
     }
 
@@ -75,7 +117,8 @@ internal static class ConfigurationRows
         double? UnitFactorToSi,
         double? UnitOffsetToSi,
         string SourceAddress,
-        bool IsWritable)
+        bool IsWritable,
+        Guid? TemplateTagId)
     {
         internal Tag ToDomain() => new()
         {
@@ -94,6 +137,7 @@ internal static class ConfigurationRows
                     UnitOffsetToSi ?? 0.0),
             SourceAddress = SourceAddress,
             IsWritable = IsWritable,
+            TemplateTagId = TemplateTagId,
         };
     }
 }

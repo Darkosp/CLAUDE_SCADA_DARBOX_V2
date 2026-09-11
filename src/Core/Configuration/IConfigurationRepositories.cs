@@ -1,4 +1,5 @@
 using ScadaDarbox.Core.Model;
+using ScadaDarbox.Core.Templates;
 
 namespace ScadaDarbox.Core.Configuration;
 
@@ -57,6 +58,46 @@ public interface IDeviceRepository
     /// could usefully do with the tags first, and no choice worth forcing them to make.
     /// </remarks>
     Task DeleteAsync(Guid deviceId, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Device templates and the instances made from them (ADR-0010).
+/// </summary>
+/// <remarks>
+/// Every operation that touches more than one row does so in a single transaction. A
+/// template edit changes every instance, so a half-applied one would leave some devices
+/// carrying the new shape and others the old, with nothing to say which — the kind of
+/// quiet inconsistency the schema-level rules elsewhere exist to prevent.
+/// </remarks>
+public interface IDeviceTemplateRepository
+{
+    Task<IReadOnlyList<DeviceTemplate>> GetAllAsync(CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<DeviceTemplateTag>> GetTagsAsync(Guid templateId, CancellationToken cancellationToken);
+
+    Task AddAsync(DeviceTemplate template, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Creates a device from a template, materialising one real tag per template tag with
+    /// its address resolved from this device's parameters (ADR-0001, ADR-0010).
+    /// </summary>
+    /// <exception cref="TemplateParameterMissingException">
+    /// A template address names a parameter this device did not supply.
+    /// </exception>
+    Task InstantiateAsync(Device device, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Adds a tag to a template and materialises it on every existing instance.
+    /// </summary>
+    /// <returns>How many instances gained a tag.</returns>
+    Task<int> AddTagAsync(DeviceTemplateTag templateTag, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes a tag from a template and soft-deletes the materialised tag on every
+    /// instance (ADR-0009). Historian rows are untouched.
+    /// </summary>
+    /// <returns>How many instances lost a tag.</returns>
+    Task<int> RemoveTagAsync(Guid templateTagId, CancellationToken cancellationToken);
 }
 
 /// <summary>Reads and writes the alarm conditions watching a tag.</summary>

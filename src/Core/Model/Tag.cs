@@ -34,4 +34,14 @@ public sealed class Tag
 
     /// <summary>Whether an operator may write this tag back to the device.</summary>
     public bool IsWritable { get; init; }
+
+    /// <summary>
+    /// The template tag this one was materialised from, or null for a tag created
+    /// directly on its device (ADR-0010).
+    /// </summary>
+    /// <remarks>
+    /// This is what lets a later template edit find the rows it has to change. The tag
+    /// itself is ordinary in every other respect — its own stable ID, its own history.
+    /// </remarks>
+    public Guid? TemplateTagId { get; init; }
 }

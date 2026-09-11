@@ -7,12 +7,17 @@ import { TrendChart } from './trend-chart';
 import {
   Alarm,
   AlarmDefinition,
+  DeviceTemplate,
   FolderOption,
   HistorySample,
+  SettingEntry,
   Site,
   SiteTree,
+  TemplateTag,
   TreeDevice,
   folderOptions,
+  mapToSettings,
+  settingsToMap,
 } from './models';
 import { TagStream } from './tag-stream';
 import { formatValue, TagSnapshot } from './tag';
@@ -23,11 +28,31 @@ interface DeviceDraft {
   id: string | null;
   name: string;
   driverKey: string;
-  host: string;
-  port: string;
-  unitId: string;
+  /**
+   * Named settings rather than fixed fields. Modbus wants host/port/unitId and OPC UA
+   * wants endpointUrl; core treats both as opaque (ADR-0002), and so does this form.
+   */
+  settings: SettingEntry[];
   scanIntervalMs: number;
   folderId: string | null;
+}
+
+/** A device being created from a template, with the parameters that template asks for. */
+interface InstantiateDraft {
+  templateId: string;
+  name: string;
+  driverKey: string;
+  settings: SettingEntry[];
+  scanIntervalMs: number;
+  folderId: string | null;
+  parameters: SettingEntry[];
+}
+
+interface TemplateTagDraft {
+  name: string;
+  valueKind: 'Numeric' | 'Boolean';
+  unitSymbol: string;
+  addressTemplate: string;
 }
 
 /** A delete the operator has started but not yet confirmed. */
@@ -88,6 +113,19 @@ export class App implements OnInit {
   );
 
   /** The threshold configured on the selected tag, if any. */
+  /** Which half of the app is on screen: browsing, or managing templates. */
+  protected readonly view = signal<'browse' | 'templates'>('browse');
+
+  protected readonly templates = signal<DeviceTemplate[]>([]);
+  protected readonly selectedTemplate = signal<DeviceTemplate | null>(null);
+  protected readonly templateTags = signal<TemplateTag[]>([]);
+  protected readonly newTemplateName = signal('');
+  protected readonly templateTagDraft = signal<TemplateTagDraft | null>(null);
+  protected readonly instantiateDraft = signal<InstantiateDraft | null>(null);
+
+  /** What a template edit did, kept visible because it changed every instance. */
+  protected readonly propagationNote = signal<string | null>(null);
+
   protected readonly tagAlarm = signal<AlarmDefinition | null>(null);
   protected readonly alarmDraft = signal<{ high: string; low: string } | null>(null);
 
@@ -270,9 +308,11 @@ export class App implements OnInit {
       id: null,
       name: '',
       driverKey: 'modbus-tcp',
-      host: '127.0.0.1',
-      port: '5502',
-      unitId: '1',
+      settings: [
+        { key: 'host', value: '127.0.0.1' },
+        { key: 'port', value: '5502' },
+        { key: 'unitId', value: '1' },
+      ],
       scanIntervalMs: 1000,
       folderId: null,
     });
@@ -283,12 +323,18 @@ export class App implements OnInit {
       id: device.id,
       name: device.name,
       driverKey: device.driverKey,
-      host: device.connectionSettings['host'] ?? '',
-      port: device.connectionSettings['port'] ?? '',
-      unitId: device.connectionSettings['unitId'] ?? '1',
+      settings: mapToSettings(device.connectionSettings),
       scanIntervalMs: device.scanIntervalMs,
       folderId: device.folderId,
     });
+  }
+
+  protected addSetting(entries: SettingEntry[]): void {
+    entries.push({ key: '', value: '' });
+  }
+
+  protected removeSetting(entries: SettingEntry[], index: number): void {
+    entries.splice(index, 1);
   }
 
   protected async saveDevice(): Promise<void> {
@@ -303,7 +349,7 @@ export class App implements OnInit {
       await this.api.saveDevice(siteId, draft.id, {
         name: draft.name,
         driverKey: draft.driverKey,
-        connectionSettings: { host: draft.host, port: draft.port, unitId: draft.unitId },
+        connectionSettings: settingsToMap(draft.settings),
         scanIntervalMs: draft.scanIntervalMs,
         folderId: draft.folderId,
       });
@@ -400,6 +446,155 @@ export class App implements OnInit {
       this.pendingDelete.set(null);
       this.selection.set(null);
       this.history.set([]);
+      await this.reloadTree();
+    });
+  }
+
+  // ---- templates ----------------------------------------------------------
+
+  protected async showTemplates(): Promise<void> {
+    this.view.set('templates');
+    await this.withErrorHandling(async () => {
+      this.templates.set(await this.api.templates());
+    });
+  }
+
+  protected async selectTemplate(template: DeviceTemplate): Promise<void> {
+    this.selectedTemplate.set(template);
+    this.templateTagDraft.set(null);
+    this.instantiateDraft.set(null);
+    this.propagationNote.set(null);
+
+    await this.withErrorHandling(async () => {
+      this.templateTags.set(await this.api.templateTags(template.id));
+    });
+  }
+
+  protected async createTemplate(): Promise<void> {
+    const name = this.newTemplateName().trim();
+    if (name.length === 0) {
+      return;
+    }
+
+    await this.withErrorHandling(async () => {
+      await this.api.createTemplate(name);
+      this.newTemplateName.set('');
+      this.templates.set(await this.api.templates());
+    });
+  }
+
+  protected startNewTemplateTag(): void {
+    this.templateTagDraft.set({
+      name: '',
+      valueKind: 'Numeric',
+      unitSymbol: 'bar',
+      addressTemplate: 'holding:{offset}?scale=0.01',
+    });
+  }
+
+  protected async saveTemplateTag(): Promise<void> {
+    const template = this.selectedTemplate();
+    const draft = this.templateTagDraft();
+
+    if (!template || !draft) {
+      return;
+    }
+
+    await this.withErrorHandling(async () => {
+      const result = await this.api.addTemplateTag(template.id, {
+        name: draft.name,
+        valueKind: draft.valueKind,
+        unit: draft.valueKind === 'Numeric' ? unitBySymbol(draft.unitSymbol) : null,
+        addressTemplate: draft.addressTemplate,
+        isWritable: false,
+      });
+
+      // Said out loud because it is not obvious: this edit reached every device made
+      // from the template, with no confirmation step (ADR-0010).
+      this.propagationNote.set(
+        `Added to the template and to ${result.instancesUpdated} existing device(s).`,
+      );
+
+      this.templateTagDraft.set(null);
+      this.templateTags.set(await this.api.templateTags(template.id));
+      await this.reloadTree();
+    });
+  }
+
+  protected async removeTemplateTag(tag: TemplateTag): Promise<void> {
+    const template = this.selectedTemplate();
+    if (!template) {
+      return;
+    }
+
+    await this.withErrorHandling(async () => {
+      const result = await this.api.deleteTemplateTag(template.id, tag.id);
+
+      this.propagationNote.set(
+        `Removed from the template and from ${result.instancesUpdated} existing device(s). ` +
+          'Recorded history is kept.',
+      );
+
+      this.templateTags.set(await this.api.templateTags(template.id));
+      await this.reloadTree();
+    });
+  }
+
+  /** Every parameter the selected template's addresses need, asked for exactly once. */
+  protected readonly requiredParameters = computed(() => {
+    const names = new Set<string>();
+    for (const tag of this.templateTags()) {
+      for (const name of tag.parameterNames) {
+        names.add(name);
+      }
+    }
+    return [...names];
+  });
+
+  protected startInstantiate(): void {
+    const template = this.selectedTemplate();
+    if (!template) {
+      return;
+    }
+
+    this.instantiateDraft.set({
+      templateId: template.id,
+      name: '',
+      driverKey: 'modbus-tcp',
+      settings: [
+        { key: 'host', value: '127.0.0.1' },
+        { key: 'port', value: '5502' },
+        { key: 'unitId', value: '1' },
+      ],
+      scanIntervalMs: 1000,
+      folderId: null,
+      // Prompting for exactly the template's own placeholders beats a free-form box:
+      // a missing one is refused by the gateway anyway, so ask for it up front.
+      parameters: this.requiredParameters().map((name) => ({ key: name, value: '' })),
+    });
+  }
+
+  protected async saveInstance(): Promise<void> {
+    const siteId = this.siteId();
+    const draft = this.instantiateDraft();
+
+    if (!siteId || !draft) {
+      return;
+    }
+
+    await this.withErrorHandling(async () => {
+      await this.api.instantiate(siteId, {
+        templateId: draft.templateId,
+        name: draft.name,
+        driverKey: draft.driverKey,
+        connectionSettings: settingsToMap(draft.settings),
+        scanIntervalMs: draft.scanIntervalMs,
+        folderId: draft.folderId,
+        parameters: settingsToMap(draft.parameters),
+      });
+
+      this.instantiateDraft.set(null);
+      this.propagationNote.set(`Created "${draft.name}" from the template.`);
       await this.reloadTree();
     });
   }

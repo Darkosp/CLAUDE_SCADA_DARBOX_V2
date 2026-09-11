@@ -244,3 +244,90 @@ button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
 }
 
 .summary tr.settled td { color: #8a94a0; }
+
+/* --- templates ---------------------------------------------------------- */
+
+.views {
+  display: flex;
+  gap: 0.3rem;
+  margin-left: 0.5rem;
+}
+
+.views button.current {
+  background: #eef1f4;
+  border-color: #c6cdd4;
+  color: #1c2024;
+  font-weight: 600;
+}
+
+.template {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-left: 2px solid #e3e7ec;
+  padding: 0.35rem 0.6rem;
+  margin: 0.15rem 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: #3c4550;
+  cursor: pointer;
+}
+
+.template:hover { background: #eef1f4; }
+.template.selected { border-left-color: #2f6f4f; background: #e8f2ec; font-weight: 600; }
+
+.settings {
+  border: 1px solid #e3e7ec;
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem 0.8rem;
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.settings legend {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7580;
+  padding: 0 0.3rem;
+}
+
+.setting {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.3rem;
+}
+
+.setting .remove {
+  background: none;
+  border: 0;
+  color: #a0a8b0;
+  font: inherit;
+  padding: 0 0.3rem;
+  cursor: pointer;
+}
+
+.setting .remove:hover { color: #96261f; }
+
+/* A template edit reaches every instance with no confirmation, so what it did is
+   stated rather than left for the operator to infer from the tree. */
+.note {
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.7rem;
+  background: #e8f2ec;
+  border: 1px solid #c6ddd0;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: #1d6b39;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  background: #f2f4f6;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+}
