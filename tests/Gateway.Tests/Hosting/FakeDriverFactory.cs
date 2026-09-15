@@ -18,6 +18,9 @@ public sealed class FakeDriverFactory(string driverKey) : IDeviceDriverFactory
 {
     public const string Key = "modbus-tcp";
 
+    /// <summary>A second driver key, for devices that must not be served by <see cref="Key"/>.</summary>
+    public const string OtherKey = "fake-other";
+
     private long _reads;
 
     public string DriverKey { get; } = driverKey;

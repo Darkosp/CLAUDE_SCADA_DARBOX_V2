@@ -324,6 +324,60 @@ button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
   color: #1d6b39;
 }
 
+/* --- sign-in, session and users ------------------------------------------ */
+
+main.login {
+  grid-template-columns: 1fr;
+  place-items: center;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.login-form {
+  width: 100%;
+  max-width: 22rem;
+  margin: 0;
+  padding: 1.5rem;
+  background: #fff;
+  border: 1px solid #e3e7ec;
+  border-radius: 10px;
+}
+
+.login-form h1 { margin-bottom: 0.4rem; }
+
+.inline-error {
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+}
+
+.who {
+  font-size: 0.8rem;
+  color: #4a5560;
+}
+
+.form .check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: #3c4550;
+}
+
+main.single { grid-template-columns: 1fr; }
+
+.row-actions {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.write {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0.4rem 0 0.8rem;
+}
+
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.75rem;

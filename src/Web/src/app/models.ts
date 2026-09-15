@@ -105,6 +105,8 @@ export type AlarmState = 'Active' | 'Acknowledged' | 'Cleared' | 'Shelved';
 export interface Alarm {
   definitionId: string;
   tagId: string;
+  /** The Site of the alarm's tag, or null once that tag has left the configuration. */
+  siteId: string | null;
   tagPath: string;
   limit: 'High' | 'Low';
   limitValue: number;
@@ -112,7 +114,7 @@ export interface Alarm {
   unitSymbol: string | null;
   raisedAtUtc: string;
   state: AlarmState;
-  /** No actor: acknowledgement is anonymous until Phase 5 brings users. */
+  /** When it was acknowledged. Who did it is recorded in the gateway's audit trail. */
   acknowledgedAtUtc: string | null;
   clearedAtUtc: string | null;
 }
@@ -159,4 +161,27 @@ export function folderOptions(tree: SiteTree | null): FolderOption[] {
 
   walk(tree?.folders ?? [], 1);
   return options;
+}
+
+// ---- users and access (ADR-0011) --------------------------------------------
+
+/** A role on one Site. Admin is not one of them: it is tenant-wide, a flag on the user. */
+export type SiteRole = 'Viewer' | 'Operator';
+
+export interface SiteRoleGrant {
+  siteId: string;
+  role: SiteRole;
+}
+
+/** A user and what they may do, as the gateway reports it. */
+export interface Access {
+  userId: string;
+  username: string;
+  isAdmin: boolean;
+  sites: SiteRoleGrant[];
+}
+
+export interface LoginResponse {
+  token: string;
+  access: Access;
 }

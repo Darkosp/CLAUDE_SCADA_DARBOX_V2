@@ -1,10 +1,12 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Api, ApiError } from './api';
+import { Auth } from './auth';
 import { BrowseTree, Selection } from './browse-tree';
 import { TrendChart } from './trend-chart';
 import {
+  Access,
   Alarm,
   AlarmDefinition,
   DeviceTemplate,
@@ -12,6 +14,7 @@ import {
   HistorySample,
   SettingEntry,
   Site,
+  SiteRole,
   SiteTree,
   TemplateTag,
   TreeDevice,
@@ -57,7 +60,7 @@ interface TemplateTagDraft {
 
 /** A delete the operator has started but not yet confirmed. */
 interface PendingDelete {
-  kind: 'folder' | 'device' | 'tag';
+  kind: 'folder' | 'device' | 'tag' | 'user';
   id: string;
   ownerId: string;
   label: string;
@@ -69,6 +72,13 @@ interface TagDraft {
   valueKind: 'Numeric' | 'Boolean';
   unitSymbol: string;
   sourceAddress: string;
+  isWritable: boolean;
+}
+
+interface UserDraft {
+  username: string;
+  password: string;
+  isAdmin: boolean;
 }
 
 @Component({
@@ -80,6 +90,24 @@ interface TagDraft {
 export class App implements OnInit {
   private readonly api = inject(Api);
   private readonly stream = inject(TagStream);
+
+  /**
+   * What is shown or offered follows the user's roles, but that is a courtesy: the gateway
+   * refuses whatever the role does not allow, whatever this component decides to show.
+   */
+  protected readonly auth = inject(Auth);
+
+  protected readonly signedIn = this.auth.signedIn;
+  protected readonly isAdmin = this.auth.isAdmin;
+  protected readonly signedInUserId = computed(() => this.auth.access()?.userId ?? null);
+
+  protected readonly loginName = signal('');
+  protected readonly loginPassword = signal('');
+  protected readonly loginError = signal<string | null>(null);
+  protected readonly signingIn = signal(false);
+
+  /** A remembered session being checked with the gateway before the app is shown. */
+  protected readonly restoring = signal(false);
 
   protected readonly connection = this.stream.state;
 
@@ -112,9 +140,20 @@ export class App implements OnInit {
     this.alarms().filter((alarm) => alarm.state === 'Active' || alarm.state === 'Cleared'),
   );
 
-  /** The threshold configured on the selected tag, if any. */
-  /** Which half of the app is on screen: browsing, or managing templates. */
-  protected readonly view = signal<'browse' | 'templates'>('browse');
+  /** Which part of the app is on screen. Templates and Users exist only for an Admin. */
+  protected readonly view = signal<'browse' | 'templates' | 'users'>('browse');
+
+  /** The user's role on the Site being browsed, for the header. */
+  protected readonly roleHere = computed(() => {
+    const access = this.auth.access();
+    if (!access) {
+      return '';
+    }
+
+    return access.isAdmin ? 'Admin' : (access.sites.find((grant) => grant.siteId === this.siteId())?.role ?? '');
+  });
+
+  protected readonly canOperateHere = computed(() => this.auth.canOperate(this.siteId()));
 
   protected readonly templates = signal<DeviceTemplate[]>([]);
   protected readonly selectedTemplate = signal<DeviceTemplate | null>(null);
@@ -129,6 +168,13 @@ export class App implements OnInit {
   protected readonly tagAlarm = signal<AlarmDefinition | null>(null);
   protected readonly alarmDraft = signal<{ high: string; low: string } | null>(null);
 
+  protected readonly writeDraft = signal('');
+  protected readonly writeNote = signal<string | null>(null);
+
+  protected readonly users = signal<Access[]>([]);
+  protected readonly userDraft = signal<UserDraft | null>(null);
+  protected readonly passwordReset = signal<{ userId: string; username: string; password: string } | null>(null);
+
   protected readonly folderChoices = computed<FolderOption[]>(() => folderOptions(this.tree()));
 
   /** The live value of the selected tag, or null before its first reading. */
@@ -139,21 +185,164 @@ export class App implements OnInit {
 
   protected readonly selectedIsNumeric = computed(() => this.selection()?.tag?.valueKind === 'Numeric');
 
+  constructor() {
+    // Whatever ends the session — sign-out, or a 401 because it expired or was revoked —
+    // the live connection closes and nothing the previous user could see stays on screen
+    // for whoever signs in next.
+    effect(() => {
+      if (!this.auth.signedIn()) {
+        untracked(() => {
+          void this.stream.stop();
+          this.resetView();
+        });
+      }
+    });
+
+    // The gateway drops a connection whose session has ended. When that happens, find out
+    // whether the session is really over rather than sitting on a dead connection.
+    this.stream.onClosed = () => void this.checkSession();
+
+    // Values from a Site no longer permitted stop arriving on their own; this clears what was
+    // already on screen for it — its tree, a selected tag, a fetched trend.
+    this.stream.onAccessChanged = () => void this.refreshAccess();
+  }
+
   async ngOnInit(): Promise<void> {
-    void this.stream.start();
-    await this.loadSites();
+    if (!this.auth.token()) {
+      return;
+    }
+
+    this.restoring.set(true);
+    try {
+      this.auth.access.set(await this.api.me());
+      await this.enter();
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) {
+        this.loginError.set('The gateway could not be reached. Sign in again once it is running.');
+      }
+      this.auth.end();
+    } finally {
+      this.restoring.set(false);
+    }
   }
 
   protected format(snapshot: TagSnapshot): string {
     return formatValue(snapshot);
   }
 
+  // ---- session ------------------------------------------------------------
+
+  protected async login(): Promise<void> {
+    this.loginError.set(null);
+    this.signingIn.set(true);
+
+    try {
+      const session = await this.api.login(this.loginName().trim(), this.loginPassword());
+      this.auth.begin(session.token, session.access);
+      this.loginPassword.set('');
+      await this.enter();
+    } catch (error) {
+      this.loginError.set(error instanceof ApiError ? error.message : 'The gateway could not be reached.');
+    } finally {
+      this.signingIn.set(false);
+    }
+  }
+
+  protected async logout(): Promise<void> {
+    try {
+      // Ends the session on the gateway, not just in this browser, so the token stops
+      // working everywhere at once.
+      await this.api.logout();
+    } catch {
+      // Signed out locally regardless.
+    }
+
+    this.auth.end();
+  }
+
+  private async enter(): Promise<void> {
+    void this.stream.start();
+    await this.loadSites();
+  }
+
+  private async checkSession(): Promise<void> {
+    if (!this.auth.token()) {
+      return;
+    }
+
+    try {
+      this.auth.access.set(await this.api.me());
+    } catch {
+      // A 401 has already ended the session through the API client. Anything else — the
+      // gateway being unreachable — leaves the operator signed in to try again.
+    }
+  }
+
+  /**
+   * Brings the whole screen in line with the user's current roles after the gateway says
+   * they changed.
+   */
+  private async refreshAccess(): Promise<void> {
+    try {
+      this.auth.access.set(await this.api.me());
+
+      const sites = await this.api.sites();
+      this.sites.set(sites);
+
+      if (sites.some((site) => site.id === this.siteId())) {
+        await this.reloadTree();
+      } else {
+        // The Site on screen is no longer this user's. Nothing loaded for it while it was
+        // permitted may stay visible.
+        this.siteId.set(null);
+        this.tree.set(null);
+        this.selection.set(null);
+        this.history.set([]);
+        this.tagAlarm.set(null);
+        this.alarmDraft.set(null);
+        this.writeNote.set(null);
+
+        if (sites.length > 0) {
+          await this.selectSite(sites[0].id);
+        }
+      }
+
+      // Templates and Users are Admin screens; someone just demoted must not stay on one.
+      if (!this.auth.isAdmin() && this.view() !== 'browse') {
+        this.view.set('browse');
+      }
+    } catch (error) {
+      this.report(error);
+    }
+  }
+
+  private resetView(): void {
+    this.sites.set([]);
+    this.siteId.set(null);
+    this.tree.set(null);
+    this.selection.set(null);
+    this.history.set([]);
+    this.error.set(null);
+    this.view.set('browse');
+    this.pendingDelete.set(null);
+    this.deviceDraft.set(null);
+    this.tagDraft.set(null);
+    this.alarmDraft.set(null);
+    this.users.set([]);
+    this.userDraft.set(null);
+    this.passwordReset.set(null);
+    this.templates.set([]);
+    this.selectedTemplate.set(null);
+  }
+
+  // ---- browsing -----------------------------------------------------------
+
   protected async loadSites(): Promise<void> {
     try {
       const sites = await this.api.sites();
       this.sites.set(sites);
 
-      if (sites.length > 0 && this.siteId() === null) {
+      if (sites.length > 0 && !sites.some((site) => site.id === this.siteId())) {
         await this.selectSite(sites[0].id);
       }
     } catch (error) {
@@ -187,6 +376,8 @@ export class App implements OnInit {
     this.tagDraft.set(null);
     this.deviceDraft.set(null);
     this.history.set([]);
+    this.writeDraft.set(selection.tag?.valueKind === 'Boolean' ? 'true' : '');
+    this.writeNote.set(null);
 
     this.tagAlarm.set(null);
     this.alarmDraft.set(null);
@@ -195,6 +386,39 @@ export class App implements OnInit {
       await this.loadHistory();
       await this.loadTagAlarm();
     }
+  }
+
+  // ---- writing a tag (Operator) -------------------------------------------
+
+  protected async writeValue(): Promise<void> {
+    const tag = this.selection()?.tag;
+    const raw = this.writeDraft().trim();
+
+    if (!tag || raw.length === 0) {
+      return;
+    }
+
+    let value: number | boolean | string;
+
+    if (tag.valueKind === 'Boolean') {
+      value = raw === 'true';
+    } else if (tag.valueKind === 'Text') {
+      value = raw;
+    } else {
+      value = Number(raw);
+      if (!Number.isFinite(value)) {
+        this.error.set('Enter a number.');
+        return;
+      }
+    }
+
+    await this.withErrorHandling(async () => {
+      await this.api.writeTag(tag.id, value);
+      this.writeNote.set(`Sent ${raw} to ${tag.name}. The next scan shows what the device holds.`);
+      if (tag.valueKind !== 'Boolean') {
+        this.writeDraft.set('');
+      }
+    });
   }
 
   // ---- alarms -------------------------------------------------------------
@@ -367,6 +591,7 @@ export class App implements OnInit {
       valueKind: 'Numeric',
       unitSymbol: 'bar',
       sourceAddress: 'holding:0?scale=0.01',
+      isWritable: false,
     });
   }
 
@@ -388,7 +613,7 @@ export class App implements OnInit {
         valueKind: draft.valueKind,
         unit,
         sourceAddress: draft.sourceAddress,
-        isWritable: false,
+        isWritable: draft.isWritable,
       });
 
       this.tagDraft.set(null);
@@ -428,6 +653,16 @@ export class App implements OnInit {
     });
   }
 
+  protected askDeactivateUser(user: Access): void {
+    this.pendingDelete.set({
+      kind: 'user',
+      id: user.userId,
+      ownerId: '',
+      label: `user "${user.username}"`,
+      warning: 'They are signed out everywhere at once and cannot sign in again. What they did stays in the audit trail.',
+    });
+  }
+
   protected async confirmDelete(): Promise<void> {
     const pending = this.pendingDelete();
     if (!pending) {
@@ -435,6 +670,13 @@ export class App implements OnInit {
     }
 
     await this.withErrorHandling(async () => {
+      if (pending.kind === 'user') {
+        await this.api.deactivateUser(pending.id);
+        this.pendingDelete.set(null);
+        await this.loadUsers();
+        return;
+      }
+
       if (pending.kind === 'folder') {
         await this.api.deleteFolder(pending.ownerId, pending.id);
       } else if (pending.kind === 'device') {
@@ -450,7 +692,7 @@ export class App implements OnInit {
     });
   }
 
-  // ---- templates ----------------------------------------------------------
+  // ---- templates (Admin) --------------------------------------------------
 
   protected async showTemplates(): Promise<void> {
     this.view.set('templates');
@@ -597,6 +839,91 @@ export class App implements OnInit {
       this.propagationNote.set(`Created "${draft.name}" from the template.`);
       await this.reloadTree();
     });
+  }
+
+  // ---- users (Admin) ------------------------------------------------------
+
+  protected async showUsers(): Promise<void> {
+    this.view.set('users');
+    await this.withErrorHandling(() => this.loadUsers());
+  }
+
+  private async loadUsers(): Promise<void> {
+    this.users.set(await this.api.users());
+  }
+
+  protected roleOn(user: Access, siteId: string): SiteRole | '' {
+    return user.sites.find((grant) => grant.siteId === siteId)?.role ?? '';
+  }
+
+  protected startNewUser(): void {
+    this.passwordReset.set(null);
+    this.userDraft.set({ username: '', password: '', isAdmin: false });
+  }
+
+  protected async saveUser(): Promise<void> {
+    const draft = this.userDraft();
+    if (!draft) {
+      return;
+    }
+
+    await this.withErrorHandling(async () => {
+      await this.api.createUser({ username: draft.username.trim(), password: draft.password, isAdmin: draft.isAdmin });
+      this.userDraft.set(null);
+      await this.loadUsers();
+    });
+  }
+
+  protected async changeRole(user: Access, siteId: string, role: SiteRole | ''): Promise<void> {
+    await this.withErrorHandling(async () => {
+      try {
+        if (role === '') {
+          await this.api.removeSiteRole(user.userId, siteId);
+        } else {
+          await this.api.setSiteRole(user.userId, siteId, role);
+        }
+      } finally {
+        // Reloaded either way, so a refused change never leaves the picker showing a role
+        // the user does not have.
+        await this.afterUserChange(user);
+      }
+    });
+  }
+
+  protected async toggleAdmin(user: Access): Promise<void> {
+    await this.withErrorHandling(async () => {
+      try {
+        await this.api.setAdmin(user.userId, !user.isAdmin);
+      } finally {
+        await this.afterUserChange(user);
+      }
+    });
+  }
+
+  protected startPasswordReset(user: Access): void {
+    this.userDraft.set(null);
+    this.passwordReset.set({ userId: user.userId, username: user.username, password: '' });
+  }
+
+  protected async savePassword(): Promise<void> {
+    const reset = this.passwordReset();
+    if (!reset) {
+      return;
+    }
+
+    await this.withErrorHandling(async () => {
+      await this.api.setPassword(reset.userId, reset.password);
+      this.passwordReset.set(null);
+    });
+  }
+
+  private async afterUserChange(user: Access): Promise<void> {
+    await this.loadUsers();
+
+    // An Admin changing their own roles changes what this screen may show.
+    if (user.userId === this.signedInUserId()) {
+      this.auth.access.set(await this.api.me());
+    }
   }
 
   private async withErrorHandling(action: () => Promise<void>): Promise<void> {

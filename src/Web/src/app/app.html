@@ -1,3 +1,32 @@
+@if (!signedIn()) {
+<main class="login">
+  <form class="form login-form" (ngSubmit)="login()">
+    <h1>SCADA_DARBOX</h1>
+
+    @if (restoring()) {
+      <p class="muted">Restoring your session…</p>
+    } @else {
+      <label>User name
+        <input name="loginName" autocomplete="username" required
+               [ngModel]="loginName()" (ngModelChange)="loginName.set($event)" />
+      </label>
+      <label>Password
+        <input name="loginPassword" type="password" autocomplete="current-password" required
+               [ngModel]="loginPassword()" (ngModelChange)="loginPassword.set($event)" />
+      </label>
+
+      @if (loginError(); as reason) {
+        <p class="error inline-error" role="alert">{{ reason }}</p>
+      }
+
+      <button type="submit"
+              [disabled]="signingIn() || loginName().trim().length === 0 || loginPassword().length === 0">
+        Sign in
+      </button>
+    }
+  </form>
+</main>
+} @else {
 <header>
   <h1>SCADA_DARBOX</h1>
 
@@ -13,11 +42,17 @@
   <nav class="views">
     <button type="button" class="ghost" [class.current]="view() === 'browse'"
             (click)="view.set('browse')">Browse</button>
-    <button type="button" class="ghost" [class.current]="view() === 'templates'"
-            (click)="showTemplates()">Templates</button>
+    @if (isAdmin()) {
+      <button type="button" class="ghost" [class.current]="view() === 'templates'"
+              (click)="showTemplates()">Templates</button>
+      <button type="button" class="ghost" [class.current]="view() === 'users'"
+              (click)="showUsers()">Users</button>
+    }
   </nav>
 
   <span class="state" [class]="connection()">{{ connection() }}</span>
+  <span class="who">{{ auth.access()?.username }}@if (roleHere()) { · {{ roleHere() }} }</span>
+  <button type="button" class="ghost" (click)="logout()">Sign out</button>
 </header>
 
 @if (error()) {
@@ -37,9 +72,11 @@
           </span>
         </span>
         <span class="when">{{ alarm.raisedAtUtc | date: 'HH:mm:ss' }}</span>
-        <button type="button" (click)="acknowledge(alarm)">Acknowledge</button>
-        @if (alarm.state !== 'Cleared') {
-          <button type="button" class="ghost" (click)="shelve(alarm)">Shelve</button>
+        @if (auth.canOperate(alarm.siteId)) {
+          <button type="button" (click)="acknowledge(alarm)">Acknowledge</button>
+          @if (alarm.state !== 'Cleared') {
+            <button type="button" class="ghost" (click)="shelve(alarm)">Shelve</button>
+          }
         }
       </div>
     }
@@ -49,11 +86,13 @@
 @if (pendingDelete(); as pending) {
   <div class="confirm" role="alertdialog">
     <p>
-      <strong>Delete the {{ pending.label }}?</strong>
+      <strong>{{ pending.kind === 'user' ? 'Deactivate' : 'Delete' }} the {{ pending.label }}?</strong>
       {{ pending.warning }}
     </p>
     <div class="actions">
-      <button type="button" class="danger" (click)="confirmDelete()">Delete</button>
+      <button type="button" class="danger" (click)="confirmDelete()">
+        {{ pending.kind === 'user' ? 'Deactivate' : 'Delete' }}
+      </button>
       <button type="button" class="ghost" (click)="pendingDelete.set(null)">Cancel</button>
     </div>
   </div>
@@ -194,30 +233,122 @@
       }
     </section>
   </main>
+} @else if (view() === 'users') {
+  <main class="single">
+    <section>
+      <div class="pane-head">
+        <h2>Users</h2>
+        <button type="button" (click)="startNewUser()">Add user</button>
+      </div>
+
+      <p class="muted">
+        Viewer and Operator are granted per Site. Admin is tenant-wide: an Admin sees every Site
+        and is the only role that may change configuration, including these roles.
+      </p>
+
+      @if (userDraft(); as draft) {
+        <form class="form" (ngSubmit)="saveUser()">
+          <label>User name<input name="newUsername" autocomplete="off" required [(ngModel)]="draft.username" /></label>
+          <label>Password — at least 12 characters
+            <input name="newPassword" type="password" autocomplete="new-password" required [(ngModel)]="draft.password" />
+          </label>
+          <label class="check"><input type="checkbox" name="newIsAdmin" [(ngModel)]="draft.isAdmin" /> Admin</label>
+          <div class="actions">
+            <button type="submit" [disabled]="draft.username.trim().length === 0 || draft.password.length < 12">Create</button>
+            <button type="button" class="ghost" (click)="userDraft.set(null)">Cancel</button>
+          </div>
+        </form>
+      }
+
+      @if (passwordReset(); as reset) {
+        <form class="form" (ngSubmit)="savePassword()">
+          <label>New password for {{ reset.username }} — at least 12 characters
+            <input name="resetPassword" type="password" autocomplete="new-password" required [(ngModel)]="reset.password" />
+          </label>
+          <div class="actions">
+            <button type="submit" [disabled]="reset.password.length < 12">Set password</button>
+            <button type="button" class="ghost" (click)="passwordReset.set(null)">Cancel</button>
+          </div>
+        </form>
+      }
+
+      <table class="summary">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Admin</th>
+            @for (site of sites(); track site.id) {
+              <th>{{ site.name }}</th>
+            }
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (user of users(); track user.userId) {
+            <tr>
+              <td>
+                {{ user.username }}
+                @if (user.userId === signedInUserId()) { <span class="muted">(you)</span> }
+              </td>
+              <td>
+                <input type="checkbox" [checked]="user.isAdmin" (change)="toggleAdmin(user)"
+                       [attr.aria-label]="'Admin: ' + user.username" />
+              </td>
+              @for (site of sites(); track site.id) {
+                <td>
+                  @if (user.isAdmin) {
+                    <span class="muted">every Site</span>
+                  } @else {
+                    <select [ngModel]="roleOn(user, site.id)" (ngModelChange)="changeRole(user, site.id, $event)"
+                            [attr.aria-label]="user.username + ' on ' + site.name">
+                      <option value="">None</option>
+                      <option value="Viewer">Viewer</option>
+                      <option value="Operator">Operator</option>
+                    </select>
+                  }
+                </td>
+              }
+              <td class="row-actions">
+                <button type="button" class="ghost" (click)="startPasswordReset(user)">Set password</button>
+                <button type="button" class="ghost danger" (click)="askDeactivateUser(user)">Deactivate</button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </section>
+  </main>
 } @else {
 <main>
   <aside>
     <div class="pane-head">
       <h2>Browse</h2>
-      <button type="button" (click)="startNewDevice()">Add device</button>
+      @if (isAdmin()) {
+        <button type="button" (click)="startNewDevice()">Add device</button>
+      }
     </div>
 
-    <form class="inline" (ngSubmit)="addFolder()">
-      <input
-        name="folderName"
-        placeholder="New folder"
-        [ngModel]="newFolderName()"
-        (ngModelChange)="newFolderName.set($event)" />
-      <button type="submit" [disabled]="newFolderName().trim().length === 0">Add</button>
-    </form>
+    @if (isAdmin()) {
+      <form class="inline" (ngSubmit)="addFolder()">
+        <input
+          name="folderName"
+          placeholder="New folder"
+          [ngModel]="newFolderName()"
+          (ngModelChange)="newFolderName.set($event)" />
+        <button type="submit" [disabled]="newFolderName().trim().length === 0">Add</button>
+      </form>
+    }
 
     @if (tree(); as siteTree) {
       <app-browse-tree
         [folders]="siteTree.folders"
         [devices]="siteTree.devices"
         [selectedTagId]="selection()?.tag?.id ?? null"
+        [editable]="isAdmin()"
         (selected)="select($event)"
         (deleteFolder)="askDeleteFolder($event.id, $event.name)" />
+    } @else if (sites().length === 0) {
+      <p class="muted">You have no role on any Site yet. An Admin can grant one.</p>
     } @else {
       <p class="muted">Loading…</p>
     }
@@ -265,21 +396,23 @@
     } @else if (selection(); as chosen) {
       <div class="pane-head">
         <h2>{{ chosen.tag ? chosen.tag.name : chosen.device.name }}</h2>
-        <div class="actions">
-          <button type="button" class="ghost" (click)="editDevice(chosen.device)">Edit device</button>
-          <button type="button" (click)="startNewTag()">Add tag</button>
-          @if (chosen.tag) {
-            <button
-              type="button"
-              class="ghost danger"
-              (click)="askDeleteTag(chosen.device.id, chosen.tag.id, chosen.tag.name)">Delete tag</button>
-          } @else {
-            <button
-              type="button"
-              class="ghost danger"
-              (click)="askDeleteDevice(chosen.device)">Delete device</button>
-          }
-        </div>
+        @if (isAdmin()) {
+          <div class="actions">
+            <button type="button" class="ghost" (click)="editDevice(chosen.device)">Edit device</button>
+            <button type="button" (click)="startNewTag()">Add tag</button>
+            @if (chosen.tag) {
+              <button
+                type="button"
+                class="ghost danger"
+                (click)="askDeleteTag(chosen.device.id, chosen.tag.id, chosen.tag.name)">Delete tag</button>
+            } @else {
+              <button
+                type="button"
+                class="ghost danger"
+                (click)="askDeleteDevice(chosen.device)">Delete device</button>
+            }
+          </div>
+        }
       </div>
 
       <p class="muted">{{ chosen.device.name }} · {{ chosen.device.driverKey }}</p>
@@ -308,6 +441,10 @@
             </label>
           }
           <label>Source address<input name="address" required [(ngModel)]="draft.sourceAddress" /></label>
+          <label class="check">
+            <input type="checkbox" name="writable" [(ngModel)]="draft.isWritable" />
+            Operators may write this tag
+          </label>
 
           <div class="actions">
             <button type="submit" [disabled]="draft.name.trim().length === 0">Save</button>
@@ -328,10 +465,31 @@
           <p class="muted">No reading yet.</p>
         }
 
+        @if (chosen.tag.isWritable && canOperateHere()) {
+          <form class="write" (ngSubmit)="writeValue()">
+            @if (chosen.tag.valueKind === 'Boolean') {
+              <select name="writeValue" aria-label="Value to write"
+                      [ngModel]="writeDraft()" (ngModelChange)="writeDraft.set($event)">
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            } @else {
+              <input name="writeValue" aria-label="Value to write"
+                     [attr.inputmode]="chosen.tag.valueKind === 'Text' ? null : 'decimal'"
+                     placeholder="Value to write"
+                     [ngModel]="writeDraft()" (ngModelChange)="writeDraft.set($event)" />
+            }
+            <button type="submit" [disabled]="writeDraft().trim().length === 0">Write</button>
+          </form>
+          @if (writeNote(); as note) {
+            <p class="note">{{ note }}</p>
+          }
+        }
+
         @if (selectedIsNumeric()) {
           <div class="pane-head">
             <h3>Alarm threshold</h3>
-            @if (alarmDraft() === null) {
+            @if (isAdmin() && alarmDraft() === null) {
               <div class="actions">
                 <button type="button" class="ghost" (click)="startEditingAlarm()">
                   {{ tagAlarm() ? 'Edit' : 'Add' }}
@@ -401,4 +559,5 @@
     }
   </section>
 </main>
+}
 }
