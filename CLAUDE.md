@@ -113,13 +113,14 @@ src/
   Persistence.TimescaleDb/  concrete historian implementation (plain Npgsql/SQL,
                             hypertable) behind Core's storage abstraction
   Gateway/                  Web API host, SignalR hub, the scan service wiring
-                            drivers + tag engine + historian together — runs
-                            with the non-privileged database role (ADR-0011)
-                            and refuses to start on a schema mismatch
-  Migrator/                 one-shot privileged step that applies the DbUp
-                            scripts (ADR-0012) — the only component that holds
-                            the privileged connection string; runs to
-                            completion before the Gateway starts
+                            drivers + tag engine + historian together — from
+                            Phase 5 (in flight): runs with the non-privileged
+                            database role (ADR-0011) and refuses to start on a
+                            schema mismatch (ADR-0012)
+  Migrator/                 (Phase 5, in flight) one-shot privileged step that
+                            applies the DbUp scripts (ADR-0012) — the only
+                            component holding the privileged connection string;
+                            runs to completion before the Gateway starts
   Modules/
     Drivers.Modbus/          Modbus TCP driver (Phase 1)
     Drivers.OpcUa/           (Phase 4)
