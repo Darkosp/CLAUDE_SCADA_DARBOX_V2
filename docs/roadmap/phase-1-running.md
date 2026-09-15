@@ -98,10 +98,12 @@ npm install
 npm start
 ```
 
-Opens on `http://localhost:4200` and shows the live tag values.
-
-> **On `phase-5/permissions` the web client has no login yet**, so against this
-> Gateway it receives 401s. That is the next piece of Phase 5.
+Opens on `http://localhost:4200` with a sign-in screen. Sign in as the initial Admin,
+then use **Users** to create further users and grant each one Viewer or Operator per
+Site. What a user sees and can do follows their roles: a Viewer reads, an Operator can
+also write writable tags and acknowledge or shelve alarms, and only an Admin sees
+configuration, templates and users. The gateway enforces all of it regardless of what
+the page shows.
 
 ## Checking the test gate
 
