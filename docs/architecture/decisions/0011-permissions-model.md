@@ -153,6 +153,12 @@ rule; the list below is an inventory of what exists today, not the
 definition — an endpoint added later is covered by the rule the moment
 it exists, and is never exempt because it postdates this list.
 
+A request for a Site the caller cannot see is answered **404, not 403**.
+403 confirms that the thing exists, which turns every Site-scoped path
+into a way to enumerate Sites, Devices and Tags the caller is not
+permitted to know about. This applies to ids that genuinely exist but
+belong to another Site, not only to unknown ones.
+
 As of this ADR the Site-scoped paths needing filtering are:
 `/api/tags`, `/api/tags/{tagId}`, `/api/tags/{tagId}/alarms`,
 `/api/tags/{tagId}/history`, `/api/alarms`, `/api/devices/{deviceId}`,
@@ -272,6 +278,10 @@ audit table that a superuser can rewrite is not an audit table.
   `/api/sites/{siteId}/tree`, `GetCurrentValues`, `GetCurrentAlarms` —
   with `/api/sites/{siteId}/tree` covered explicitly, since an
   unfiltered site tree alone defeats the gate.
+- A Site-scoped request for an id that exists but lies outside the
+  caller's permitted Sites returns 404 with the same status and body as
+  a request for an id that does not exist at all — the two cases are not
+  distinguishable from outside.
 - A Viewer or Operator token is refused by both template GET endpoints,
   which are Admin-only rather than Site-filtered.
 - Revocation reaches a live connection: with a SignalR connection
