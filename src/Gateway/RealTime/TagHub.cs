@@ -17,6 +17,13 @@ public sealed class TagHub : Hub
     /// <summary>Name of the client-side method the server invokes with the alarm list.</summary>
     public const string AlarmsMethod = "alarms";
 
+    /// <summary>
+    /// Tells a connection that what it is allowed to see has changed, so the client
+    /// reloads its current state instead of keeping values it may no longer see
+    /// (ADR-0011).
+    /// </summary>
+    public const string AccessChangedMethod = "accessChanged";
+
     private readonly ITagEngine _tagEngine;
     private readonly IAlarmEngine _alarmEngine;
 

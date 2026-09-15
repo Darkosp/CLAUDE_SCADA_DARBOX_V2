@@ -111,6 +111,7 @@ public sealed class TagRepository : ITagRepository
             SELECT t.id AS tag_id,
                    t.name AS tag_name,
                    d.name AS device_name,
+                   d.site_id AS site_id,
                    (t.deleted_at IS NOT NULL OR d.deleted_at IS NOT NULL) AS is_deleted
             FROM tag t
             JOIN device d ON d.id = t.device_id
