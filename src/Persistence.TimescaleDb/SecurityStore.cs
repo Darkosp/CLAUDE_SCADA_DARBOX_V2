@@ -364,10 +364,18 @@ public sealed class SecurityStore : ISecurityStore, IAuditLog
 
     private sealed record SiteRoleRow(Guid UserId, Guid SiteId, string SiteRole);
 
+    /// <remarks>
+    /// <c>DateTime</c>, not <c>DateTimeOffset</c>: Npgsql reads <c>timestamptz</c> as a UTC
+    /// <c>DateTime</c>, and Dapper will not convert while matching a constructor — it fails
+    /// to materialise the row at all. The conversion to <see cref="Session"/> is lossless
+    /// because the kind is UTC. This read only runs when a session is not already cached (a
+    /// revoked one, or any session after a restart), which is how it went unnoticed until a
+    /// test presented a revoked token.
+    /// </remarks>
     private sealed record SessionRow(
         Guid Id,
         Guid UserId,
-        DateTimeOffset CreatedAt,
-        DateTimeOffset LastSeenAt,
-        DateTimeOffset? RevokedAt);
+        DateTime CreatedAt,
+        DateTime LastSeenAt,
+        DateTime? RevokedAt);
 }

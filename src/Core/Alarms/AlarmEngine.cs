@@ -14,9 +14,9 @@ public interface IAlarmEngine
     /// Marks an alarm as seen.
     /// </summary>
     /// <remarks>
-    /// No actor is recorded. Users and roles arrive in Phase 5, and inventing an
-    /// identity now would only have to be undone then — a timestamp that is honestly
-    /// anonymous beats one attributed to a fiction.
+    /// The engine records when, not who. The acknowledging user is written to the audit
+    /// trail by whoever calls this (ADR-0011), so the engine stays free of any notion of
+    /// users and alarm state stays exactly what it was.
     /// </remarks>
     /// <returns>False when there is no such alarm to acknowledge.</returns>
     Task<bool> AcknowledgeAsync(Guid definitionId, DateTimeOffset atUtc, CancellationToken cancellationToken);

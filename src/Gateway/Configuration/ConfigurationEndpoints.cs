@@ -3,6 +3,7 @@ using ScadaDarbox.Core.Configuration;
 using ScadaDarbox.Core.Model;
 using ScadaDarbox.Core.Tags;
 using ScadaDarbox.Gateway.Contracts;
+using ScadaDarbox.Gateway.Security;
 
 namespace ScadaDarbox.Gateway.Configuration;
 
@@ -14,13 +15,22 @@ internal static class ConfigurationEndpoints
 {
     internal static void MapConfigurationApi(this WebApplication app)
     {
-        app.MapGet("/api/sites", (TagCatalogSource catalogSource) =>
+        app.MapGet("/api/sites", (TagCatalogSource catalogSource, Caller caller) =>
             Results.Ok(catalogSource.Current.Sites
+                .Where(site => caller.Access.CanView(site.Id))
                 .OrderBy(site => site.Name, StringComparer.OrdinalIgnoreCase)
                 .Select(site => new SiteDto(site.Id, site.Name, site.TimeZoneId))));
 
-        app.MapGet("/api/sites/{siteId:guid}/tree", (Guid siteId, TagCatalogSource catalogSource) =>
+        app.MapGet("/api/sites/{siteId:guid}/tree", (Guid siteId, TagCatalogSource catalogSource, Caller caller) =>
         {
+            // The most literal reading of Phase 5's gate: a whole Site's configuration.
+            // Not found rather than forbidden, so the answer does not confirm the Site
+            // exists (ADR-0011).
+            if (!caller.Access.CanView(siteId))
+            {
+                return Results.NotFound();
+            }
+
             var tree = SiteTreeBuilder.Build(catalogSource.Current, siteId);
             return tree is null ? Results.NotFound() : Results.Ok(tree);
         });
@@ -53,7 +63,7 @@ internal static class ConfigurationEndpoints
                 reloader,
                 cancellationToken,
                 () => Results.Created($"/api/sites/{siteId}/tree", folder.Id));
-        });
+        }).AdminWrite("folder.create", "folder");
 
         app.MapDelete("/api/sites/{siteId:guid}/folders/{folderId:guid}", async (
             Guid folderId,
@@ -63,7 +73,7 @@ internal static class ConfigurationEndpoints
                 () => folders.DeleteAsync(folderId, cancellationToken),
                 reloader,
                 cancellationToken,
-                Results.NoContent));
+                Results.NoContent)).AdminWrite("folder.delete", "folder", "folderId");
 
         app.MapPut("/api/sites/{siteId:guid}/folders/{folderId:guid}", async (
             Guid siteId,
@@ -86,7 +96,7 @@ internal static class ConfigurationEndpoints
                 reloader,
                 cancellationToken,
                 Results.NoContent);
-        });
+        }).AdminWrite("folder.update", "folder", "folderId");
     }
 
     private static void MapDevices(WebApplication app)
@@ -105,7 +115,7 @@ internal static class ConfigurationEndpoints
                 reloader,
                 cancellationToken,
                 () => Results.Created($"/api/devices/{device.Id}", device.Id));
-        });
+        }).AdminWrite("device.create", "device");
 
         app.MapPut("/api/sites/{siteId:guid}/devices/{deviceId:guid}", async (
             Guid siteId,
@@ -117,7 +127,7 @@ internal static class ConfigurationEndpoints
                 () => devices.UpdateAsync(ToDomain(deviceId, siteId, request), cancellationToken),
                 reloader,
                 cancellationToken,
-                Results.NoContent));
+                Results.NoContent)).AdminWrite("device.update", "device", "deviceId");
 
         app.MapDelete("/api/sites/{siteId:guid}/devices/{deviceId:guid}", async (
             Guid deviceId,
@@ -127,14 +137,14 @@ internal static class ConfigurationEndpoints
                 () => devices.DeleteAsync(deviceId, cancellationToken),
                 reloader,
                 cancellationToken,
-                Results.NoContent));
+                Results.NoContent)).AdminWrite("device.delete", "device", "deviceId");
 
-        app.MapGet("/api/devices/{deviceId:guid}", (Guid deviceId, TagCatalogSource catalogSource) =>
+        app.MapGet("/api/devices/{deviceId:guid}", (Guid deviceId, TagCatalogSource catalogSource, Caller caller) =>
         {
             var catalog = catalogSource.Current;
             var device = catalog.FindDevice(deviceId);
 
-            return device is null
+            return device is null || !caller.Access.CanView(device.SiteId)
                 ? Results.NotFound()
                 : Results.Ok(SiteTreeBuilder.ToDto(device, catalog));
         });
@@ -159,7 +169,7 @@ internal static class ConfigurationEndpoints
                 reloader,
                 cancellationToken,
                 () => Results.Created($"/api/tags/{tag.Id}", tag.Id));
-        });
+        }).AdminWrite("tag.create", "tag");
 
         app.MapPut("/api/devices/{deviceId:guid}/tags/{tagId:guid}", async (
             Guid deviceId,
@@ -179,7 +189,7 @@ internal static class ConfigurationEndpoints
                 reloader,
                 cancellationToken,
                 Results.NoContent);
-        });
+        }).AdminWrite("tag.update", "tag", "tagId");
     }
 
     private static void MapTagDeletion(WebApplication app) =>
@@ -191,7 +201,7 @@ internal static class ConfigurationEndpoints
                 () => tags.DeleteAsync(tagId, cancellationToken),
                 reloader,
                 cancellationToken,
-                Results.NoContent));
+                Results.NoContent)).AdminWrite("tag.delete", "tag", "tagId");
 
     /// <summary>
     /// Runs a configuration write, reloads the catalogue on success, and turns the
