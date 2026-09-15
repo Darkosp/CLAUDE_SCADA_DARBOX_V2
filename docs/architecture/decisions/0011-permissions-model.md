@@ -51,13 +51,25 @@ recorded below: a leaked URL-borne session token can be revoked the
 instant it is noticed, while a leaked JWT stays valid until it expires.
 
 Passwords are hashed with
-`Microsoft.AspNetCore.Identity`'s `PasswordHasher<TUser>`
-(PBKDF2-HMAC-SHA256) rather than a third-party algorithm such as
-Argon2id — a first-party .NET component with no dependency on the rest
-of ASP.NET Core Identity (no EF-backed user store), so it adds no new
-external package under ADR-0006, and PBKDF2 through a maintained,
-standard implementation is adequate here. Passwords are never stored or
-logged in reversible form.
+`Microsoft.AspNetCore.Identity`'s `PasswordHasher<TUser>` rather than a
+third-party algorithm such as Argon2id — a first-party .NET component
+with no dependency on the rest of ASP.NET Core Identity (no EF-backed
+user store), so it adds no new external package under ADR-0006. What is
+binding here is **the component**, not a particular set of PBKDF2
+parameters: the framework picks and periodically strengthens those, and
+`PasswordHasher` versions its own hash format so existing passwords keep
+verifying across upgrades. At the time of writing the current .NET
+implementation is PBKDF2-HMAC-SHA512 at 100,000 iterations; a future
+framework version raising that is an improvement to inherit, not a
+deviation from this ADR. Passwords are never stored or logged in
+reversible form.
+
+Password rules are **length only**: a minimum of 12 characters, with no
+composition requirements (no forced mixed case, digits or symbols).
+Composition rules reliably produce predictable patterns — a capital at
+the front, a digit and an exclamation mark at the end — while length is
+what actually costs an attacker work. 12 is the floor, not a
+recommendation; nothing stops a deployment from requiring more.
 
 **Token scope and revocation.** The token resolves to identity only
 (`UserId`) — it carries no roles or Site assignments of its own. Every
@@ -280,6 +292,8 @@ audit table that a superuser can rewrite is not an audit table.
   rejected for a caller without Operator or Admin on that tag's Site.
 - No password is ever stored or logged in a reversible form, and no
   session token is stored in the `session` table in recoverable form.
+- A password shorter than 12 characters is rejected; a 12-character
+  password with no digits, symbols or capitals is accepted.
 - `audit_log` rejects an `UPDATE` and a `DELETE` **executed over the
   application's own connection** — a test that runs this as a superuser
   proves nothing and does not satisfy this criterion.

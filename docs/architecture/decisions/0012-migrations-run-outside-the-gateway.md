@@ -39,8 +39,15 @@ starts** — a migrator CLI/container, using the privileged role. The
 Gateway never holds or reads the privileged credential.
 
 The Gateway, at startup, **reads DbUp's journal table over its own
-non-privileged connection and refuses to start if the schema is not at
-the version that build expects**, rather than trying to fix it. The
+non-privileged connection and refuses to start unless the journal
+matches exactly the set of scripts that build carries** — not merely
+"is not behind" — rather than trying to fix it. A Gateway older than
+its database is refused for the same reason as one newer than it: it was
+built against a schema that no longer exists, and the mismatches that
+matter are rarely the ones that fail loudly. ADR-0009's migration 0005,
+which changed what `tag_active` returns without changing its column
+list, is the shape of the problem: older code would keep querying it and
+quietly see different rows. The
 safety property ADR-0007 actually cared about — never serve requests
 against a schema in an unknown or stale state — is preserved and is now
 checked explicitly, instead of being a side effect of the Gateway also
@@ -72,13 +79,26 @@ with a new migration and starts the Gateway gets a clear refusal naming
 the expected and actual versions, instead of a runtime error somewhere
 further in.
 
+**Exact matching has a real cost, stated plainly: rolling the Gateway
+back after a migration has run does not work.** DbUp has no down
+scripts, so the previous build will refuse to start against the migrated
+database. The intended recovery from a bad release is therefore to roll
+*forward* — fix and deploy again — not to roll back. That is a
+deliberate trade: for a historian, restoring a database backup to enable
+a rollback throws away every sample written since the backup, which is
+worse than the outage it is meant to shorten. If a deployment ever needs
+a genuine rollback path, it needs down-migrations or a documented
+restore procedure, and that is a Phase 6 deployment decision rather than
+something to improvise during an incident.
+
 ## Verified in review by
 
 - The Gateway's configuration contains no privileged connection string,
   and nothing in the Gateway calls DbUp's upgrade path.
-- Starting the Gateway against a database whose journal is behind the
-  build's expected version fails at startup, naming both versions, and
-  serves no requests.
+- Starting the Gateway against a database whose journal does not match
+  the build's scripts exactly fails at startup, naming both versions,
+  and serves no requests — whether the journal is behind the build *or
+  ahead of it*.
 - Starting the Gateway against a correctly migrated database succeeds
   using only the non-privileged application role.
 - The migrator applies cleanly from a completely empty database and is a
