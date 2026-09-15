@@ -61,9 +61,27 @@ editing a template propagates to every instance immediately). MQTT
 remains deferred until it gets its own push-capable driver contract and
 ADR.
 
-**Next up: Phase 5 (users, roles and security)** — per `phase-plan.md`,
-this needs its own permissions-model ADR before implementation starts;
-don't begin it unilaterally inside a PR.
+**Phase 5 (users, roles and security) is under way, and nothing about it
+is merged.** The permissions model is decided — ADR-0011 (opaque
+server-side session token, Site-scoped Operator/Viewer, tenant-wide
+Admin, append-only `audit_log`) and ADR-0012 (migrations run outside the
+Gateway, which refuses to start unless the schema matches its build
+exactly). Both are binding.
+
+Draft PR #7 carries the first half on `phase-5/permissions`: migration
+0008, the Migrator, the startup checks, `UserDirectory`/`SessionManager`
+in Core, and the Gateway components — but they are built, not composed.
+**On `main` today no endpoint is authenticated, no data is Site-filtered,
+both SignalR broadcasters still push to `Clients.All`, and there is no
+tag-write path.** Don't assume any of it is enforced because the ADRs
+describe it; check the code.
+
+Still to land on that branch: composing the components into the host
+(both startup checks and the first-Admin bootstrap, migrations out of
+Gateway startup), Site filtering on the existing endpoints, per-Site
+broadcasters, the web client, and the Phase 5 tests. When it merges, this
+paragraph becomes a status note like the phases above, and the
+"(in flight)" markers come out of Solution layout.
 
 ## When Phase 1 (or any phase) begins
 
