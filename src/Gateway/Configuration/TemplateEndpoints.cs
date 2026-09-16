@@ -3,6 +3,7 @@ using ScadaDarbox.Core.Model;
 using ScadaDarbox.Core.Tags;
 using ScadaDarbox.Core.Templates;
 using ScadaDarbox.Gateway.Contracts;
+using ScadaDarbox.Gateway.Security;
 
 namespace ScadaDarbox.Gateway.Configuration;
 
@@ -13,17 +14,20 @@ internal static class TemplateEndpoints
 {
     internal static void MapTemplateApi(this WebApplication app)
     {
+        // Admin only, for reading as well as editing. Templates belong to the Tenant, not
+        // to a Site, so there is no Site to filter them by — and Viewer and Operator have no
+        // configuration rights at all (ADR-0011).
         app.MapGet("/api/templates", async (
             IDeviceTemplateRepository templates,
             CancellationToken cancellationToken) =>
-            Results.Ok((await templates.GetAllAsync(cancellationToken)).Select(DeviceTemplateDto.From)));
+            Results.Ok((await templates.GetAllAsync(cancellationToken)).Select(DeviceTemplateDto.From))).RequireAuthorization(Policies.Admin);
 
         app.MapGet("/api/templates/{templateId:guid}/tags", async (
             Guid templateId,
             IDeviceTemplateRepository templates,
             CancellationToken cancellationToken) =>
             Results.Ok((await templates.GetTagsAsync(templateId, cancellationToken))
-                .Select(TemplateTagDto.From)));
+                .Select(TemplateTagDto.From))).RequireAuthorization(Policies.Admin);
 
         app.MapPost("/api/templates", async (
             CreateTemplateRequest request,
@@ -41,7 +45,7 @@ internal static class TemplateEndpoints
 
             await templates.AddAsync(template, cancellationToken);
             return Results.Created($"/api/templates/{template.Id}", template.Id);
-        });
+        }).AdminWrite("template.create", "device_template");
 
         MapTemplateTags(app);
         MapInstantiation(app);
@@ -75,7 +79,7 @@ internal static class TemplateEndpoints
             {
                 return Results.BadRequest(new { error = exception.Message });
             }
-        });
+        }).AdminWrite("template.add_tag", "device_template", "templateId");
 
         app.MapDelete("/api/templates/{templateId:guid}/tags/{templateTagId:guid}", async (
             Guid templateTagId,
@@ -94,7 +98,7 @@ internal static class TemplateEndpoints
             {
                 return Results.Conflict(new { error = exception.Message });
             }
-        });
+        }).AdminWrite("template.remove_tag", "device_template_tag", "templateTagId");
     }
 
     private static void MapInstantiation(WebApplication app)
@@ -132,7 +136,7 @@ internal static class TemplateEndpoints
 
             await reloader.ReloadAsync(cancellationToken);
             return Results.Created($"/api/devices/{device.Id}", device.Id);
-        });
+        }).AdminWrite("device.instantiate", "device");
     }
 
     private static bool ToDomain(

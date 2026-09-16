@@ -27,9 +27,26 @@ public sealed class TestDatabase : IAsyncLifetime
     private static string ServerConnectionString =>
         $"Host={ServerHost};Port=5432;Database=postgres;Username=scada;Password=scada;Timeout=3;Command Timeout=10";
 
+    /// <summary>
+    /// The application role belongs to the whole server, so every run gives it the same
+    /// password — the one a developer's own Gateway uses, unless overridden.
+    /// </summary>
+    private static readonly string ApplicationPassword =
+        Environment.GetEnvironmentVariable("SCADA_APP_DB_PASSWORD") ?? "scada_app";
+
     private readonly string _databaseName = $"scada_test_{Guid.NewGuid():N}";
 
+    /// <summary>
+    /// Connected as the migrator's privileged role. Right for testing what the schema itself
+    /// enforces; wrong for anything about grants, which a superuser simply bypasses.
+    /// </summary>
     public NpgsqlDataSource DataSource { get; private set; } = null!;
+
+    /// <summary>
+    /// Connected as the application role the Gateway runs as (ADR-0011). Any test about what
+    /// the application is <em>not allowed</em> to do must use this one.
+    /// </summary>
+    public NpgsqlDataSource ApplicationDataSource { get; private set; } = null!;
 
     /// <summary>
     /// Whether a server is reachable. Probed once so a machine without Docker running
@@ -50,12 +67,16 @@ public sealed class TestDatabase : IAsyncLifetime
         // Deliberately the production migrator, not a hand-written schema: a test that
         // built its own tables could pass while the shipped migration was broken.
         DatabaseMigrator.Migrate(connectionString);
+        await ApplicationRole.SetPasswordAsync(connectionString, ApplicationPassword, CancellationToken.None);
 
         DataSource = NpgsqlDataSource.Create(connectionString);
+        ApplicationDataSource = NpgsqlDataSource.Create(
+            ApplicationRole.ConnectionStringFor(connectionString, ApplicationPassword));
     }
 
     public async Task DisposeAsync()
     {
+        await ApplicationDataSource.DisposeAsync();
         await DataSource.DisposeAsync();
 
         await using var server = NpgsqlDataSource.Create(ServerConnectionString);

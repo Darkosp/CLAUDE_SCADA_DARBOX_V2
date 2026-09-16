@@ -19,16 +19,19 @@ export interface Selection {
       <div class="folder">
         <span class="label">
           {{ folder.name }}
-          <button
-            type="button"
-            class="remove"
-            [attr.aria-label]="'Delete folder ' + folder.name"
-            (click)="deleteFolder.emit({ id: folder.id, name: folder.name })">×</button>
+          @if (editable()) {
+            <button
+              type="button"
+              class="remove"
+              [attr.aria-label]="'Delete folder ' + folder.name"
+              (click)="deleteFolder.emit({ id: folder.id, name: folder.name })">×</button>
+          }
         </span>
         <app-browse-tree
           [folders]="folder.folders"
           [devices]="folder.devices"
           [selectedTagId]="selectedTagId()"
+          [editable]="editable()"
           (selected)="selected.emit($event)"
           (addDeviceHere)="addDeviceHere.emit($event)"
           (deleteFolder)="deleteFolder.emit($event)" />
@@ -122,6 +125,9 @@ export class BrowseTree {
   readonly folders = input.required<TreeFolder[]>();
   readonly devices = input.required<TreeDevice[]>();
   readonly selectedTagId = input<string | null>(null);
+
+  /** Whether configuration controls are offered — only to an Admin (ADR-0011). */
+  readonly editable = input(false);
 
   readonly selected = output<Selection>();
   readonly addDeviceHere = output<string | null>();

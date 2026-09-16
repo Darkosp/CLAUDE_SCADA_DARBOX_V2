@@ -1,9 +1,13 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
+import { Auth } from './auth';
 import {
+  Access,
   Alarm,
   AlarmDefinition,
   DeviceTemplate,
+  LoginResponse,
   Site,
+  SiteRole,
   SiteTree,
   TagHistory,
   TemplateTag,
@@ -24,6 +28,34 @@ export class ApiError extends Error {
 
 @Injectable({ providedIn: 'root' })
 export class Api {
+  private readonly auth = inject(Auth);
+
+  // ---- session ------------------------------------------------------------
+
+  async login(username: string, password: string): Promise<LoginResponse> {
+    const response = await fetch(`${GATEWAY_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+
+    if (!response.ok) {
+      throw new ApiError(await this.reasonFrom(response), response.status);
+    }
+
+    return (await response.json()) as LoginResponse;
+  }
+
+  me(): Promise<Access> {
+    return this.get<Access>('/api/auth/me');
+  }
+
+  logout(): Promise<unknown> {
+    return this.send('POST', '/api/auth/logout', null);
+  }
+
+  // ---- browsing -----------------------------------------------------------
+
   sites(): Promise<Site[]> {
     return this.get<Site[]>('/api/sites');
   }
@@ -33,9 +65,15 @@ export class Api {
   }
 
   history(tagId: string, from: Date, to: Date): Promise<TagHistory> {
-    const query = `from=${from.toISOString()}&to=${to.toISOString()}`;
+    const query = `from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
     return this.get<TagHistory>(`/api/tags/${tagId}/history?${query}`);
   }
+
+  writeTag(tagId: string, value: number | boolean | string): Promise<unknown> {
+    return this.send('POST', `/api/tags/${tagId}/value`, { value });
+  }
+
+  // ---- configuration (Admin) ----------------------------------------------
 
   createFolder(siteId: string, body: { name: string; parentFolderId: string | null }): Promise<unknown> {
     return this.send('POST', `/api/sites/${siteId}/folders`, body);
@@ -85,18 +123,6 @@ export class Api {
     return this.get<AlarmDefinition[]>(`/api/tags/${tagId}/alarms`);
   }
 
-  alarms(): Promise<Alarm[]> {
-    return this.get<Alarm[]>('/api/alarms');
-  }
-
-  acknowledge(definitionId: string): Promise<unknown> {
-    return this.send('POST', `/api/alarms/${definitionId}/acknowledge`, null);
-  }
-
-  shelve(definitionId: string): Promise<unknown> {
-    return this.send('POST', `/api/alarms/${definitionId}/shelve`, null);
-  }
-
   saveAlarm(
     tagId: string,
     definitionId: string | null,
@@ -123,31 +149,102 @@ export class Api {
     return this.send('DELETE', `/api/devices/${deviceId}/tags/${tagId}`, null);
   }
 
+  // ---- alarms (Operator) --------------------------------------------------
+
+  alarms(): Promise<Alarm[]> {
+    return this.get<Alarm[]>('/api/alarms');
+  }
+
+  acknowledge(definitionId: string): Promise<unknown> {
+    return this.send('POST', `/api/alarms/${definitionId}/acknowledge`, null);
+  }
+
+  shelve(definitionId: string): Promise<unknown> {
+    return this.send('POST', `/api/alarms/${definitionId}/shelve`, null);
+  }
+
+  // ---- users (Admin) ------------------------------------------------------
+
+  users(): Promise<Access[]> {
+    return this.get<Access[]>('/api/users');
+  }
+
+  createUser(body: { username: string; password: string; isAdmin: boolean }): Promise<unknown> {
+    return this.send('POST', '/api/users', body);
+  }
+
+  deactivateUser(userId: string): Promise<unknown> {
+    return this.send('DELETE', `/api/users/${userId}`, null);
+  }
+
+  setAdmin(userId: string, isAdmin: boolean): Promise<unknown> {
+    return this.send('PUT', `/api/users/${userId}/admin`, { isAdmin });
+  }
+
+  setPassword(userId: string, password: string): Promise<unknown> {
+    return this.send('PUT', `/api/users/${userId}/password`, { password });
+  }
+
+  setSiteRole(userId: string, siteId: string, role: SiteRole): Promise<unknown> {
+    return this.send('PUT', `/api/users/${userId}/sites/${siteId}`, { role });
+  }
+
+  removeSiteRole(userId: string, siteId: string): Promise<unknown> {
+    return this.send('DELETE', `/api/users/${userId}/sites/${siteId}`, null);
+  }
+
+  // ---- transport ----------------------------------------------------------
+
   private async get<T>(path: string): Promise<T> {
-    const response = await fetch(`${GATEWAY_URL}${path}`);
-    if (!response.ok) {
-      throw new ApiError(await this.reasonFrom(response), response.status);
-    }
+    const response = await fetch(`${GATEWAY_URL}${path}`, { headers: this.headers(false) });
+    await this.ensureOk(response);
     return (await response.json()) as T;
   }
 
   private async send(method: string, path: string, body: unknown): Promise<unknown> {
     const response = await fetch(`${GATEWAY_URL}${path}`, {
       method,
-      headers: body === null ? undefined : { 'Content-Type': 'application/json' },
+      headers: this.headers(body !== null),
       body: body === null ? undefined : JSON.stringify(body),
     });
 
-    if (!response.ok) {
-      throw new ApiError(await this.reasonFrom(response), response.status);
-    }
-
+    await this.ensureOk(response);
     return response.status === 204 ? null : await response.json();
   }
 
+  private headers(json: boolean): Record<string, string> {
+    const headers: Record<string, string> = {};
+    const token = this.auth.token();
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    if (json) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    return headers;
+  }
+
+  private async ensureOk(response: Response): Promise<void> {
+    if (response.ok) {
+      return;
+    }
+
+    // A 401 means the session is over — expired, revoked, or the user deactivated.
+    // Forgetting it here returns the operator to the login screen, instead of leaving every
+    // later request to fail the same way with nothing to explain why.
+    if (response.status === 401) {
+      this.auth.end();
+    }
+
+    throw new ApiError(await this.reasonFrom(response), response.status);
+  }
+
   /**
-   * The gateway answers a refused write with the rule that was broken — a cross-site
-   * placement, a folder cycle. Surfacing that beats replacing it with a generic failure.
+   * The gateway answers a refused request with the rule that was broken — a cross-site
+   * placement, a missing role. Surfacing that beats replacing it with a generic failure.
    */
   private async reasonFrom(response: Response): Promise<string> {
     try {

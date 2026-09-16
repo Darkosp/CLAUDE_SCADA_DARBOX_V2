@@ -120,7 +120,11 @@ public interface IAlarmDefinitionRepository
 /// Exists so history outlives configuration in a usable form (ADR-0001, ADR-0009): a
 /// trend for a device retired last year should read as its name, not as a UUID.
 /// </remarks>
-public sealed record TagIdentity(Guid TagId, string TagName, string DeviceName, bool IsDeleted);
+/// <param name="SiteId">
+/// The Site the tag belonged to, resolved past any deletion — what authorises reading its
+/// history once it is no longer in the live catalogue (ADR-0011).
+/// </param>
+public sealed record TagIdentity(Guid TagId, string TagName, string DeviceName, Guid SiteId, bool IsDeleted);
 
 /// <summary>Reads and writes the tags of a device.</summary>
 public interface ITagRepository

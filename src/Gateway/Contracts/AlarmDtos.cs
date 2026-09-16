@@ -4,13 +4,19 @@ using ScadaDarbox.Core.Model;
 namespace ScadaDarbox.Gateway.Contracts;
 
 /// <summary>Wire form of one standing alarm.</summary>
+/// <param name="SiteId">
+/// The Site of the alarm's tag, or null once that tag has left the catalogue. Lets a client
+/// that receives alarms one Site at a time replace that Site's list without touching the
+/// others.
+/// </param>
 /// <param name="AcknowledgedAtUtc">
-/// When it was acknowledged, with no record of by whom. Users arrive in Phase 5;
-/// attributing this to anyone now would be a fiction the client would then display.
+/// When it was acknowledged. Who acknowledged it is recorded in the audit trail
+/// (ADR-0011), not carried on the live alarm.
 /// </param>
 public sealed record AlarmDto(
     Guid DefinitionId,
     Guid TagId,
+    Guid? SiteId,
     string TagPath,
     string Limit,
     double LimitValue,
@@ -21,9 +27,10 @@ public sealed record AlarmDto(
     DateTimeOffset? AcknowledgedAtUtc,
     DateTimeOffset? ClearedAtUtc)
 {
-    public static AlarmDto From(Alarm alarm) => new(
+    public static AlarmDto From(Alarm alarm, Guid? siteId) => new(
         alarm.DefinitionId,
         alarm.TagId,
+        siteId,
         alarm.TagPath,
         alarm.Limit.ToString(),
         alarm.LimitValue,

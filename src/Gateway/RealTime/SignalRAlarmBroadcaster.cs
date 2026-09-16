@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.SignalR;
 using ScadaDarbox.Core.Alarms;
+using ScadaDarbox.Core.Tags;
 using ScadaDarbox.Gateway.Contracts;
+using ScadaDarbox.Gateway.Security;
 
 namespace ScadaDarbox.Gateway.RealTime;
 
@@ -9,22 +11,41 @@ namespace ScadaDarbox.Gateway.RealTime;
 /// </summary>
 /// <remarks>
 /// The engine only publishes on an actual change, so this does not fire once per scan
-/// while a value sits out of range.
+/// while a value sits out of range. The list is split by Site and each part goes only to
+/// that Site's group (ADR-0011).
 /// </remarks>
 public sealed class SignalRAlarmBroadcaster : IAlarmSubscriber
 {
     private readonly IHubContext<TagHub> _hubContext;
+    private readonly TagCatalogSource _catalogSource;
 
-    public SignalRAlarmBroadcaster(IHubContext<TagHub> hubContext) => _hubContext = hubContext;
+    public SignalRAlarmBroadcaster(IHubContext<TagHub> hubContext, TagCatalogSource catalogSource)
+    {
+        _hubContext = hubContext;
+        _catalogSource = catalogSource;
+    }
 
     public async ValueTask OnAlarmsChangedAsync(
         IReadOnlyList<Alarm> alarms,
         CancellationToken cancellationToken)
     {
-        var payload = alarms.Select(AlarmDto.From).ToList();
+        var catalog = _catalogSource.Current;
 
-        await _hubContext.Clients.All
-            .SendAsync(TagHub.AlarmsMethod, payload, cancellationToken)
-            .ConfigureAwait(false);
+        var bySite = alarms
+            .Select(alarm => (Alarm: alarm, SiteId: catalog.SiteOfTag(alarm.TagId)))
+            .Where(entry => entry.SiteId is not null)
+            .GroupBy(entry => entry.SiteId!.Value)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(entry => AlarmDto.From(entry.Alarm, entry.SiteId)).ToList());
+
+        // Every Site, not only those with alarms: each message is a Site's complete standing
+        // list, so a Site whose last alarm just went away has to be told its list is empty.
+        foreach (var site in catalog.Sites)
+        {
+            await _hubContext.Clients.Group(HubConnectionRegistry.GroupOf(site.Id))
+                .SendAsync(TagHub.AlarmsMethod, site.Id, bySite.GetValueOrDefault(site.Id) ?? [], cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 }
