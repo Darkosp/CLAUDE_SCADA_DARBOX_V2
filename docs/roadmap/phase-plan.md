@@ -303,8 +303,8 @@ merely gates:
   clause of ADR-0007) — otherwise the serving process would still hold
   the privileged credential that bypasses the guarantee above. A
   migrator CLI/container applies them; the Gateway instead reads DbUp's
-  journal at startup and refuses to start if the schema is behind the
-  version its build expects.
+  journal at startup and refuses to start unless it matches the scripts
+  its build carries exactly — behind *or* ahead.
 
 Sessions also expire on two clocks (ADR-0011): an idle timeout (default
 12 hours, with an open hub connection counting as use so an operator is
@@ -316,6 +316,68 @@ outside their permitted scope — checked over both REST and the live
 SignalR push, not REST alone, and with the `audit_log` append-only check
 executed over the application's own connection rather than a superuser
 one (see ADR-0011's review criteria).
+
+**Status: gate met (2026-09-16), complete and merged to `main` (PR #7).**
+130 tests pass, none skipped, with the Gateway tests running the real
+host against a fresh database prepared by the migrator's own code and
+connected as the non-privileged `scada_app` role.
+
+Every criterion the gate itself turns on has a test: the write refusal,
+Site scoping over REST and over the live push, revocation reaching an
+already-open connection, 404-not-403, one audit entry per
+acknowledgement, and the append-only check executed over the
+application's own connection. Four rows of ADR-0011's and ADR-0012's
+criteria do not have one yet, and are listed here rather than rounded
+off: that a password is never stored or logged in reversible form, that
+nothing in the Gateway calls DbUp's upgrade path, and that the migrator
+is a no-op on a second run — all three confirmed by hand or by search
+when the code was written, and all three getting a test in a follow-up
+PR — plus that Compose runs the migrator before the Gateway, which
+cannot be tested until Phase 6 builds the Compose files.
+
+The verification that matters most here is not the count. Seven
+guarantees were broken on purpose, one at a time, and each time the test
+that should have caught it did — failing at the assertion that actually
+encodes the guarantee, not somewhere incidental: open connections left
+in a Site's group after a role was removed, a connection notified but
+not moved, the hub token left in the URL, the Operator check removed
+from tag writes, a hidden Site answering 403 instead of 404, an
+acknowledgement not written to the audit log, and a deleted tag's
+history left visible to another Site. A green suite says the code passes
+its tests; that exercise says the tests would notice if it stopped.
+Revocation on a live connection was additionally checked with a second,
+still-permitted connection as a control, so the silence on the revoked
+one could not be mistaken for scanning having stopped.
+
+The browser check — run against a scratch database with throwaway
+credentials that were dropped afterwards, never the dev `scada` database
+— found a real gap that the ADR criteria did not: revoking a Viewer's
+role stopped new values reaching their open page, exactly as required,
+but the tree and trend already on screen stayed there. Correct by the
+letter of the criterion, wrong in a control room, where a frozen view
+that still looks live is worse than an empty one. Fixed so that losing
+the role clears the tree and trend, and regaining it restores them,
+both without a reload.
+
+**Two known limits, deliberate rather than overlooked:**
+
+- Expiry is swept, revocation is immediate. A session past either limit
+  is refused for new requests at once; an already-open live connection
+  is dropped on the next sweep (default 30 seconds) once it passes its
+  **absolute** lifetime. The idle timeout never ends a live connection,
+  because each sweep counts that connection as use — which is the
+  intended behaviour, not a gap: an operator watching a screen is not
+  idle. Revocation, deactivation and logout have no such tail. Recorded
+  in ADR-0011.
+- Each tag write opens its own short-lived connection to the device
+  rather than sharing the scan connection. That keeps a write from
+  blocking or disturbing scanning, but cheap Modbus RTUs and small PLCs
+  commonly cap concurrent TCP connections at one or two — scanning holds
+  one, so a write may be refused, or worse, may cost the scan its
+  connection. No device in the test set shows this yet. Revisit when a
+  real one does; the alternative (serialising writes through the scan
+  loop) trades this for the risk of stalling scans, and is not worth
+  building blind.
 
 ## Phase 6 — Deployment packaging for both topologies
 

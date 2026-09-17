@@ -100,6 +100,21 @@ architecture: a deployment can tighten them without a new ADR. An
 expired session is rejected and its token can never be revived — a new
 login issues a new one.
 
+Expiry and revocation are enforced differently, deliberately. Revocation
+— a removed role, a deactivated user, a logout — takes effect
+immediately, including on an already-open hub connection. Expiry is
+swept: a session past either limit is refused for new requests at once,
+while an already-open live connection is dropped on the next sweep
+(default every 30 seconds) once it passes its **absolute** lifetime. The
+idle timeout never ends a live connection at all, because each sweep
+counts that connection as use — which follows directly from the rule
+above that an open hub connection counts as use: an operator watching a
+screen is not idle, and the absolute lifetime is what eventually ends
+their session regardless. The seconds of tail after absolute expiry cost
+nothing: revocation is a response to something having gone wrong and has
+to be instant, while expiry is hygiene on a session that was legitimate
+a moment earlier. The sweep interval is configuration.
+
 **Revised during pre-implementation review (2026-09-11).** This ADR
 originally specified a signed JWT. Checking the code before starting
 implementation surfaced that `Microsoft.AspNetCore.Authentication.JwtBearer`
