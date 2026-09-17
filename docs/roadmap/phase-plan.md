@@ -327,13 +327,23 @@ Site scoping over REST and over the live push, revocation reaching an
 already-open connection, 404-not-403, one audit entry per
 acknowledgement, and the append-only check executed over the
 application's own connection. Four rows of ADR-0011's and ADR-0012's
-criteria do not have one yet, and are listed here rather than rounded
-off: that a password is never stored or logged in reversible form, that
-nothing in the Gateway calls DbUp's upgrade path, and that the migrator
-is a no-op on a second run — all three confirmed by hand or by search
-when the code was written, and all three getting a test in a follow-up
-PR — plus that Compose runs the migrator before the Gateway, which
-cannot be tested until Phase 6 builds the Compose files.
+criteria were confirmed by hand or by search when the code was written
+rather than by a test, and are named here rather than rounded off: that
+a password is never stored or logged in reversible form, that nothing in
+the Gateway calls DbUp's upgrade path, and that the migrator is a no-op
+on a second run — all three now have tests (PR #8) — plus that Compose
+runs the migrator before the Gateway, which cannot be tested until
+Phase 6 builds the Compose files and remains the one outstanding row.
+
+Writing those three tests turned up a real defect that no criterion
+asked about: two migrator runs setting the application role's password
+at the same time collided (`tuple concurrently updated`), because the
+retry waited a fixed interval and every caller woke together. Fixed by
+leaving the role alone when it can already log in with that password —
+a genuine no-op on a second run — and by jittering the retry for a real
+first-time race. The skip is only trusted after a deliberate
+wrong-password login is *refused*, so a server configured to accept any
+password cannot make the migrator quietly skip setting one.
 
 The verification that matters most here is not the count. Seven
 guarantees were broken on purpose, one at a time, and each time the test
@@ -391,6 +401,19 @@ string exists only in the migrator's environment — the Gateway gets the
 non-privileged one (ADR-0011, ADR-0012). Also still open from Phase 3:
 alarm state is in-memory and does not survive a Gateway restart, which
 needs an alarm-journal decision before this phase ships.
+
+**Open: can two migrators overlap?** Whether applying the migrations
+themselves is safe when two migrator runs meet has never been checked,
+only assumed. ADR-0007 deliberately set the question aside while
+migrations ran inside a single-instance Gateway; ADR-0012 moved them
+into a separate step, which makes an accidental overlap easier to cause
+— a container restart loop, two deployments crossing, an orchestrator
+starting a second replica. Phase 5 hardened one part of it by accident:
+writing the tests for a no-op second run surfaced a real collision in
+the migrator's password step, which is now fixed. That says nothing
+about the migration scripts themselves. Whatever Compose (or the cloud
+topology's orchestration) does here is the answer to this question, so
+it belongs to this phase rather than to a later incident.
 
 **Test gate:** the full stack runs in Docker Compose, locally, in both
 configurations.
