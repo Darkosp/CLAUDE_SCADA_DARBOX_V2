@@ -31,10 +31,13 @@ public sealed class TestDatabase : IAsyncLifetime
     /// The application role belongs to the whole server, so every run gives it the same
     /// password — the one a developer's own Gateway uses, unless overridden.
     /// </summary>
-    private static readonly string ApplicationPassword =
+    public static readonly string ApplicationPassword =
         Environment.GetEnvironmentVariable("SCADA_APP_DB_PASSWORD") ?? "scada_app";
 
     private readonly string _databaseName = $"scada_test_{Guid.NewGuid():N}";
+
+    /// <summary>The migrator's credential for this database, for tests that run the migrator itself.</summary>
+    public string PrivilegedConnectionString => ConnectionStringFor(_databaseName);
 
     /// <summary>
     /// Connected as the migrator's privileged role. Right for testing what the schema itself

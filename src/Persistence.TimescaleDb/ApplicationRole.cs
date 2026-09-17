@@ -17,6 +17,9 @@ public static class ApplicationRole
     public const string Name = "scada_app";
 
     private const string InternalError = "XX000";
+    private const string InvalidPassword = "28P01";
+    private const string LoginNotPermitted = "28000";
+    private const int MaxAttempts = 10;
     private const int ScramIterations = 4096;
 
     /// <summary>
@@ -38,6 +41,18 @@ public static class ApplicationRole
             throw new ArgumentException("The application role's password must not be empty.", nameof(password));
         }
 
+        // Already in force: leave the role alone. A rerun of the migrator then writes nothing to
+        // the cluster's shared catalogue at all, instead of rewriting an identical password
+        // under a fresh salt.
+        var alreadyInForce = await PasswordAlreadyInForceAsync(
+            candidate => CanLogInAsync(privilegedConnectionString, candidate, cancellationToken),
+            password).ConfigureAwait(false);
+
+        if (alreadyInForce)
+        {
+            return;
+        }
+
         // The verifier is base64 and fixed punctuation, so it cannot close the literal.
         var statement = $"ALTER ROLE {Name} WITH LOGIN PASSWORD '{ScramVerifier(password)}'";
 
@@ -51,20 +66,62 @@ public static class ApplicationRole
                     await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                     break;
                 }
-                catch (PostgresException exception) when (attempt < 5 && exception.SqlState == InternalError)
+                catch (PostgresException exception) when (attempt < MaxAttempts && exception.SqlState == InternalError)
                 {
                     // A role belongs to the whole cluster, so two migrators finishing at the
                     // same moment against different databases can collide on the same
                     // catalogue row ("tuple concurrently updated"). Both want the same
-                    // outcome; try again.
-                    await Task.Delay(TimeSpan.FromMilliseconds(50 * attempt), cancellationToken).ConfigureAwait(false);
+                    // outcome, so try again — after a random pause: callers that collided
+                    // once and all waited the same fixed time would simply collide again.
+                    var pause = TimeSpan.FromMilliseconds(Random.Shared.Next(25, 250));
+                    await Task.Delay(pause, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
 
-        await using var check = NpgsqlDataSource.Create(ConnectionStringFor(privilegedConnectionString, password));
-        await using var probe = check.CreateCommand("SELECT 1");
-        await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (!await CanLogInAsync(privilegedConnectionString, password, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                $"The password was set, but the application role '{Name}' still cannot log in with it.");
+        }
+    }
+
+    /// <summary>
+    /// Whether the role already logs in with <paramref name="password"/> — on a server where
+    /// that actually means the password is set.
+    /// </summary>
+    /// <param name="canLogIn">Tries a login as the application role with the given password.</param>
+    internal static async Task<bool> PasswordAlreadyInForceAsync(Func<string, Task<bool>> canLogIn, string password)
+    {
+        if (!await canLogIn(password).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        // A server that also admits the role with a password nobody ever set is not checking
+        // passwords at all — a trust rule — so the login above proves nothing about what is
+        // stored. The password is then set anyway, so it is in force if that rule is tightened.
+        var decoy = $"not-the-password-{Guid.NewGuid():N}";
+        return !await canLogIn(decoy).ConfigureAwait(false);
+    }
+
+    /// <summary>Whether the application role can log in with <paramref name="password"/> right now.</summary>
+    internal static async Task<bool> CanLogInAsync(
+        string privilegedConnectionString,
+        string password,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var check = NpgsqlDataSource.Create(ConnectionStringFor(privilegedConnectionString, password));
+            await using var probe = check.CreateCommand("SELECT 1");
+            await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (PostgresException exception) when (exception.SqlState is InvalidPassword or LoginNotPermitted)
+        {
+            return false;
+        }
     }
 
     /// <summary>

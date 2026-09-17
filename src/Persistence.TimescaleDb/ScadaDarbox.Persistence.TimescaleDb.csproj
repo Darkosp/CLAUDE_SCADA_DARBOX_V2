@@ -23,4 +23,10 @@
     <EmbeddedResource Include="migrations\*.sql" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The decision whether an existing login can be trusted is worth testing against a
+         server that accepts any password, which the test environment does not have. -->
+    <InternalsVisibleTo Include="ScadaDarbox.Persistence.Tests" />
+  </ItemGroup>
+
 </Project>
