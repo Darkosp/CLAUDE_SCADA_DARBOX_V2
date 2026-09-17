@@ -61,27 +61,26 @@ editing a template propagates to every instance immediately). MQTT
 remains deferred until it gets its own push-capable driver contract and
 ADR.
 
-**Phase 5 (users, roles and security) is under way, and nothing about it
-is merged.** The permissions model is decided — ADR-0011 (opaque
-server-side session token, Site-scoped Operator/Viewer, tenant-wide
-Admin, append-only `audit_log`) and ADR-0012 (migrations run outside the
-Gateway, which refuses to start unless the schema matches its build
-exactly). Both are binding.
+**Phase 5 (users, roles and security) is complete and merged to `main`**
+(PR #7; see `phase-plan.md`'s Phase 5 status note) — every endpoint
+requires a session except health and login, every Site-scoped path
+filters by the caller's permitted Sites, both SignalR broadcasters push
+per Site instead of to every connection, and a tag-write path exists and
+is Operator-gated. ADR-0011 (opaque server-side session token,
+Site-scoped Operator/Viewer, tenant-wide Admin, append-only `audit_log`)
+and ADR-0012 (migrations run outside the Gateway, which refuses to start
+unless the schema matches its build exactly) are both implemented. Every
+criterion the Phase 5 gate turns on has a test; `phase-plan.md`'s Phase 5
+note names the rows that don't and why.
 
-Draft PR #7 carries the first half on `phase-5/permissions`: migration
-0008, the Migrator, the startup checks, `UserDirectory`/`SessionManager`
-in Core, and the Gateway components — but they are built, not composed.
-**On `main` today no endpoint is authenticated, no data is Site-filtered,
-both SignalR broadcasters still push to `Clients.All`, and there is no
-tag-write path.** Don't assume any of it is enforced because the ADRs
-describe it; check the code.
-
-Still to land on that branch: composing the components into the host
-(both startup checks and the first-Admin bootstrap, migrations out of
-Gateway startup), Site filtering on the existing endpoints, per-Site
-broadcasters, the web client, and the Phase 5 tests. When it merges, this
-paragraph becomes a status note like the phases above, and the
-"(in flight)" markers come out of Solution layout.
+Two consequences to know before working on this code. **The Gateway no
+longer migrates anything** — run `src/Migrator` first, or the Gateway
+refuses to start and names both schema versions; `docs/roadmap/phase-1-running.md`
+has the current sequence. And **a Site the caller cannot see answers 404,
+not 403**, everywhere — an id that exists elsewhere is indistinguishable
+from one that does not exist. Don't "improve" that into a clearer 403;
+it exists so Site-scoped paths cannot be used to enumerate what a user
+may not know about, and there is a test that fails if it changes.
 
 ## When Phase 1 (or any phase) begins
 
@@ -131,14 +130,13 @@ src/
   Persistence.TimescaleDb/  concrete historian implementation (plain Npgsql/SQL,
                             hypertable) behind Core's storage abstraction
   Gateway/                  Web API host, SignalR hub, the scan service wiring
-                            drivers + tag engine + historian together — from
-                            Phase 5 (in flight): runs with the non-privileged
-                            database role (ADR-0011) and refuses to start on a
-                            schema mismatch (ADR-0012)
-  Migrator/                 (Phase 5, in flight) one-shot privileged step that
-                            applies the DbUp scripts (ADR-0012) — the only
-                            component holding the privileged connection string;
-                            runs to completion before the Gateway starts
+                            drivers + tag engine + historian together; runs with
+                            the non-privileged database role (ADR-0011) and
+                            refuses to start on a schema mismatch (ADR-0012)
+  Migrator/                 one-shot privileged step that applies the DbUp
+                            scripts (ADR-0012) — the only component holding the
+                            privileged connection string; runs to completion
+                            before the Gateway starts (Phase 5)
   Modules/
     Drivers.Modbus/          Modbus TCP driver (Phase 1)
     Drivers.OpcUa/           (Phase 4)
