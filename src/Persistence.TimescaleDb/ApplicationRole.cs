@@ -41,10 +41,14 @@ public static class ApplicationRole
             throw new ArgumentException("The application role's password must not be empty.", nameof(password));
         }
 
-        // Already able to log in with this password: leave the role alone. A rerun of the
-        // migrator then writes nothing to the cluster's shared catalogue at all, instead of
-        // rewriting an identical password under a fresh salt.
-        if (await CanLogInAsync(privilegedConnectionString, password, cancellationToken).ConfigureAwait(false))
+        // Already in force: leave the role alone. A rerun of the migrator then writes nothing to
+        // the cluster's shared catalogue at all, instead of rewriting an identical password
+        // under a fresh salt.
+        var alreadyInForce = await PasswordAlreadyInForceAsync(
+            candidate => CanLogInAsync(privilegedConnectionString, candidate, cancellationToken),
+            password).ConfigureAwait(false);
+
+        if (alreadyInForce)
         {
             return;
         }
@@ -82,8 +86,27 @@ public static class ApplicationRole
         }
     }
 
+    /// <summary>
+    /// Whether the role already logs in with <paramref name="password"/> — on a server where
+    /// that actually means the password is set.
+    /// </summary>
+    /// <param name="canLogIn">Tries a login as the application role with the given password.</param>
+    internal static async Task<bool> PasswordAlreadyInForceAsync(Func<string, Task<bool>> canLogIn, string password)
+    {
+        if (!await canLogIn(password).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        // A server that also admits the role with a password nobody ever set is not checking
+        // passwords at all — a trust rule — so the login above proves nothing about what is
+        // stored. The password is then set anyway, so it is in force if that rule is tightened.
+        var decoy = $"not-the-password-{Guid.NewGuid():N}";
+        return !await canLogIn(decoy).ConfigureAwait(false);
+    }
+
     /// <summary>Whether the application role can log in with <paramref name="password"/> right now.</summary>
-    private static async Task<bool> CanLogInAsync(
+    internal static async Task<bool> CanLogInAsync(
         string privilegedConnectionString,
         string password,
         CancellationToken cancellationToken)
