@@ -1,7 +1,8 @@
 # ADR-0013 — Alarm journal: an append-only event log, with the live list derived from it
 
 **Status:** Accepted
-**Date:** 2026-09-18
+**Date:** 2026-09-18 (extended the same day, before any implementation
+existed — see "Resolved during pre-implementation review")
 
 ## Context
 
@@ -45,16 +46,37 @@ transition and keeps its memory in step. One place to write, one place
 to read from, nothing to drift — the same reasoning that put the
 active-row filter in a view rather than in every query (ADR-0009).
 
-An event records: the alarm definition and tag it belongs to, the **Site
-denormalised onto the row**, the event type and when it occurred, the
-acting user where there was one, the limit and the value that triggered
-it, and the tag's display path *as it read at that moment*. Site is
+An event records: the **occurrence** it belongs to (see below), the
+alarm definition and tag, the **Site denormalised onto the row**, the
+event type, **two timestamps**, the acting user where there was one, the
+limit and the value that triggered it, and the tag's display path *as it
+read at that moment*. Site is
 copied onto the event rather than resolved through tag → device → site
 at query time because Phase 5 already proved that path breaks for a
 soft-deleted tag, and alarm history for retired equipment is exactly
 what a review needs. The path is snapshotted for the same reason it is
 never an identity (ADR-0001): it is mutable, and a journal should show
-what the operator actually saw.
+what the operator actually saw. The acting user is kept the same way —
+the id, which is stable, **and a snapshot of the name as it then read**,
+because users get renamed and deactivated, and a Viewer reading the
+journal cannot resolve an id (the user list is Admin-only, ADR-0011).
+
+**An occurrence, not a definition, is what an event belongs to.** One
+definition raises many separate alarms over the life of a plant; keying
+events only by definition makes it impossible to pair a `Raised` with
+its ending, to ask how long an alarm lasted, or even to define which
+events are still open. Every event therefore carries an
+`OccurrenceId`: a `Raised` starts one, every later event for that alarm
+repeats it, and `Retired` closes it. "Open" means an occurrence with no
+`Retired`.
+
+**Two clocks, both kept, following `tag_sample`'s precedent.** A
+value-driven event carries the reading's source timestamp (ADR-0003) and
+the time the engine actually recorded it. For OPC UA those differ
+routinely — a server may hand over a value that changed minutes or hours
+earlier — and collapsing them would recreate, in the journal, the exact
+confusion ADR-0003 exists to prevent. Engine-level events have no source
+timestamp at all, which is honest: nothing at the plant produced them.
 
 **Event types** are `Raised`, `Acknowledged`, `Shelved`, `Unshelved`,
 `Cleared` and `Retired`, plus two that are about the engine rather than
@@ -64,22 +86,48 @@ writes `EvaluationStopped`; a start always writes `EvaluationStarted`,
 so an unclean stop shows up as a start with no matching stop — which is
 itself the honest record of a crash.
 
-**A clear found on the first evaluation after a restart is marked as
-such.** The engine did not observe the value returning to range; it
-observed that the value is in range now. The event carries the
-observation time and a flag saying it was detected after a restart,
-rather than implying the plant recovered at that instant. Whoever reads
-the journal later gets "we noticed at 08:31, having not been watching
-since 03:12" instead of a fabricated recovery time.
+**Anything first seen on the first evaluation after a restart is marked
+as such — in both directions.** A clear found then was not observed
+happening: the engine observed that the value *is* in range now. A
+breach found then is very likely an alarm that was raised during the
+outage, not one that began at that instant. Both carry the flag, so a
+reader gets "noticed at 08:31, having not been watching since 03:12"
+rather than a fabricated time in either direction. The original text
+covered only the clear; the raise has the same problem and takes the
+same treatment.
 
 **Shelving gains an expiry.** `ShelvedUntilUtc` is required, capped at a
-configurable maximum (default 24 hours). When the shelf expires and the
-value is still out of range, the alarm returns as `Active` and an
-`Unshelved` event is written — it re-announces itself, which is the
-entire point of a timer. Until now an indefinite shelf was survivable
-only because a restart happened to undo it; once shelving persists, that
-accidental safety net disappears, and a suppression made at 3am could
-otherwise hide an alarm for good with nobody aware it was ever set.
+configurable maximum (default 24 hours). When the shelf expires the
+alarm returns as `Active` and an `Unshelved` event is written — it
+re-announces itself, which is the entire point of a timer. Until now an
+indefinite shelf was survivable only because a restart happened to undo
+it; once shelving persists, that accidental safety net disappears, and a
+suppression made at 3am could otherwise hide an alarm for good with
+nobody aware it was ever set.
+
+Three things follow from that and are decided here rather than left to
+the implementation. The expiry needs **a clock the engine does not have
+today**: it only acts when a value arrives, so an alarm on a device that
+has gone offline — no readings at all — would never unshelve. A periodic
+sweep drives it, the same shape as the session sweep already built in
+Phase 5. **An expiry that falls while the value is unknown still
+unshelves**, returning the alarm to `Active`: unknown is not the same as
+fine, and the failure to prefer here is the loud one. And the engine
+does **not** remember what state an alarm held before it was shelved, so
+one that had been acknowledged comes back needing acknowledgement again.
+That is intended, not an oversight: re-acknowledging is the price of
+having hidden it.
+
+**The alarm engine learns who acted, and that is a deliberate reversal.**
+`IAlarmEngine` currently documents that it records "when, not who", so
+that the engine stays free of any notion of users and the caller writes
+the audit entry (ADR-0011). That was right while the engine held only
+live state; it stops being right the moment the journal has to answer
+"who acknowledged this" after a restart, from its own rows. Acknowledge
+and shelve therefore take the acting user. Core already models users
+(`Core/Security`), so nothing about ADR-0002's boundary is strained —
+but the code comment stating the opposite must be replaced rather than
+left to read as though this were drift.
 
 **The journal and the audit log both record an acknowledgement, on
 purpose.** `audit_log` (ADR-0011) answers "who did what to this system"
@@ -99,6 +147,76 @@ It is a plain table, not a hypertable. Alarm events are orders of
 magnitude sparser than samples, and nothing here needs TimescaleDB's
 partitioning; retention for the journal is left untouched until a real
 deployment gives a reason to set one.
+
+**Grants are opt-in from here on.** Migration 0008 set default
+privileges so that every table created afterwards grants the application
+role `SELECT`, `INSERT`, `UPDATE` and `DELETE`, with `audit_log`'s
+append-only posture restored by revoking afterwards. `alarm_event` would
+be born writable the same way. That polarity is backwards for this
+project: forgetting to revoke destroys a guarantee silently, while
+forgetting to grant fails loudly the first time anything writes. The
+default becomes `SELECT`/`INSERT` only, and a table that genuinely needs
+`UPDATE`/`DELETE` — which most configuration tables do — grants them
+explicitly in the migration that creates it. Existing tables keep the
+grants they already have; default privileges only affect tables created
+later.
+
+## Resolved during pre-implementation review (2026-09-18)
+
+Reading this ADR against `AlarmEngine`, `TagEngine`, `IAuditLog` and
+migration 0008 before writing any code raised four questions this text
+did not answer. They are settled here rather than inside the
+implementation, and no code had been written against the earlier text.
+
+**Alarm evaluation stops silently when the database is down, today.**
+`TagEngine.IngestAsync` writes the historian before notifying the alarm
+engine, so a failed historian write skips alarm evaluation for the whole
+batch while the scanner logs only "Scan failed". Nothing is being
+watched, the system looks healthy, and the journal cannot record the gap
+because the database is what is missing. That makes this ADR's central
+promise — that the journal tells you when nobody was watching — hollow
+in exactly the case it matters most. **Alarm evaluation must not be
+downstream of the historian write succeeding.** Fixing that is Phase 1
+code and belongs to this phase anyway, because the guarantee being built
+here depends on it.
+
+**When a journal write fails, what the engine does depends on who asked.
+** An operator action — acknowledge, shelve — writes its event first and
+**fails the request if the event does not persist**: an acknowledgement
+nobody can later prove happened is worse than a button that reports it
+did not work. A value-driven transition does the opposite: the live list
+and the banner update **even if the journal write fails**, because an
+operator standing in front of a screen needs to see the alarm more than
+the database needs to have recorded it. Once journal writes succeed
+again, the engine appends an event recording the window during which
+journalling was failing — the same principle as the evaluation gap, so a
+later reader is never handed a record with silent holes in it.
+
+**An alarm whose definition is deleted is retired automatically**, with
+an event saying that is why. Nothing evaluates a removed definition, so
+such an alarm can never clear on its own; in memory it merely lingered
+until an Admin acknowledged it, but once the live list is rebuilt from
+the journal it would return at every startup, forever. Retiring it is
+the only ending that terminates, and recording the cause keeps it
+distinguishable from an operator's acknowledgement or a real recovery.
+
+**After an unclean stop, the last-alive time comes from the historian,
+not from a heartbeat.** The journal only has rows at transitions, so
+after a crash its last event may be hours before the Gateway actually
+died, and "not watching since 03:12" would be wrong. The historian's
+most recent `ingested_at` before the restart already bounds when the
+Gateway was last alive, at no cost; `EvaluationStarted` records that
+bound. Periodic heartbeat events would buy the same thing by writing
+rows forever to cover a rare case.
+
+**Engine-level events carry no Site, and must survive the Site filter.**
+`EvaluationStarted` and `EvaluationStopped` belong to no Site and are
+visible to every signed-in user: they expose nothing Site-specific, and
+a Viewer on one Site still needs to know the system was not watching.
+This is a trap rather than a preference — a filter written as
+`WHERE site_id = ANY(...)` silently drops every row whose Site is null,
+which is precisely the class of quiet, wrong answer this project keeps
+finding. It needs a test, not just a sentence.
 
 ## Consequences
 
@@ -137,3 +255,23 @@ lasting belongs.
 - `alarm_event` refuses `UPDATE` and `DELETE` executed over the
   application's own connection; a test that runs as a superuser does not
   satisfy this row.
+- Every event of one alarm shares an `OccurrenceId`, and a second
+  occurrence on the same definition gets a different one — so "how long
+  did it last" and "which are still open" are answerable from the table
+  alone.
+- A failed historian write does not stop alarms being evaluated: with
+  the historian made to fail, a breaching value still raises an alarm
+  and still reaches the banner.
+- An operator's acknowledgement fails, and says so, when its journal
+  event cannot be written; a value-driven raise still reaches the live
+  list under the same failure, and the window of failed journalling is
+  recorded once writes succeed again.
+- An alarm whose definition is deleted does not reappear after a
+  restart, and its retirement names the deletion as the cause.
+- `EvaluationStarted` records a last-alive bound taken from the
+  historian after an unclean stop.
+- A Viewer scoped to one Site sees `EvaluationStarted`/`EvaluationStopped`
+  in the journal — the Site filter does not drop rows whose Site is
+  null.
+- A shelved alarm on a device that has gone offline — no readings at all
+  — still unshelves when its shelf expires.

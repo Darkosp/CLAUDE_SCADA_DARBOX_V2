@@ -419,11 +419,23 @@ being evaluated.
   `INSERT`/`SELECT` only for the application role. The test proving it
   runs over the application's own connection; under a superuser it
   proves nothing (the Phase 5 lesson).
-- A clear first observed after a restart is recorded with the
-  observation time and marked as detected-after-restart. Do not write a
-  recovery time the engine never observed — the same rule that stopped
+- A clear *or a breach* first observed after a restart is recorded with
+  the observation time and marked as detected-after-restart. Do not
+  write a time the engine never observed — the same rule that stopped
   the driver fabricating values for Bad readings and the chart drawing
   through gaps.
+- Migration 0009 must revoke `UPDATE`/`DELETE` on `alarm_event`
+  explicitly. Migration 0008 set default privileges so every new table
+  is born writable by the application role; ADR-0013 flips that default
+  to `SELECT`/`INSERT`, but a table created in the same migration can
+  still inherit the old default depending on ordering. The append-only
+  test over the application connection is what actually proves it.
+- Alarm evaluation currently sits downstream of the historian write in
+  `TagEngine.IngestAsync`, so a database failure silently stops alarms
+  being evaluated while the scanner logs only "Scan failed". That is
+  Phase 1 code, and it is in scope here: this phase's whole promise is
+  that the journal shows when nothing was being watched, and today the
+  most likely such window is one the journal cannot see.
 
 ## Phase 6 — Deployment packaging for both topologies
 
