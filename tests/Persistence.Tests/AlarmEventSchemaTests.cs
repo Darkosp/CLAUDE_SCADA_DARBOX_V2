@@ -88,6 +88,34 @@ public sealed class AlarmEventSchemaTests : IClassFixture<TestDatabase>
     }
 
     [RequiresDatabaseFact]
+    public async Task A_journal_gap_is_one_closed_window_with_its_losses_counted()
+    {
+        const string sevenMinutesAgo = "now() - interval '7 minutes'";
+
+        // Well-formed: both ends of the window, and how many transitions it swallowed.
+        await ExecuteAsApplicationAsync(JournalGap(from: sevenMinutesAgo, until: "now()", unrecorded: "3"));
+
+        // Still open — it cannot be written until it has closed.
+        await AssertCheckViolationAsync(JournalGap(from: sevenMinutesAgo, until: "NULL", unrecorded: "3"));
+
+        // "There was a gap", with nothing a reader can act on.
+        await AssertCheckViolationAsync(JournalGap(from: sevenMinutesAgo, until: "now()", unrecorded: "NULL"));
+
+        // Nothing was lost, so there was no gap to describe.
+        await AssertCheckViolationAsync(JournalGap(from: sevenMinutesAgo, until: "now()", unrecorded: "0"));
+
+        // A count of lost transitions belongs to a JournalGap and to nothing else.
+        await AssertCheckViolationAsync(
+            "INSERT INTO alarm_event (event_type, recorded_at, unrecorded_transitions) VALUES ('EvaluationStarted', now(), 2)");
+    }
+
+    private static string JournalGap(string from, string until, string unrecorded) =>
+        $"""
+        INSERT INTO alarm_event (event_type, recorded_at, gap_from, gap_until, unrecorded_transitions)
+        VALUES ('JournalGap', now(), {from}, {until}, {unrecorded})
+        """;
+
+    [RequiresDatabaseFact]
     public async Task An_unknown_event_type_or_an_actor_without_a_name_cannot_be_recorded()
     {
         var alarm = await SeedAlarmAsync();

@@ -70,7 +70,12 @@ CREATE TABLE alarm_event (
     -- the Gateway is known to have been alive; on JournalGap it is the window during
     -- which journal writes were failing.
     gap_from               timestamptz,
-    gap_to                 timestamptz,
+    gap_until              timestamptz,
+
+    -- How many transitions went unrecorded during a JournalGap. "Three transitions were
+    -- not recorded between 04:12 and 04:19" is something a reader can act on; "there was
+    -- a gap" is not (ADR-0013).
+    unrecorded_transitions integer,
 
     CONSTRAINT ck_alarm_event_type CHECK (event_type IN (
         'Raised', 'Acknowledged', 'Shelved', 'Unshelved', 'Cleared', 'Retired',
@@ -95,7 +100,21 @@ CREATE TABLE alarm_event (
         (actor_user_id IS NULL) = (actor_username IS NULL)),
 
     CONSTRAINT ck_alarm_event_gap_ordered CHECK (
-        gap_from IS NULL OR gap_to IS NULL OR gap_from <= gap_to)
+        gap_from IS NULL OR gap_until IS NULL OR gap_from <= gap_until),
+
+    -- A JournalGap cannot be written as its failure begins — the writing is what is
+    -- missing — so it is one retrospective row describing a window that has closed:
+    -- both ends known, and at least one transition lost (the engine learns journalling
+    -- has failed only by failing to record something). Only a JournalGap counts losses.
+    -- The count is required explicitly, not just compared: "NULL >= 1" is unknown rather
+    -- than false, and a CHECK only rejects false, so the comparison alone would let a gap
+    -- with no count through.
+    CONSTRAINT ck_alarm_event_journal_gap CHECK (
+        CASE WHEN event_type = 'JournalGap'
+            THEN gap_from IS NOT NULL AND gap_until IS NOT NULL
+                 AND unrecorded_transitions IS NOT NULL AND unrecorded_transitions >= 1
+            ELSE unrecorded_transitions IS NULL
+        END)
 );
 
 -- Rebuilding the live list at startup: every event of the occurrences not yet retired.
