@@ -82,6 +82,18 @@ from one that does not exist. Don't "improve" that into a clearer 403;
 it exists so Site-scoped paths cannot be used to enumerate what a user
 may not know about, and there is a test that fails if it changes.
 
+**Next: Phase 5.5 (alarm journal), decided but not started.** ADR-0013
+settles it: alarms persist as an append-only `alarm_event` journal that
+is the source of truth, with the live list rebuilt from it at startup —
+no second "current alarms" table. Evaluation start/stop is journalled so
+an outage reads as an outage rather than as a quiet period, a clear
+first seen after a restart is marked as observed-then rather than given
+a recovery time nothing witnessed, and shelving gains a required,
+capped expiry. It is numbered 5.5 because accepted ADRs already use
+"Phase 6" to mean deployment packaging. **On `main` today alarm state is
+still in memory only and a restart still erases it** — check the code,
+not the ADR.
+
 ## When Phase 1 (or any phase) begins
 
 - Build only what that phase's entry in `docs/roadmap/phase-plan.md` scopes

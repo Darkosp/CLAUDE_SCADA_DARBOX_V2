@@ -389,6 +389,42 @@ both without a reload.
   loop) trades this for the risk of stalling scans, and is not worth
   building blind.
 
+## Phase 5.5 — Alarm journal
+
+Numbered 5.5 rather than inserted as a new Phase 6 deliberately: several
+accepted ADRs and status notes already point at "Phase 6" meaning
+deployment packaging, and renumbering would mean editing accepted ADRs
+to fix cross-references. A slightly odd number costs less than that.
+
+**Scope:** make alarm state survive a Gateway restart, and give the
+system a history of what alarmed, per ADR-0013 — an append-only
+`alarm_event` journal as the source of truth, the live list rebuilt from
+it at startup, evaluation start/stop recorded so an outage is visible as
+an outage, and shelving given a required expiry. A screen to read the
+journal (filtered by Site, ADR-0011) is part of this, since a history
+nobody can read answers no questions.
+
+**Test gate:** an alarm raised and acknowledged before a Gateway restart
+is still listed after it, in the same state and naming the same
+acknowledging user; a shelved alarm returns to Active by itself when its
+shelf expires; and the journal shows the period during which nothing was
+being evaluated.
+
+**Implementation notes:**
+
+- Core gains a persistence dependency it did not have. It stays an
+  abstraction in Core with the concrete store in Persistence.TimescaleDb
+  (ADR-0002) — the alarm engine must not learn what a database is.
+- `alarm_event` is append-only at the database level, like `audit_log`:
+  `INSERT`/`SELECT` only for the application role. The test proving it
+  runs over the application's own connection; under a superuser it
+  proves nothing (the Phase 5 lesson).
+- A clear first observed after a restart is recorded with the
+  observation time and marked as detected-after-restart. Do not write a
+  recovery time the engine never observed — the same rule that stopped
+  the driver fabricating values for Bad readings and the chart drawing
+  through gaps.
+
 ## Phase 6 — Deployment packaging for both topologies
 
 **Scope:** Docker Compose packaging for the on-premises topology, and the
@@ -398,9 +434,9 @@ cloud topology (Phase 0 Architecture, "Deployment topologies").
 Carried in from Phase 5: both topologies run the migrator to completion
 before the Gateway container starts, and the privileged connection
 string exists only in the migrator's environment — the Gateway gets the
-non-privileged one (ADR-0011, ADR-0012). Also still open from Phase 3:
-alarm state is in-memory and does not survive a Gateway restart, which
-needs an alarm-journal decision before this phase ships.
+non-privileged one (ADR-0011, ADR-0012). The alarm-state question raised
+in Phase 3 is no longer carried here: it became ADR-0013 and Phase 5.5,
+which runs before this phase.
 
 **Open: can two migrators overlap?** Whether applying the migrations
 themselves is safe when two migrator runs meet has never been checked,

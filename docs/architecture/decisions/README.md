@@ -29,6 +29,7 @@ header, and mark the clause in the original.
 | [0010](0010-udt-live-reference-semantics.md) | UDTs are a live-reference type with materialized per-instance tags; template edits propagate immediately |
 | [0011](0011-permissions-model.md) | Opaque session token, roles/Site-scope resolved server-side per request; Site-scoped Operator/Viewer, tenant-wide Admin |
 | [0012](0012-migrations-run-outside-the-gateway.md) | Migrations run as a separate privileged step; the Gateway checks the schema version and refuses to start if behind (supersedes ADR-0007's execution clause) |
+| [0013](0013-alarm-journal.md) | Alarms persist as an append-only event journal, with the live list derived from it; shelving is time-bounded |
 
 ## Template
 
