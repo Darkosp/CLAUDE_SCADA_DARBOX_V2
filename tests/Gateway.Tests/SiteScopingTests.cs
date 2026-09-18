@@ -89,7 +89,7 @@ public sealed class SiteScopingTests : IClassFixture<GatewayTestHost>
             ("site tree", id => client.GetAsync($"/api/sites/{id}/tree"), Bitola),
             ("tag write", id => client.PostAsJsonAsync($"/api/tags/{id}/value", new { value = 1 }), elsewhere.TagId),
             ("acknowledge", id => client.PostAsync($"/api/alarms/{id}/acknowledge", content: null), definitionId),
-            ("shelve", id => client.PostAsync($"/api/alarms/{id}/shelve", content: null), definitionId),
+            ("shelve", id => client.PostAsJsonAsync($"/api/alarms/{id}/shelve", new { durationMinutes = 60 }), definitionId),
         };
 
         foreach (var (label, send, existing) in cases)

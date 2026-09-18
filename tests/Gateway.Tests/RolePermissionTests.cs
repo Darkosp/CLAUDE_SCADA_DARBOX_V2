@@ -33,7 +33,7 @@ public sealed class RolePermissionTests : IClassFixture<GatewayTestHost>
 
         await AssertStatusAsync(HttpStatusCode.Forbidden, asViewer.PostAsJsonAsync($"/api/tags/{probe.TagId}/value", new { value = 42 }));
         await AssertStatusAsync(HttpStatusCode.Forbidden, asViewer.PostAsync($"/api/alarms/{definitionId}/acknowledge", content: null));
-        await AssertStatusAsync(HttpStatusCode.Forbidden, asViewer.PostAsync($"/api/alarms/{definitionId}/shelve", content: null));
+        await AssertStatusAsync(HttpStatusCode.Forbidden, asViewer.PostAsJsonAsync($"/api/alarms/{definitionId}/shelve", new { durationMinutes = 60 }));
 
         // Refused, not merely answered differently: nothing reached the device, the alarm is
         // untouched, and nothing was recorded as done.
@@ -64,7 +64,7 @@ public sealed class RolePermissionTests : IClassFixture<GatewayTestHost>
         // Exactly one entry, naming the operator — the "who acknowledged" gap Phase 3 left open.
         Assert.Equal(@operator.Id, Assert.Single(await _host.AuditActorsAsync("alarm.acknowledge", definitionId)));
 
-        await AssertStatusAsync(HttpStatusCode.NoContent, asOperator.PostAsync($"/api/alarms/{definitionId}/shelve", content: null));
+        await AssertStatusAsync(HttpStatusCode.NoContent, asOperator.PostAsJsonAsync($"/api/alarms/{definitionId}/shelve", new { durationMinutes = 60 }));
         Assert.Equal("Shelved", await _host.AlarmStateAsync(admin, definitionId));
         Assert.Equal(@operator.Id, Assert.Single(await _host.AuditActorsAsync("alarm.shelve", definitionId)));
     }

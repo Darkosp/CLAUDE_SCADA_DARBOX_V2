@@ -133,6 +133,13 @@ public static class GatewayApp
         // One AlarmEngine wearing two hats: it is fed by the tag engine's fan-out and read by
         // the API, so it must be the same instance in both roles rather than two that
         // disagree about which alarms are standing.
+        var alarms = builder.Configuration.GetSection("Alarms");
+        services.AddSingleton(new AlarmEngineOptions
+        {
+            MaxShelveDuration = alarms.GetValue("MaxShelveDuration", TimeSpan.FromHours(24)),
+        });
+        services.AddSingleton(new ShelveSweepSettings(alarms.GetValue("ShelveSweepInterval", TimeSpan.FromSeconds(30))));
+        services.AddSingleton<IAlarmJournal, AlarmJournal>();
         services.AddSingleton<IAlarmSubscriber, SignalRAlarmBroadcaster>();
         services.AddSingleton<AlarmEngine>();
         services.AddSingleton<IAlarmEngine>(provider => provider.GetRequiredService<AlarmEngine>());
@@ -144,6 +151,11 @@ public static class GatewayApp
         services.AddSingleton<IDeviceDriverFactory, OpcUaDriverFactory>();
         services.AddSingleton<TagWriter>();
 
+        // Before the scanner: hosted services start in registration order and stop in
+        // reverse, so the alarm list is rebuilt before the first value arrives and
+        // EvaluationStopped is written after the last (ADR-0013).
+        services.AddHostedService<AlarmEngineLifecycle>();
+        services.AddHostedService<ShelveExpirySweeper>();
         services.AddHostedService<DeviceScannerService>();
     }
 

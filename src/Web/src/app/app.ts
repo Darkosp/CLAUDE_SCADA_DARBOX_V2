@@ -428,7 +428,7 @@ export class App implements OnInit {
   }
 
   protected async shelve(alarm: Alarm): Promise<void> {
-    await this.withErrorHandling(() => this.api.shelve(alarm.definitionId).then(() => undefined));
+    await this.withErrorHandling(() => this.api.shelve(alarm.definitionId, 60).then(() => undefined));
   }
 
   private async loadTagAlarm(): Promise<void> {

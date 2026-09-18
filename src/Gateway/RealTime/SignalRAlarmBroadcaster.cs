@@ -31,13 +31,11 @@ public sealed class SignalRAlarmBroadcaster : IAlarmSubscriber
     {
         var catalog = _catalogSource.Current;
 
+        // By the Site fixed when each alarm was raised, not by looking its tag up now: an
+        // alarm whose tag has since been deleted still belongs somewhere (ADR-0013).
         var bySite = alarms
-            .Select(alarm => (Alarm: alarm, SiteId: catalog.SiteOfTag(alarm.TagId)))
-            .Where(entry => entry.SiteId is not null)
-            .GroupBy(entry => entry.SiteId!.Value)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(entry => AlarmDto.From(entry.Alarm, entry.SiteId)).ToList());
+            .GroupBy(alarm => alarm.SiteId)
+            .ToDictionary(group => group.Key, group => group.Select(AlarmDto.From).ToList());
 
         // Every Site, not only those with alarms: each message is a Site's complete standing
         // list, so a Site whose last alarm just went away has to be told its list is empty.

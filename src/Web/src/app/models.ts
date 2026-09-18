@@ -103,10 +103,12 @@ export type AlarmState = 'Active' | 'Acknowledged' | 'Cleared' | 'Shelved';
 
 /** One standing alarm, as pushed by the gateway. */
 export interface Alarm {
+  /** This alarm, as distinct from earlier and later ones on the same definition. */
+  occurrenceId: string;
   definitionId: string;
   tagId: string;
-  /** The Site of the alarm's tag, or null once that tag has left the configuration. */
-  siteId: string | null;
+  /** The Site the alarm was raised in, fixed at the raise. */
+  siteId: string;
   tagPath: string;
   limit: 'High' | 'Low';
   limitValue: number;
@@ -114,9 +116,14 @@ export interface Alarm {
   unitSymbol: string | null;
   raisedAtUtc: string;
   state: AlarmState;
-  /** When it was acknowledged. Who did it is recorded in the gateway's audit trail. */
   acknowledgedAtUtc: string | null;
+  /** Who acknowledged it, by their username at the time. */
+  acknowledgedBy: string | null;
   clearedAtUtc: string | null;
+  /** When a shelf ends; set only while shelved. */
+  shelvedUntilUtc: string | null;
+  /** First seen on the first evaluation after a Gateway restart, so likely began unwatched. */
+  detectedAfterRestart: boolean;
 }
 
 /** A configured threshold on a tag. */

@@ -5,18 +5,20 @@ namespace ScadaDarbox.Gateway.Contracts;
 
 /// <summary>Wire form of one standing alarm.</summary>
 /// <param name="SiteId">
-/// The Site of the alarm's tag, or null once that tag has left the catalogue. Lets a client
-/// that receives alarms one Site at a time replace that Site's list without touching the
-/// others.
+/// The Site the alarm was raised in, fixed at the raise (ADR-0013). Lets a client that
+/// receives alarms one Site at a time replace that Site's list without touching the others.
 /// </param>
-/// <param name="AcknowledgedAtUtc">
-/// When it was acknowledged. Who acknowledged it is recorded in the audit trail
-/// (ADR-0011), not carried on the live alarm.
+/// <param name="AcknowledgedBy">
+/// The username of whoever acknowledged it, as it read at the time. Carried on the alarm
+/// since the journal made it part of alarm state (ADR-0013); the audit trail still records
+/// it separately (ADR-0011).
 /// </param>
+/// <param name="ShelvedUntilUtc">When a shelf ends; set only while shelved.</param>
 public sealed record AlarmDto(
+    Guid OccurrenceId,
     Guid DefinitionId,
     Guid TagId,
-    Guid? SiteId,
+    Guid SiteId,
     string TagPath,
     string Limit,
     double LimitValue,
@@ -25,12 +27,16 @@ public sealed record AlarmDto(
     DateTimeOffset RaisedAtUtc,
     string State,
     DateTimeOffset? AcknowledgedAtUtc,
-    DateTimeOffset? ClearedAtUtc)
+    string? AcknowledgedBy,
+    DateTimeOffset? ClearedAtUtc,
+    DateTimeOffset? ShelvedUntilUtc,
+    bool DetectedAfterRestart)
 {
-    public static AlarmDto From(Alarm alarm, Guid? siteId) => new(
+    public static AlarmDto From(Alarm alarm) => new(
+        alarm.OccurrenceId,
         alarm.DefinitionId,
         alarm.TagId,
-        siteId,
+        alarm.SiteId,
         alarm.TagPath,
         alarm.Limit.ToString(),
         alarm.LimitValue,
@@ -39,8 +45,14 @@ public sealed record AlarmDto(
         alarm.RaisedAtUtc,
         alarm.State.ToString(),
         alarm.AcknowledgedAtUtc,
-        alarm.ClearedAtUtc);
+        alarm.AcknowledgedBy?.Username,
+        alarm.ClearedAtUtc,
+        alarm.ShelvedUntilUtc,
+        alarm.DetectedAfterRestart);
 }
+
+/// <summary>How long to shelve an alarm for: at most the configured maximum (ADR-0013).</summary>
+public sealed record ShelveRequest(int? DurationMinutes);
 
 /// <summary>Wire form of a configured threshold.</summary>
 public sealed record AlarmDefinitionDto(Guid Id, Guid TagId, double? HighLimit, double? LowLimit)

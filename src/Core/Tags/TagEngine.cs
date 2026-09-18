@@ -82,11 +82,42 @@ public sealed class TagEngine : ITagEngine
             return;
         }
 
-        await _historian.WriteAsync(samples, cancellationToken).ConfigureAwait(false);
+        // Recording a value and acting on it are independent (ADR-0013). If a failed historian
+        // write — or a failing push to one subscriber — stopped the rest, a database outage
+        // would also stop alarm evaluation: nothing watched, exactly when the system still
+        // looks healthy. Every step runs; the first failure is raised afterwards, so the scan
+        // loop still reports it.
+        var failures = new List<Exception>();
+
+        try
+        {
+            await _historian.WriteAsync(samples, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            failures.Add(exception);
+        }
 
         foreach (var subscriber in _subscribers)
         {
-            await subscriber.OnTagValuesAsync(snapshots, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await subscriber.OnTagValuesAsync(snapshots, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                failures.Add(exception);
+            }
+        }
+
+        if (failures.Count == 1)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failures[0]).Throw();
+        }
+
+        if (failures.Count > 1)
+        {
+            throw new AggregateException(failures);
         }
     }
 

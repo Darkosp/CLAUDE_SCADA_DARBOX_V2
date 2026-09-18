@@ -75,7 +75,7 @@
         @if (auth.canOperate(alarm.siteId)) {
           <button type="button" (click)="acknowledge(alarm)">Acknowledge</button>
           @if (alarm.state !== 'Cleared') {
-            <button type="button" class="ghost" (click)="shelve(alarm)">Shelve</button>
+            <button type="button" class="ghost" (click)="shelve(alarm)">Shelve 1 h</button>
           }
         }
       </div>

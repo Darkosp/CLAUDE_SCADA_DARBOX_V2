@@ -48,7 +48,27 @@ public sealed class GatewayTestHost : IAsyncLifetime
         }
 
         _database = await ScratchDatabase.CreateMigratedAsync();
+        await StartAppAsync();
+    }
 
+    /// <summary>The database this host's Gateway runs against.</summary>
+    public ScratchDatabase Database => _database!;
+
+    /// <summary>
+    /// Stops the Gateway cleanly and starts a new one on the same database, as a restart
+    /// would: nothing held in memory survives, only what was persisted.
+    /// </summary>
+    public async Task RestartAsync()
+    {
+        await _app!.StopAsync();
+        await _app.DisposeAsync();
+        _app = null;
+
+        await StartAppAsync();
+    }
+
+    private async Task StartAppAsync()
+    {
         _app = await GatewayApp.BuildAsync(
             _database.ApplicationArgs(
                 "--Sessions:HubSweepInterval=00:00:01",

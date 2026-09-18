@@ -38,4 +38,14 @@ public interface IHistorian
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// When the most recent sample reached the server, or null if none is known.
+    /// </summary>
+    /// <remarks>
+    /// The last moment the Gateway is known to have been alive, which bounds an outage
+    /// after an unclean stop (ADR-0013) — the historian writes continuously, so it is a
+    /// heartbeat that already exists.
+    /// </remarks>
+    Task<DateTimeOffset?> LastIngestedAtAsync(CancellationToken cancellationToken);
 }

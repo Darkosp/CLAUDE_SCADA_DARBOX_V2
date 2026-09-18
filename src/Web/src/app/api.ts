@@ -159,8 +159,9 @@ export class Api {
     return this.send('POST', `/api/alarms/${definitionId}/acknowledge`, null);
   }
 
-  shelve(definitionId: string): Promise<unknown> {
-    return this.send('POST', `/api/alarms/${definitionId}/shelve`, null);
+  /** Shelves an alarm; the gateway refuses a shelf with no end, or longer than its maximum. */
+  shelve(definitionId: string, durationMinutes: number): Promise<unknown> {
+    return this.send('POST', `/api/alarms/${definitionId}/shelve`, { durationMinutes });
   }
 
   // ---- users (Admin) ------------------------------------------------------
