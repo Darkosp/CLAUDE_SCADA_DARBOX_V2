@@ -18,17 +18,25 @@ public sealed class StartupCheckTests
     [RequiresDatabaseFact]
     public async Task A_journal_behind_the_build_is_refused_naming_both_versions()
     {
+        // Derived from the build rather than written down, so the test stays true as
+        // migrations are added: the database is one script behind whatever is newest.
+        var scripts = DatabaseMigrator.ScriptNames();
+        var newest = scripts[^1];
+
         await using var database = await ScratchDatabase.CreateMigratedAsync();
-        await database.ExecutePrivilegedAsync(
-            "DELETE FROM schemaversions WHERE scriptname LIKE '%0008_users_sessions_audit.sql'");
+        await database.ExecutePrivilegedAsync($"DELETE FROM schemaversions WHERE scriptname = '{newest}'");
 
         var refusal = await Assert.ThrowsAsync<SchemaVersionMismatchException>(
             () => GatewayApp.BuildAsync(database.ApplicationArgs()));
 
-        Assert.Contains("Expected version: 0008_users_sessions_audit", refusal.Message, StringComparison.Ordinal);
-        Assert.Contains("database version: 0007_device_templates", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains($"Expected version: {VersionOf(newest)}", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains($"database version: {VersionOf(scripts[^2])}", refusal.Message, StringComparison.Ordinal);
         Assert.Contains("Run the migrator", refusal.Message, StringComparison.Ordinal);
     }
+
+    /// <summary>A script's version as the refusal names it: the file name without its prefix or extension.</summary>
+    private static string VersionOf(string scriptName) =>
+        scriptName["ScadaDarbox.Persistence.TimescaleDb.migrations.".Length..^".sql".Length];
 
     [RequiresDatabaseFact]
     public async Task A_journal_ahead_of_the_build_is_refused_too()
@@ -39,14 +47,14 @@ public sealed class StartupCheckTests
         await database.ExecutePrivilegedAsync(
             """
             INSERT INTO schemaversions (scriptname, applied)
-            VALUES ('ScadaDarbox.Persistence.TimescaleDb.migrations.0009_from_a_newer_build.sql', now())
+            VALUES ('ScadaDarbox.Persistence.TimescaleDb.migrations.9999_from_a_newer_build.sql', now())
             """);
 
         var refusal = await Assert.ThrowsAsync<SchemaVersionMismatchException>(
             () => GatewayApp.BuildAsync(database.ApplicationArgs()));
 
-        Assert.Contains("Expected version: 0008_users_sessions_audit", refusal.Message, StringComparison.Ordinal);
-        Assert.Contains("database version: 0009_from_a_newer_build", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains($"Expected version: {VersionOf(DatabaseMigrator.ScriptNames()[^1])}", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("database version: 9999_from_a_newer_build", refusal.Message, StringComparison.Ordinal);
         Assert.Contains("older than the database", refusal.Message, StringComparison.Ordinal);
     }
 
