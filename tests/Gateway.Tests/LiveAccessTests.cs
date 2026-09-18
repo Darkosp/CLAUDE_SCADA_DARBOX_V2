@@ -99,6 +99,63 @@ public sealed class LiveAccessTests : IClassFixture<GatewayTestHost>
     }
 
     [RequiresDatabaseFact]
+    public async Task A_connection_never_receives_alarms_from_a_site_it_has_no_role_on()
+    {
+        var admin = await _host.LoginAsAdminAsync();
+        var viewer = await _host.CreateUserAsync(admin, (Skopje, "Viewer"));
+
+        await using var watched = await HubTestClient.ConnectAsync(_host.BaseAddress, viewer.Token);
+        await using var control = await HubTestClient.ConnectAsync(_host.BaseAddress, admin);
+
+        // Raised after both connections are open, so its push is observed rather than missed.
+        var elsewhere = await _host.CreateLiveTagAsync(admin, Bitola, "Other site alarm probe");
+        var definitionId = await _host.RaiseAlarmAsync(admin, elsewhere);
+
+        // The alarm is being pushed to someone, and alarm pushes do reach the watched
+        // connection — its own Site's list — so its silence about Bitola is not silence
+        // about everything.
+        await WaitForAlarmAsync(control, definitionId);
+        await watched.WaitForAsync(TagHub.AlarmsMethod, Timeout);
+
+        await Task.Delay(Settle);
+
+        var pushedToWatched = watched.Received(TagHub.AlarmsMethod);
+        Assert.DoesNotContain(pushedToWatched, message => message.Arguments[0].GetGuid() == Bitola);
+        Assert.DoesNotContain(definitionId, AlarmDefinitionIds(pushedToWatched));
+
+        // The snapshot a connection asks for on arrival is filtered the same way.
+        var current = await watched.InvokeAsync(nameof(TagHub.GetCurrentAlarms), Timeout);
+        Assert.DoesNotContain(
+            definitionId,
+            current.EnumerateArray().Select(alarm => alarm.GetProperty("definitionId").GetGuid()));
+
+        var controlCurrent = await control.InvokeAsync(nameof(TagHub.GetCurrentAlarms), Timeout);
+        Assert.Contains(
+            definitionId,
+            controlCurrent.EnumerateArray().Select(alarm => alarm.GetProperty("definitionId").GetGuid()));
+    }
+
+    private static IEnumerable<Guid> AlarmDefinitionIds(IEnumerable<HubMessage> messages) =>
+        messages
+            .SelectMany(message => message.Arguments[1].EnumerateArray())
+            .Select(alarm => alarm.GetProperty("definitionId").GetGuid());
+
+    private static async Task WaitForAlarmAsync(HubTestClient client, Guid definitionId)
+    {
+        var deadline = DateTime.UtcNow + Timeout;
+
+        while (!AlarmDefinitionIds(client.Received(TagHub.AlarmsMethod)).Contains(definitionId))
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException($"No push carrying alarm {definitionId} arrived within {Timeout}.");
+            }
+
+            await Task.Delay(50);
+        }
+    }
+
+    [RequiresDatabaseFact]
     public async Task Deactivating_a_user_closes_their_open_connection_and_refuses_their_next_request()
     {
         var admin = await _host.LoginAsAdminAsync();
