@@ -192,6 +192,17 @@ again, the engine appends an event recording the window during which
 journalling was failing — the same principle as the evaluation gap, so a
 later reader is never handed a record with silent holes in it.
 
+That event is named `JournalGap`, and it is deliberately not shaped like
+`EvaluationStarted`/`EvaluationStopped`. Those come in pairs because the
+engine is alive at both ends and can write both. A journal failure
+cannot be recorded at the moment it begins — the writing is precisely
+what is missing — so this is a single retrospective row describing a
+window that has already closed: it carries its own `from` and `until`
+rather than being paired with anything, and it carries **how many
+transitions went unrecorded** in that window. A reader told "three
+transitions were not recorded between 04:12 and 04:19" can act on
+that; one told only that a gap existed cannot.
+
 **An alarm whose definition is deleted is retired automatically**, with
 an event saying that is why. Nothing evaluates a removed definition, so
 such an alarm can never clear on its own; in memory it merely lingered
