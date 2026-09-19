@@ -250,6 +250,69 @@ public class AlarmEngineTests
     }
 
     [Fact]
+    public async Task A_breach_after_an_unacknowledged_clear_retires_that_occurrence_and_raises_a_new_one()
+    {
+        // A live list still saying "recovered" while the value is out of range again is
+        // true about the past and wrong about the present — and the present is what the
+        // operator is looking at (ADR-0013).
+        var rig = await Rig.StartedAsync(high: 8.0);
+        await rig.FeedAsync(9.0);
+        await rig.FeedAsync(4.0);
+
+        await rig.FeedAsync(9.5);
+
+        var alarm = Assert.Single(rig.Engine.GetCurrent());
+        Assert.Equal(AlarmState.Active, alarm.State);
+        Assert.Equal(9.5, alarm.ValueAtRaise);
+        Assert.Null(alarm.ClearedAtUtc);
+
+        var raises = rig.Journal.Events.Where(e => e.Type == AlarmEventType.Raised).ToList();
+        Assert.Equal(2, raises.Count);
+        Assert.NotEqual(raises[0].OccurrenceId, raises[1].OccurrenceId);
+        Assert.Equal(raises[1].OccurrenceId, alarm.OccurrenceId);
+
+        // Named, so a reader can tell this from a definition being removed and from the
+        // retirement that follows an acknowledgement.
+        var retired = Assert.Single(rig.Journal.Events.Where(e => e.Type == AlarmEventType.Retired));
+        Assert.Equal(raises[0].OccurrenceId, retired.OccurrenceId);
+        Assert.Equal(AlarmEngine.SupersededByNewBreachReason, retired.Reason);
+    }
+
+    [Fact]
+    public async Task The_retirement_and_the_occurrence_replacing_it_are_written_together()
+    {
+        // Written apart, they leave an instant in which the journal shows two open
+        // occurrences on one definition, or one retired with no successor.
+        var rig = await Rig.StartedAsync(high: 8.0);
+        await rig.FeedAsync(9.0);
+        await rig.FeedAsync(4.0);
+        var appendsBefore = rig.Journal.Appends;
+
+        await rig.FeedAsync(9.5);
+
+        Assert.Equal(appendsBefore + 1, rig.Journal.Appends);
+
+        var written = rig.Journal.Events.TakeLast(2).ToList();
+        Assert.Equal(AlarmEventType.Retired, written[0].Type);
+        Assert.Equal(AlarmEventType.Raised, written[1].Type);
+    }
+
+    [Fact]
+    public async Task An_active_alarm_is_not_replaced_by_a_further_breach()
+    {
+        // Only a cleared occurrence is superseded. One still out of range is the same
+        // excursion, and must not be retired and re-raised on every scan.
+        var rig = await Rig.StartedAsync(high: 8.0);
+        await rig.FeedAsync(9.0);
+
+        await rig.FeedAsync(9.5);
+
+        Assert.Empty(rig.Journal.Events.Where(e => e.Type == AlarmEventType.Retired));
+        Assert.Single(rig.Journal.Events.Where(e => e.Type == AlarmEventType.Raised));
+        Assert.Equal(9.0, Assert.Single(rig.Engine.GetCurrent()).ValueAtRaise);
+    }
+
+    [Fact]
     public async Task A_restart_rebuilds_the_standing_alarms_with_who_acknowledged_them()
     {
         var first = await Rig.StartedAsync(high: 8.0);
@@ -795,6 +858,9 @@ internal sealed class RecordingAlarmJournal : IAlarmJournal
     /// <summary>When set, every append throws, as a database outage would.</summary>
     public bool Failing { get; set; }
 
+    /// <summary>How many times the engine called the journal; a pair written together counts once.</summary>
+    public int Appends { get; private set; }
+
     /// <summary>Every event ever appended or seeded, across runs.</summary>
     public int Count => _all.Count;
 
@@ -823,7 +889,21 @@ internal sealed class RecordingAlarmJournal : IAlarmJournal
             throw new InvalidOperationException("The journal is unavailable.");
         }
 
+        Appends++;
         _all.Add(alarmEvent);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>All or nothing, as the database's transaction is: a failure writes none of them.</summary>
+    public Task AppendAsync(IReadOnlyList<AlarmEvent> events, CancellationToken cancellationToken)
+    {
+        if (Failing)
+        {
+            throw new InvalidOperationException("The journal is unavailable.");
+        }
+
+        Appends++;
+        _all.AddRange(events);
         return Task.CompletedTask;
     }
 
