@@ -21,17 +21,45 @@ public sealed class AlarmJournal : IAlarmJournal
 
     public AlarmJournal(NpgsqlDataSource dataSource) => _dataSource = dataSource;
 
+    private const string Insert = $"""
+        INSERT INTO alarm_event ({Columns})
+        VALUES (@event_type, @occurrence_id, @definition_id, @tag_id, @site_id, @source_time, @recorded_at,
+                @actor_user_id, @actor_username, @alarm_limit, @limit_value, @value, @unit_symbol, @tag_path,
+                @detected_after_restart, @shelved_until, @reason, @gap_from, @gap_until, @unrecorded_transitions)
+        """;
+
     public async Task AppendAsync(AlarmEvent alarmEvent, CancellationToken cancellationToken)
     {
-        await using var command = _dataSource.CreateCommand(
-            $"""
-            INSERT INTO alarm_event ({Columns})
-            VALUES (@event_type, @occurrence_id, @definition_id, @tag_id, @site_id, @source_time, @recorded_at,
-                    @actor_user_id, @actor_username, @alarm_limit, @limit_value, @value, @unit_symbol, @tag_path,
-                    @detected_after_restart, @shelved_until, @reason, @gap_from, @gap_until, @unrecorded_transitions)
-            """);
+        await using var command = _dataSource.CreateCommand(Insert);
+        Bind(command.Parameters, alarmEvent);
 
-        var parameters = command.Parameters;
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task AppendAsync(IReadOnlyList<AlarmEvent> events, CancellationToken cancellationToken)
+    {
+        if (events.Count == 0)
+        {
+            return;
+        }
+
+        // One transaction, so a reader never sees half of a pair — not even for the instant
+        // between two inserts (ADR-0013).
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var alarmEvent in events)
+        {
+            await using var command = new NpgsqlCommand(Insert, connection, transaction);
+            Bind(command.Parameters, alarmEvent);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void Bind(NpgsqlParameterCollection parameters, AlarmEvent alarmEvent)
+    {
         parameters.AddWithValue("event_type", alarmEvent.Type.ToString());
         Add(parameters, "occurrence_id", NpgsqlDbType.Uuid, alarmEvent.OccurrenceId);
         Add(parameters, "definition_id", NpgsqlDbType.Uuid, alarmEvent.DefinitionId);
@@ -52,8 +80,6 @@ public sealed class AlarmJournal : IAlarmJournal
         Add(parameters, "gap_from", NpgsqlDbType.TimestampTz, alarmEvent.GapFromUtc);
         Add(parameters, "gap_until", NpgsqlDbType.TimestampTz, alarmEvent.GapUntilUtc);
         Add(parameters, "unrecorded_transitions", NpgsqlDbType.Integer, alarmEvent.UnrecordedTransitions);
-
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<AlarmEvent>> ReadOpenAsync(CancellationToken cancellationToken)

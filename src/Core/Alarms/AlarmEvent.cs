@@ -107,6 +107,15 @@ public interface IAlarmJournal
     /// <exception cref="Exception">The event was not recorded.</exception>
     Task AppendAsync(AlarmEvent alarmEvent, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Appends several events as one unit: either all of them are recorded or none is.
+    /// A pair that closes one occurrence and opens its successor has to arrive this way,
+    /// or a reader can find two open occurrences on one definition, or a retirement with
+    /// no successor (ADR-0013).
+    /// </summary>
+    /// <exception cref="Exception">The events were not recorded.</exception>
+    Task AppendAsync(IReadOnlyList<AlarmEvent> events, CancellationToken cancellationToken);
+
     /// <summary>Every event of every occurrence not yet retired, oldest first.</summary>
     Task<IReadOnlyList<AlarmEvent>> ReadOpenAsync(CancellationToken cancellationToken);
 }

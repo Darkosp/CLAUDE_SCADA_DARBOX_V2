@@ -91,6 +91,13 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
     /// <summary>The reason recorded when a newer occurrence on the same definition replaces an older open one.</summary>
     public const string SupersededReason = "superseded";
 
+    /// <summary>
+    /// The reason recorded when a breach closes a cleared occurrence nobody acknowledged and
+    /// raises its successor. Distinct from <see cref="SupersededReason"/>, which repairs a
+    /// journal anomaly at startup rather than describing anything that happened at the plant.
+    /// </summary>
+    public const string SupersededByNewBreachReason = "superseded-by-new-breach";
+
     private readonly TagCatalogSource _catalogSource;
     private readonly IReadOnlyList<IAlarmSubscriber> _subscribers;
     private readonly IAlarmJournal _journal;
@@ -479,10 +486,12 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
                        .ConfigureAwait(false);
         }
 
-        if (standing is not null)
+        if (standing is { State: not AlarmState.Cleared })
         {
-            // Already raised. A shelved or acknowledged alarm stays as it is rather than
-            // re-announcing itself on every scan while the value remains out of range.
+            // Still standing and still out of range: an active, acknowledged or shelved
+            // alarm stays as it is rather than re-announcing itself on every scan. A
+            // cleared one is the exception, handled below — the value left its limits
+            // again, which is a new excursion, not a continuation of the old one.
             return false;
         }
 
@@ -512,14 +521,23 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
         // The live list first, the journal second: an operator in front of a screen needs
         // to see the alarm more than the database needs to have recorded it (ADR-0013).
         _byDefinition[definition.Id] = alarm;
-        await RecordAsync(
-            Event(alarm, AlarmEventType.Raised, now) with
-            {
-                SourceTimeUtc = snapshot.SourceTimestampUtc,
-                Value = numeric.Value,
-                DetectedAfterRestart = afterRestart,
-            },
-            cancellationToken).ConfigureAwait(false);
+
+        var raised = Event(alarm, AlarmEventType.Raised, now, catalog) with
+        {
+            SourceTimeUtc = snapshot.SourceTimestampUtc,
+            Value = numeric.Value,
+            DetectedAfterRestart = afterRestart,
+        };
+
+        // A cleared occurrence nobody acknowledged is closed by this breach, and closed in
+        // the same write as its successor is opened: one definition holds at most one live
+        // occurrence, and neither a pair of open ones nor a retirement without a successor
+        // may ever be visible, even briefly (ADR-0013).
+        AlarmEvent[] events = standing is null
+            ? [raised]
+            : [Event(standing, AlarmEventType.Retired, now, catalog) with { Reason = SupersededByNewBreachReason }, raised];
+
+        await RecordAsync(events, cancellationToken).ConfigureAwait(false);
 
         return true;
     }
@@ -583,6 +601,32 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
         {
             _journalFailingSince ??= alarmEvent.RecordedAtUtc;
             _unrecorded++;
+        }
+    }
+
+    /// <summary>
+    /// Records transitions that have to arrive together or not at all. The whole batch is
+    /// one write, and a failure counts every transition in it as unrecorded.
+    /// </summary>
+    private async Task RecordAsync(IReadOnlyList<AlarmEvent> events, CancellationToken cancellationToken)
+    {
+        if (events.Count == 1)
+        {
+            await RecordAsync(events[0], cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var recordedAt = events[0].RecordedAtUtc;
+
+        try
+        {
+            await ReportGapAsync(recordedAt, cancellationToken).ConfigureAwait(false);
+            await _journal.AppendAsync(events, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _journalFailingSince ??= recordedAt;
+            _unrecorded += events.Count;
         }
     }
 
