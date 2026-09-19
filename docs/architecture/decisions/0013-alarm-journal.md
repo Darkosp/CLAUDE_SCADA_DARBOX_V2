@@ -70,6 +70,17 @@ events are still open. Every event therefore carries an
 repeats it, and `Retired` closes it. "Open" means an occurrence with no
 `Retired`.
 
+**A new breach after an unacknowledged clear starts a new occurrence.**
+The engine kept one alarm per definition and ignored a fresh breach
+while a `Cleared` alarm was still listed, so the live list went on
+saying "recovered" while the value was out of range again — true about
+the past, wrong about the present, which is what an operator is actually
+looking at. A breach now retires the cleared occurrence, recording that
+a new one superseded it, and raises a new occurrence with its own id.
+Nothing is lost by retiring it: the journal is where that excursion now
+lives, and being able to tell the live list the truth about *now* is
+precisely what having a journal buys.
+
 **Two clocks, both kept, following `tag_sample`'s precedent.** A
 value-driven event carries the reading's source timestamp (ADR-0003) and
 the time the engine actually recorded it. For OPC UA those differ
@@ -260,6 +271,9 @@ lasting belongs.
   range returns to `Active` and writes an `Unshelved` event, with no
   operator action.
 - A shelve request beyond the configured maximum is rejected.
+- A value that recovers without being acknowledged and then breaches
+  again produces a second occurrence with a different id, and the live
+  list shows the alarm as Active rather than Cleared.
 - Alarm history for a soft-deleted tag is still readable and still
   filtered to the caller's permitted Sites (ADR-0011) — the Site on the
   event row is what makes that possible.

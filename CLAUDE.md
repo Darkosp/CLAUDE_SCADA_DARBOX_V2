@@ -131,6 +131,15 @@ not the ADR.
   The historian stays on plain Npgsql — Dapper does not apply there.
   EF Core remains out of scope; don't reintroduce it without a new ADR
   that supersedes ADR-0008.
+- Postgres three-valued logic silently defeats filters and constraints
+  over nullable columns, in opposite directions: `WHERE site_id = ANY(...)`
+  drops every row whose `site_id` is null, while `CHECK (n >= 1)` accepts
+  a null `n`, because a CHECK rejects only `false` and a null comparison
+  is `unknown`. The second was a real defect, in migration 0009's own
+  constraint, caught by a test; the first was spotted while writing
+  ADR-0013 and never shipped. Whenever a filter or a constraint touches a
+  nullable column, say what happens to null explicitly, and write the
+  null case as its own test.
 
 ## Solution layout
 

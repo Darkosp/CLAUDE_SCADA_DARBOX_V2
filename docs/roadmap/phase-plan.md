@@ -389,6 +389,13 @@ both without a reload.
   loop) trades this for the risk of stalling scans, and is not worth
   building blind.
 
+**Correction (2026-09-18).** "Site scoping over REST and over the live
+push" was broader than the tests supported: the live-push test covered
+tag values only. Breaking the alarm broadcaster, or the hub's alarm
+snapshot, left the whole suite green. Found by mutation-checking during
+Phase 5.5, not by reading; the missing test was added there. The
+sentence is true now — it was not when it was written.
+
 ## Phase 5.5 — Alarm journal
 
 Numbered 5.5 rather than inserted as a new Phase 6 deliberately: several
