@@ -14,6 +14,7 @@ namespace ScadaDarbox.Gateway.Tests;
 public sealed class AlarmJournalHostTests : IClassFixture<GatewayTestHost>
 {
     private static readonly Guid Bitola = DemoConfigurationSeeder.SecondSiteId;
+    private static readonly Guid Skopje = DemoConfigurationSeeder.SiteId;
 
     private readonly GatewayTestHost _host;
 
@@ -149,6 +150,67 @@ public sealed class AlarmJournalHostTests : IClassFixture<GatewayTestHost>
         }
 
         return events;
+    }
+
+    [RequiresDatabaseFact]
+    public async Task The_journal_shows_every_reader_the_engine_events_that_belong_to_no_site()
+    {
+        // An evaluation outage applies to the whole Gateway, so it has no Site — and a
+        // Viewer on one Site still has to know the system was not watching (ADR-0013).
+        // A filter written as a bare site_id = ANY(...) drops these rows, and the outage
+        // then reads as a quiet period.
+        var admin = await _host.LoginAsAdminAsync();
+        var viewer = await _host.CreateUserAsync(admin, (Skopje, "Viewer"));
+
+        await _host.RestartAsync();
+
+        using var asViewer = _host.CreateClient(viewer.Token);
+        var seen = await TypesAsync(asViewer);
+
+        Assert.Contains("EvaluationStarted", seen);
+        Assert.Contains("EvaluationStopped", seen);
+    }
+
+    [RequiresDatabaseFact]
+    public async Task The_journal_hides_events_belonging_to_a_site_the_reader_cannot_see()
+    {
+        // The other half: "no Site means everyone's" must not leak into "any Site is
+        // everyone's". Raised on Bitola, read by a Viewer who only has Skopje.
+        var admin = await _host.LoginAsAdminAsync();
+        var probe = await _host.CreateLiveDeviceAsync(admin, Bitola, "Journal scoping probe");
+        var definitionId = await _host.RaiseAlarmAsync(admin, probe.TagId);
+        var viewer = await _host.CreateUserAsync(admin, (Skopje, "Viewer"));
+
+        using var asAdmin = _host.CreateClient(admin);
+        using var asViewer = _host.CreateClient(viewer.Token);
+
+        // First as Admin, so the refusal below hides something really there.
+        Assert.Contains(definitionId, await DefinitionsAsync(asAdmin));
+        Assert.DoesNotContain(definitionId, await DefinitionsAsync(asViewer));
+    }
+
+    private static async Task<List<string>> TypesAsync(HttpClient client)
+    {
+        using var response = await client.GetAsync("/api/alarms/journal?limit=1000");
+        response.EnsureSuccessStatusCode();
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.EnumerateArray()
+            .Select(row => row.GetProperty("type").GetString()!)
+            .ToList();
+    }
+
+    private static async Task<List<Guid>> DefinitionsAsync(HttpClient client)
+    {
+        using var response = await client.GetAsync("/api/alarms/journal?limit=1000");
+        response.EnsureSuccessStatusCode();
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.EnumerateArray()
+            .Select(row => row.GetProperty("definitionId"))
+            .Where(id => id.ValueKind != JsonValueKind.Null)
+            .Select(id => id.GetGuid())
+            .ToList();
     }
 
     private static long ToMicroseconds(DateTimeOffset value) => value.UtcTicks / 10;
