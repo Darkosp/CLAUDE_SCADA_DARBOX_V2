@@ -273,7 +273,7 @@ public class AlarmEngineTests
 
         // Named, so a reader can tell this from a definition being removed and from the
         // retirement that follows an acknowledgement.
-        var retired = Assert.Single(rig.Journal.Events.Where(e => e.Type == AlarmEventType.Retired));
+        var retired = Assert.Single(rig.Journal.Events, e => e.Type == AlarmEventType.Retired);
         Assert.Equal(raises[0].OccurrenceId, retired.OccurrenceId);
         Assert.Equal(AlarmEngine.SupersededByNewBreachReason, retired.Reason);
     }
@@ -307,8 +307,8 @@ public class AlarmEngineTests
 
         await rig.FeedAsync(9.5);
 
-        Assert.Empty(rig.Journal.Events.Where(e => e.Type == AlarmEventType.Retired));
-        Assert.Single(rig.Journal.Events.Where(e => e.Type == AlarmEventType.Raised));
+        Assert.DoesNotContain(rig.Journal.Events, e => e.Type == AlarmEventType.Retired);
+        Assert.Single(rig.Journal.Events, e => e.Type == AlarmEventType.Raised);
         Assert.Equal(9.0, Assert.Single(rig.Engine.GetCurrent()).ValueAtRaise);
     }
 
