@@ -70,7 +70,7 @@ public sealed class GatewayTestHost : IAsyncLifetime
     private async Task StartAppAsync()
     {
         _app = await GatewayApp.BuildAsync(
-            _database.ApplicationArgs(
+            _database!.ApplicationArgs(
                 "--Sessions:HubSweepInterval=00:00:01",
                 $"--initial-admin-username={AdminUsername}",
                 $"--initial-admin-password={AdminPassword}"),
