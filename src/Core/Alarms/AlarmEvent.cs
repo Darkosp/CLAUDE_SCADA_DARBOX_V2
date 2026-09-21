@@ -118,4 +118,39 @@ public interface IAlarmJournal
 
     /// <summary>Every event of every occurrence not yet retired, oldest first.</summary>
     Task<IReadOnlyList<AlarmEvent>> ReadOpenAsync(CancellationToken cancellationToken);
+
+    /// <summary>History for a reader, newest first, filtered to what they may see.</summary>
+    Task<IReadOnlyList<AlarmEvent>> ReadHistoryAsync(AlarmJournalQuery query, CancellationToken cancellationToken);
 }
+
+/// <summary>What a reader asks the journal for.</summary>
+/// <param name="SiteIds">
+/// The Sites the reader may see (ADR-0011). Null means unrestricted — an Admin.
+/// An empty list means a reader with no Sites at all, which is not the same thing:
+/// they still see the engine's own events, below.
+/// </param>
+/// <param name="FromUtc">Inclusive lower bound on the recording time; null for no bound.</param>
+/// <param name="ToUtc">Exclusive upper bound on the recording time; null for no bound.</param>
+/// <param name="Limit">At most this many rows, newest first.</param>
+/// <remarks>
+/// <para>
+/// Events that belong to no Site — <see cref="AlarmEventType.EvaluationStarted"/>,
+/// <see cref="AlarmEventType.EvaluationStopped"/> and
+/// <see cref="AlarmEventType.JournalGap"/> — are returned to every reader whatever
+/// <paramref name="SiteIds"/> says. An evaluation outage applies to the whole Gateway, and
+/// a Viewer on one Site still has to know the system was not watching (ADR-0013). A filter
+/// written as a bare <c>site_id = ANY(...)</c> drops them, and the outage then reads as a
+/// quiet period — the exact wrong answer this journal exists to prevent.
+/// </para>
+/// <para>
+/// This is not the same "no Site" as <see cref="Security.UserAccess.CanViewUnscoped"/>,
+/// which is about an alarm whose Site can no longer be resolved and where "no Site" has to
+/// mean "not yours". Here the row belongs to no Site by construction, not by loss: an
+/// alarm event without a Site is rejected by migration 0009's own CHECK.
+/// </para>
+/// </remarks>
+public sealed record AlarmJournalQuery(
+    IReadOnlyList<Guid>? SiteIds,
+    DateTimeOffset? FromUtc = null,
+    DateTimeOffset? ToUtc = null,
+    int Limit = 200);

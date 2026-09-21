@@ -63,3 +63,55 @@ public sealed record AlarmDefinitionDto(Guid Id, Guid TagId, double? HighLimit, 
 
 /// <summary>A threshold as submitted from the configuration UI.</summary>
 public sealed record SaveAlarmDefinitionRequest(double? HighLimit, double? LowLimit);
+
+/// <summary>Wire form of one journal entry (ADR-0013).</summary>
+/// <param name="SiteId">
+/// Null on the engine's own events, which belong to no Site — not on an alarm event,
+/// where migration 0009's CHECK requires one.
+/// </param>
+/// <param name="GapFromUtc">
+/// On <c>EvaluationStarted</c>, how far back the Gateway is known to have been alive;
+/// on <c>JournalGap</c>, the start of the window whose transitions went unrecorded.
+/// </param>
+public sealed record AlarmEventDto(
+    string Type,
+    DateTimeOffset RecordedAtUtc,
+    DateTimeOffset? SourceTimeUtc,
+    Guid? OccurrenceId,
+    Guid? DefinitionId,
+    Guid? TagId,
+    Guid? SiteId,
+    string? TagPath,
+    string? Limit,
+    double? LimitValue,
+    double? Value,
+    string? UnitSymbol,
+    string? ActorUsername,
+    bool DetectedAfterRestart,
+    DateTimeOffset? ShelvedUntilUtc,
+    string? Reason,
+    DateTimeOffset? GapFromUtc,
+    DateTimeOffset? GapUntilUtc,
+    int? UnrecordedTransitions)
+{
+    public static AlarmEventDto From(AlarmEvent journalEvent) => new(
+        journalEvent.Type.ToString(),
+        journalEvent.RecordedAtUtc,
+        journalEvent.SourceTimeUtc,
+        journalEvent.OccurrenceId,
+        journalEvent.DefinitionId,
+        journalEvent.TagId,
+        journalEvent.SiteId,
+        journalEvent.TagPath,
+        journalEvent.Limit?.ToString(),
+        journalEvent.LimitValue,
+        journalEvent.Value,
+        journalEvent.UnitSymbol,
+        journalEvent.Actor?.Username,
+        journalEvent.DetectedAfterRestart,
+        journalEvent.ShelvedUntilUtc,
+        journalEvent.Reason,
+        journalEvent.GapFromUtc,
+        journalEvent.GapUntilUtc,
+        journalEvent.UnrecordedTransitions);
+}

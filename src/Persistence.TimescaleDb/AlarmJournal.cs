@@ -109,6 +109,44 @@ public sealed class AlarmJournal : IAlarmJournal
         return events;
     }
 
+    public async Task<IReadOnlyList<AlarmEvent>> ReadHistoryAsync(
+        AlarmJournalQuery query,
+        CancellationToken cancellationToken)
+    {
+        // The Site filter deliberately lets through rows that belong to no Site AND no
+        // occurrence — the engine's own events (ADR-0013). Written as a bare
+        // `site_id = ANY(...)` this clause would drop every one of them, because a null
+        // never equals anything, and an evaluation outage would read as a quiet period.
+        // Both halves are required: an alarm event has a Site by CHECK, so "no Site and no
+        // occurrence" cannot match anything but an engine event even if that ever changes.
+        await using var command = _dataSource.CreateCommand(
+            $"""
+            SELECT {Columns}
+            FROM alarm_event e
+            WHERE (@sites IS NULL
+                   OR e.site_id = ANY(@sites)
+                   OR (e.site_id IS NULL AND e.occurrence_id IS NULL))
+              AND (@from IS NULL OR e.recorded_at >= @from)
+              AND (@to IS NULL OR e.recorded_at < @to)
+            ORDER BY e.recorded_at DESC, e.id DESC
+            LIMIT @limit
+            """);
+
+        Add(command.Parameters, "sites", NpgsqlDbType.Array | NpgsqlDbType.Uuid, query.SiteIds?.ToArray());
+        Add(command.Parameters, "from", NpgsqlDbType.TimestampTz, query.FromUtc);
+        Add(command.Parameters, "to", NpgsqlDbType.TimestampTz, query.ToUtc);
+        command.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, query.Limit);
+
+        var events = new List<AlarmEvent>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            events.Add(Read(reader));
+        }
+
+        return events;
+    }
+
     internal static AlarmEvent Read(NpgsqlDataReader reader)
     {
         var actorId = Nullable<Guid>(reader, 7);

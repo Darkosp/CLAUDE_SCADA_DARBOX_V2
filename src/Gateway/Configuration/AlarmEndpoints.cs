@@ -22,6 +22,29 @@ internal static class AlarmEndpoints
                 .Where(alarm => caller.Access.CanView(alarm.SiteId))
                 .Select(AlarmDto.From)));
 
+        // The journal, newest first. The Site filter lives in the query rather than here:
+        // filtering in memory would mean reading rows the caller may not see in order to
+        // discard them, and the limit would then be applied to the wrong set.
+        app.MapGet("/api/alarms/journal", async (
+            DateTimeOffset? from,
+            DateTimeOffset? to,
+            int? limit,
+            Caller caller,
+            IAlarmJournal journal) =>
+        {
+            // An Admin is unrestricted (null); anyone else is held to their own Sites.
+            // Engine events reach both — see AlarmJournalQuery.
+            var sites = caller.Access.IsAdmin
+                ? null
+                : caller.Access.SiteRoles.Keys.ToArray();
+
+            var events = await journal.ReadHistoryAsync(
+                new AlarmJournalQuery(sites, from, to, Math.Clamp(limit ?? 200, 1, 1000)),
+                CancellationToken.None);
+
+            return Results.Ok(events.Select(AlarmEventDto.From));
+        });
+
         app.MapPost("/api/alarms/{definitionId:guid}/acknowledge", async (
             Guid definitionId,
             Caller caller,

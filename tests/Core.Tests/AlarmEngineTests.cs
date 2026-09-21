@@ -907,6 +907,20 @@ internal sealed class RecordingAlarmJournal : IAlarmJournal
         return Task.CompletedTask;
     }
 
+    /// <summary>Same rule as the database: a row with no Site and no occurrence is everyone's.</summary>
+    public Task<IReadOnlyList<AlarmEvent>> ReadHistoryAsync(
+        AlarmJournalQuery query,
+        CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<AlarmEvent>>(_all
+            .Where(e => query.SiteIds is null
+                        || (e.SiteId is { } site && query.SiteIds.Contains(site))
+                        || (e.SiteId is null && e.OccurrenceId is null))
+            .Where(e => query.FromUtc is not { } from || e.RecordedAtUtc >= from)
+            .Where(e => query.ToUtc is not { } to || e.RecordedAtUtc < to)
+            .OrderByDescending(e => e.RecordedAtUtc)
+            .Take(query.Limit)
+            .ToList());
+
     public Task<IReadOnlyList<AlarmEvent>> ReadOpenAsync(CancellationToken cancellationToken)
     {
         var retired = _all
