@@ -4,6 +4,7 @@ import {
   Access,
   Alarm,
   AlarmDefinition,
+  AlarmEvent,
   DeviceTemplate,
   LoginResponse,
   Site,
@@ -150,6 +151,11 @@ export class Api {
   }
 
   // ---- alarms (Operator) --------------------------------------------------
+
+  /** The journal, newest first. The Gateway filters it to the caller's Sites (ADR-0011). */
+  journal(limit = 200): Promise<AlarmEvent[]> {
+    return this.get<AlarmEvent[]>(`/api/alarms/journal?limit=${limit}`);
+  }
 
   alarms(): Promise<Alarm[]> {
     return this.get<Alarm[]>('/api/alarms');

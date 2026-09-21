@@ -9,6 +9,7 @@ import {
   Access,
   Alarm,
   AlarmDefinition,
+  AlarmEvent,
   DeviceTemplate,
   FolderOption,
   HistorySample,
@@ -141,7 +142,12 @@ export class App implements OnInit {
   );
 
   /** Which part of the app is on screen. Templates and Users exist only for an Admin. */
-  protected readonly view = signal<'browse' | 'templates' | 'users'>('browse');
+  protected readonly view = signal<'browse' | 'templates' | 'users' | 'journal'>('browse');
+
+  /** The journal as last read. Not live: history does not change under the reader. */
+  protected readonly journalEvents = signal<AlarmEvent[]>([]);
+
+  protected readonly journalLoading = signal(false);
 
   /** The user's role on the Site being browsed, for the header. */
   protected readonly roleHere = computed(() => {
@@ -308,7 +314,9 @@ export class App implements OnInit {
       }
 
       // Templates and Users are Admin screens; someone just demoted must not stay on one.
-      if (!this.auth.isAdmin() && this.view() !== 'browse') {
+      // The journal is not one of them: every signed-in user may read it, filtered to
+      // their own Sites by the Gateway (ADR-0011, ADR-0013).
+      if (!this.auth.isAdmin() && this.view() !== 'browse' && this.view() !== 'journal') {
         this.view.set('browse');
       }
     } catch (error) {
@@ -847,6 +855,28 @@ export class App implements OnInit {
     this.view.set('users');
     await this.withErrorHandling(() => this.loadUsers());
   }
+  /** Opens the journal and reads it once. */
+  protected async showJournal(): Promise<void> {
+    this.view.set('journal');
+    this.journalLoading.set(true);
+
+    try {
+      this.journalEvents.set(await this.api.journal());
+    } catch (error) {
+      this.report(error);
+    } finally {
+      this.journalLoading.set(false);
+    }
+  }
+
+  /**
+   * Whether an entry is the engine speaking rather than an alarm: it names no occurrence.
+   * Those rows carry no Site, and are shown to every reader on purpose (ADR-0013).
+   */
+  protected isEngineEvent(entry: AlarmEvent): boolean {
+    return entry.occurrenceId === null;
+  }
+
 
   private async loadUsers(): Promise<void> {
     this.users.set(await this.api.users());

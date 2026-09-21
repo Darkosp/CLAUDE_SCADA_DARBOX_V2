@@ -42,6 +42,8 @@
   <nav class="views">
     <button type="button" class="ghost" [class.current]="view() === 'browse'"
             (click)="view.set('browse')">Browse</button>
+    <button type="button" class="ghost" [class.current]="view() === 'journal'"
+            (click)="showJournal()">Journal</button>
     @if (isAdmin()) {
       <button type="button" class="ghost" [class.current]="view() === 'templates'"
               (click)="showTemplates()">Templates</button>
@@ -96,6 +98,62 @@
       <button type="button" class="ghost" (click)="pendingDelete.set(null)">Cancel</button>
     </div>
   </div>
+}
+
+@if (view() === 'journal') {
+  <main class="journal">
+    <div class="pane-head">
+      <h2>Alarm journal</h2>
+      <button type="button" class="ghost" (click)="showJournal()" [disabled]="journalLoading()">Refresh</button>
+    </div>
+
+    @if (journalLoading()) {
+      <p class="muted">Reading…</p>
+    } @else if (journalEvents().length === 0) {
+      <p class="muted">Nothing recorded yet.</p>
+    } @else {
+      <table class="journal-rows">
+        <thead>
+          <tr>
+            <th>Recorded</th>
+            <th>Event</th>
+            <th>Tag</th>
+            <th>Value</th>
+            <th>Who</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (entry of journalEvents(); track $index) {
+            <tr [class.engine]="isEngineEvent(entry)">
+              <td>{{ entry.recordedAtUtc | date: 'yyyy-MM-dd HH:mm:ss' }}</td>
+              <td>{{ entry.type }}</td>
+              <!-- Engine events name no tag: an outage is not about one piece of equipment. -->
+              <td>{{ entry.tagPath ?? '—' }}</td>
+              <td>
+                @if (entry.value !== null) {
+                  {{ entry.value }}@if (entry.unitSymbol) { {{ entry.unitSymbol }} }
+                } @else { — }
+              </td>
+              <td>{{ entry.actorUsername ?? '—' }}</td>
+              <td>
+                @if (entry.detectedAfterRestart) { <span class="tag">seen after restart</span> }
+                @if (entry.reason) { <span class="tag">{{ entry.reason }}</span> }
+                @if (entry.unrecordedTransitions !== null) {
+                  <span class="tag">{{ entry.unrecordedTransitions }} unrecorded</span>
+                }
+                @if (entry.gapFromUtc && entry.gapUntilUtc) {
+                  <span class="tag">
+                    {{ entry.gapFromUtc | date: 'HH:mm:ss' }} – {{ entry.gapUntilUtc | date: 'HH:mm:ss' }}
+                  </span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </main>
 }
 
 @if (view() === 'templates') {

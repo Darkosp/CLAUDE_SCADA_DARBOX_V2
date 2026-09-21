@@ -192,3 +192,33 @@ export interface LoginResponse {
   token: string;
   access: Access;
 }
+
+/**
+ * One entry in the alarm journal (ADR-0013).
+ *
+ * `siteId` is null on the engine's own events — EvaluationStarted, EvaluationStopped and
+ * JournalGap — which belong to no Site because an outage applies to the whole Gateway.
+ * Every signed-in user sees those; alarm events are filtered to the reader's Sites by the
+ * Gateway, never here.
+ */
+export interface AlarmEvent {
+  type: string;
+  recordedAtUtc: string;
+  sourceTimeUtc: string | null;
+  occurrenceId: string | null;
+  definitionId: string | null;
+  tagId: string | null;
+  siteId: string | null;
+  tagPath: string | null;
+  limit: string | null;
+  limitValue: number | null;
+  value: number | null;
+  unitSymbol: string | null;
+  actorUsername: string | null;
+  detectedAfterRestart: boolean;
+  shelvedUntilUtc: string | null;
+  reason: string | null;
+  gapFromUtc: string | null;
+  gapUntilUtc: string | null;
+  unrecordedTransitions: number | null;
+}
