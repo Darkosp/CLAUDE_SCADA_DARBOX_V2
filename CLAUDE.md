@@ -140,6 +140,17 @@ not the ADR.
   ADR-0013 and never shipped. Whenever a filter or a constraint touches a
   nullable column, say what happens to null explicitly, and write the
   null case as its own test.
+- A guarantee is only proven by watching its test fail. Break it on purpose,
+  confirm a **named** test fails — not an incidental one — and keep a control
+  that must stay green, so the mutation is shown to have caught the intended
+  behaviour and nothing wider. Then restore and confirm the suite is green
+  again: a mutation left applied silently poisons every later run.
+- **Rebuild after every source change, including after reverting a mutation.**
+  `dotnet test --no-build` reports the previous build's result, so a mutation
+  looks like it changed nothing, or a restored file looks like it is still
+  broken. This has already cost this project one false conclusion. For the same
+  reason a skipped test proves nothing: bring the database up before drawing
+  any conclusion from a run.
 
 ## Solution layout
 
