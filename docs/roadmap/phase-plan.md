@@ -444,6 +444,23 @@ being evaluated.
   that the journal shows when nothing was being watched, and today the
   most likely such window is one the journal cannot see.
 
+**Deferred out of Phase 5.5, raised by walking its gate by hand.**
+
+- **Filtering the journal** — by tag, by event type, by time. The screen
+  reads the whole window the Gateway returns (newest first, capped at
+  1000 rows). On a plant of any size that is not how anyone will look
+  for one alarm's history. Server-side, since the Site filter and the
+  row limit already are.
+- **Flapping.** A value oscillating across a threshold produces a
+  complete occurrence each time it crosses: during the gate, one Site
+  wrote three journal rows every ~25 seconds. The journal is recording
+  faithfully — the alarm really did raise and clear — but a journal that
+  fills with an oscillation buries everything else in it, and an
+  operator watching the banner learns nothing from it. The remedies are
+  standard (a deadband around the limit, an on-delay before raising,
+  both in ISA-18.2) and neither is a detail of this phase: each changes
+  what an alarm *is*, and so belongs in an ADR before any code.
+
 ## Phase 6 — Deployment packaging for both topologies
 
 **Scope:** Docker Compose packaging for the on-premises topology, and the
