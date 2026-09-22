@@ -42,3 +42,14 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+
+# Output of running the Angular compiler directly (npx ngc), which emits beside the
+# sources. `ng build` writes to /dist and leaves these behind entirely; this is here so a
+# direct ngc run — the only check available where Node is too old for the CLI — cannot
+# leave compiled JavaScript to be committed by accident.
+/src/**/*.js
+/src/**/*.js.map
+/src/**/*.d.ts
+
+# Output of the node:test compile step (npm test)
+/.node-test

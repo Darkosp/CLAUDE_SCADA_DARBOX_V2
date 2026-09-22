@@ -9,9 +9,11 @@ import {
   Access,
   Alarm,
   AlarmDefinition,
+  AlarmEvent,
   DeviceTemplate,
   FolderOption,
   HistorySample,
+  NumberField,
   SettingEntry,
   Site,
   SiteRole,
@@ -19,7 +21,11 @@ import {
   TemplateTag,
   TreeDevice,
   folderOptions,
+  describeReason,
+  formatGapWindow,
+  formatMeasurement,
   mapToSettings,
+  parseNumberField,
   settingsToMap,
 } from './models';
 import { TagStream } from './tag-stream';
@@ -36,7 +42,8 @@ interface DeviceDraft {
    * wants endpointUrl; core treats both as opaque (ADR-0002), and so does this form.
    */
   settings: SettingEntry[];
-  scanIntervalMs: number;
+  /** An emptied box makes this null, so it is read back through parseNumberField. */
+  scanIntervalMs: NumberField;
   folderId: string | null;
 }
 
@@ -46,7 +53,8 @@ interface InstantiateDraft {
   name: string;
   driverKey: string;
   settings: SettingEntry[];
-  scanIntervalMs: number;
+  /** An emptied box makes this null, so it is read back through parseNumberField. */
+  scanIntervalMs: NumberField;
   folderId: string | null;
   parameters: SettingEntry[];
 }
@@ -141,7 +149,12 @@ export class App implements OnInit {
   );
 
   /** Which part of the app is on screen. Templates and Users exist only for an Admin. */
-  protected readonly view = signal<'browse' | 'templates' | 'users'>('browse');
+  protected readonly view = signal<'browse' | 'templates' | 'users' | 'journal'>('browse');
+
+  /** The journal as last read. Not live: history does not change under the reader. */
+  protected readonly journalEvents = signal<AlarmEvent[]>([]);
+
+  protected readonly journalLoading = signal(false);
 
   /** The user's role on the Site being browsed, for the header. */
   protected readonly roleHere = computed(() => {
@@ -166,7 +179,7 @@ export class App implements OnInit {
   protected readonly propagationNote = signal<string | null>(null);
 
   protected readonly tagAlarm = signal<AlarmDefinition | null>(null);
-  protected readonly alarmDraft = signal<{ high: string; low: string } | null>(null);
+  protected readonly alarmDraft = signal<{ high: NumberField; low: NumberField } | null>(null);
 
   protected readonly writeDraft = signal('');
   protected readonly writeNote = signal<string | null>(null);
@@ -308,7 +321,9 @@ export class App implements OnInit {
       }
 
       // Templates and Users are Admin screens; someone just demoted must not stay on one.
-      if (!this.auth.isAdmin() && this.view() !== 'browse') {
+      // The journal is not one of them: every signed-in user may read it, filtered to
+      // their own Sites by the Gateway (ADR-0011, ADR-0013).
+      if (!this.auth.isAdmin() && this.view() !== 'browse' && this.view() !== 'journal') {
         this.view.set('browse');
       }
     } catch (error) {
@@ -427,8 +442,55 @@ export class App implements OnInit {
     await this.withErrorHandling(() => this.api.acknowledge(alarm.definitionId).then(() => undefined));
   }
 
+  /**
+   * What an operator may pick from. Presets rather than a free field: a shelf is a
+   * deliberate, bounded silence, and typing a number invites both a slip of the keyboard
+   * and a duration nobody meant. The server's maximum (ADR-0013) is the real limit — this
+   * list stays inside it, but is not what enforces it.
+   */
+  protected readonly shelveChoices: ReadonlyArray<{ minutes: number; label: string }> = [
+    { minutes: 5, label: '5 min' },
+    { minutes: 15, label: '15 min' },
+    { minutes: 60, label: '1 h' },
+    { minutes: 240, label: '4 h' },
+    { minutes: 480, label: '8 h' },
+    { minutes: 1440, label: '24 h' },
+  ];
+
+  /** The duration chosen per alarm, by definition id. Nothing is chosen until it is. */
+  private readonly shelveMinutes = signal<Record<string, number>>({});
+
+  protected chosenShelve(alarm: Alarm): number | null {
+    return this.shelveMinutes()[alarm.definitionId] ?? null;
+  }
+
+  protected chooseShelve(alarm: Alarm, minutes: string): void {
+    const chosen = Number(minutes);
+
+    this.shelveMinutes.update(current => ({
+      ...current,
+      [alarm.definitionId]: chosen,
+    }));
+  }
+
+  /**
+   * Shelves for the chosen duration. There is no fallback: with nothing chosen this does
+   * nothing, so a shelf is never longer — or shorter — than someone actually asked for.
+   */
   protected async shelve(alarm: Alarm): Promise<void> {
-    await this.withErrorHandling(() => this.api.shelve(alarm.definitionId).then(() => undefined));
+    const minutes = this.chosenShelve(alarm);
+    if (minutes === null) {
+      return;
+    }
+
+    await this.withErrorHandling(() => this.api.shelve(alarm.definitionId, minutes).then(() => undefined));
+
+    // Back to nothing chosen. A duration left sitting in the box is the next shelf's
+    // default, which is exactly what the disabled button exists to prevent.
+    this.shelveMinutes.update(current => {
+      const { [alarm.definitionId]: _sent, ...rest } = current;
+      return rest;
+    });
   }
 
   private async loadTagAlarm(): Promise<void> {
@@ -461,15 +523,20 @@ export class App implements OnInit {
       return;
     }
 
-    await this.withErrorHandling(async () => {
-      // An empty box means "no limit on this side", which is different from zero — and
-      // zero is a perfectly ordinary threshold, so the two must not collapse together.
-      const toLimit = (raw: string): number | null =>
-        raw.trim().length === 0 ? null : Number(raw);
+    // An empty box means "no limit on this side", which is different from zero — and
+    // zero is a perfectly ordinary threshold, so the two must not collapse together.
+    const high = parseNumberField(draft.high);
+    const low = parseNumberField(draft.low);
 
+    if (!high.ok || !low.ok) {
+      this.error.set('A limit must be a number, or blank for no limit on that side.');
+      return;
+    }
+
+    await this.withErrorHandling(async () => {
       await this.api.saveAlarm(tag.id, this.tagAlarm()?.id ?? null, {
-        highLimit: toLimit(draft.high),
-        lowLimit: toLimit(draft.low),
+        highLimit: high.value,
+        lowLimit: low.value,
       });
 
       this.alarmDraft.set(null);
@@ -569,12 +636,21 @@ export class App implements OnInit {
       return;
     }
 
+    // Unlike a limit, a scan interval has no "blank means none": a device that is not
+    // scanned is not a device. Caught here so an emptied box says so, rather than
+    // travelling to the Gateway as null and coming back as a validation error.
+    const scan = parseNumberField(draft.scanIntervalMs);
+    if (!scan.ok || scan.value === null) {
+      this.error.set('Scan interval must be a number of milliseconds.');
+      return;
+    }
+
     await this.withErrorHandling(async () => {
       await this.api.saveDevice(siteId, draft.id, {
         name: draft.name,
         driverKey: draft.driverKey,
         connectionSettings: settingsToMap(draft.settings),
-        scanIntervalMs: draft.scanIntervalMs,
+        scanIntervalMs: scan.value,
         folderId: draft.folderId,
       });
 
@@ -824,13 +900,19 @@ export class App implements OnInit {
       return;
     }
 
+    const scan = parseNumberField(draft.scanIntervalMs);
+    if (!scan.ok || scan.value === null) {
+      this.error.set('Scan interval must be a number of milliseconds.');
+      return;
+    }
+
     await this.withErrorHandling(async () => {
       await this.api.instantiate(siteId, {
         templateId: draft.templateId,
         name: draft.name,
         driverKey: draft.driverKey,
         connectionSettings: settingsToMap(draft.settings),
-        scanIntervalMs: draft.scanIntervalMs,
+        scanIntervalMs: scan.value,
         folderId: draft.folderId,
         parameters: settingsToMap(draft.parameters),
       });
@@ -847,6 +929,43 @@ export class App implements OnInit {
     this.view.set('users');
     await this.withErrorHandling(() => this.loadUsers());
   }
+  /** Opens the journal and reads it once. */
+  protected async showJournal(): Promise<void> {
+    this.view.set('journal');
+    this.journalLoading.set(true);
+
+    try {
+      this.journalEvents.set(await this.api.journal());
+    } catch (error) {
+      this.report(error);
+    } finally {
+      this.journalLoading.set(false);
+    }
+  }
+
+  /**
+   * Whether an entry is the engine speaking rather than an alarm: it names no occurrence.
+   * Those rows carry no Site, and are shown to every reader on purpose (ADR-0013).
+   */
+  protected isEngineEvent(entry: AlarmEvent): boolean {
+    return entry.occurrenceId === null;
+  }
+
+  /** Two decimals, so the journal never shows a double's arithmetic to an operator. */
+  protected measurement(value: number | null, unitSymbol: string | null): string {
+    return formatMeasurement(value, unitSymbol);
+  }
+
+  /** The gap's window, carrying dates when it crosses midnight. */
+  protected gapWindow(entry: AlarmEvent): string | null {
+    return formatGapWindow(entry.gapFromUtc, entry.gapUntilUtc);
+  }
+
+  /** A retirement reason in words rather than in the engine's vocabulary. */
+  protected reasonText(entry: AlarmEvent): string | null {
+    return describeReason(entry.reason);
+  }
+
 
   private async loadUsers(): Promise<void> {
     this.users.set(await this.api.users());

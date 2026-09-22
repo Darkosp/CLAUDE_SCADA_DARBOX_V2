@@ -110,7 +110,30 @@ public class TagEngineTests
             Assert.Single(subscriber.Received).Path);
     }
 
-    private static readonly Guid TenantId = new("aaaaaaaa-1111-4111-8111-111111111111");
+    [Fact]
+    public async Task A_historian_failure_still_reaches_every_subscriber_and_is_then_reported()
+    {
+        // Recording a value and acting on it are independent (ADR-0013): a database outage
+        // must not also stop alarm evaluation, which is one of these subscribers.
+        var first = new RecordingSubscriber();
+        var second = new RecordingSubscriber();
+        var engine = new TagEngine(
+            new TagCatalogSource(Rebuild(siteName: "Skopje")),
+            new FailingHistorian(),
+            [first, second],
+            new StubTimeProvider(Now));
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => engine.IngestAsync(
+            [new TagReading(TagId, new TagValue.Numeric(4.2), Now, Quality.Good)],
+            CancellationToken.None));
+
+        Assert.Equal("The historian is unavailable.", failure.Message);
+        Assert.Single(first.Received);
+        Assert.Single(second.Received);
+        Assert.NotNull(engine.GetCurrent(TagId));
+    }
+
+    private static readonly Guid TenantId =new("aaaaaaaa-1111-4111-8111-111111111111");
     private static readonly Guid SiteId = new("bbbbbbbb-1111-4111-8111-111111111111");
     private static readonly Guid DeviceId = new("cccccccc-1111-4111-8111-111111111111");
 

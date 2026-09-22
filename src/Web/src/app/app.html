@@ -42,6 +42,8 @@
   <nav class="views">
     <button type="button" class="ghost" [class.current]="view() === 'browse'"
             (click)="view.set('browse')">Browse</button>
+    <button type="button" class="ghost" [class.current]="view() === 'journal'"
+            (click)="showJournal()">Journal</button>
     @if (isAdmin()) {
       <button type="button" class="ghost" [class.current]="view() === 'templates'"
               (click)="showTemplates()">Templates</button>
@@ -63,10 +65,14 @@
   <section class="banner" role="alert" aria-label="Unacknowledged alarms">
     @for (alarm of unacknowledged(); track alarm.definitionId) {
       <div class="alarm" [class.cleared]="alarm.state === 'Cleared'">
-        <span class="badge">{{ alarm.state === 'Cleared' ? 'RETURNED' : alarm.limit === 'High' ? 'HIGH' : 'LOW' }}</span>
+        <!-- The same word the summary table uses. One state, one name. -->
+        <span class="badge">{{ alarm.state === 'Cleared' ? 'CLEARED' : alarm.limit === 'High' ? 'HIGH' : 'LOW' }}</span>
         <span class="where">{{ alarm.tagPath }}</span>
         <span class="what">
-          {{ alarm.valueAtRaise.toFixed(2) }}{{ alarm.unitSymbol ? ' ' + alarm.unitSymbol : '' }}
+          <!-- Labelled, because this is the reading that tripped the limit and not the
+               live one. On a cleared alarm the two disagree, and unlabelled it reads as
+               a value still out of range. -->
+          at raise: {{ measurement(alarm.valueAtRaise, alarm.unitSymbol) }}
           <span class="limit">
             ({{ alarm.limit === 'High' ? '≥' : '≤' }} {{ alarm.limitValue }})
           </span>
@@ -75,7 +81,18 @@
         @if (auth.canOperate(alarm.siteId)) {
           <button type="button" (click)="acknowledge(alarm)">Acknowledge</button>
           @if (alarm.state !== 'Cleared') {
-            <button type="button" class="ghost" (click)="shelve(alarm)">Shelve</button>
+            <!-- The button stays disabled until a duration is picked: no default is sent
+                 on behalf of an operator who has not chosen one. -->
+            <select class="shelve-for" [attr.aria-label]="'Shelve ' + alarm.tagPath + ' for'"
+                    [value]="chosenShelve(alarm) ?? ''"
+                    (change)="chooseShelve(alarm, $any($event.target).value)">
+              <option value="" disabled>Shelve for…</option>
+              @for (choice of shelveChoices; track choice.minutes) {
+                <option [value]="choice.minutes">{{ choice.label }}</option>
+              }
+            </select>
+            <button type="button" class="ghost" (click)="shelve(alarm)"
+                    [disabled]="chosenShelve(alarm) === null">Shelve</button>
           }
         }
       </div>
@@ -98,7 +115,58 @@
   </div>
 }
 
-@if (view() === 'templates') {
+@if (view() === 'journal') {
+  <main class="journal">
+    <div class="pane-head">
+      <h2>Alarm journal</h2>
+      <button type="button" class="ghost" (click)="showJournal()" [disabled]="journalLoading()">Refresh</button>
+    </div>
+
+    @if (journalLoading()) {
+      <p class="muted">Reading…</p>
+    } @else if (journalEvents().length === 0) {
+      <p class="muted">Nothing recorded yet.</p>
+    } @else {
+      <table class="journal-rows">
+        <thead>
+          <tr>
+            <th>Recorded</th>
+            <th>Event</th>
+            <th>Tag</th>
+            <th>Value</th>
+            <th>Who</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (entry of journalEvents(); track $index) {
+            <tr [class.engine]="isEngineEvent(entry)">
+              <td>{{ entry.recordedAtUtc | date: 'yyyy-MM-dd HH:mm:ss' }}</td>
+              <td>{{ entry.type }}</td>
+              <!-- Engine events name no tag: an outage is not about one piece of equipment. -->
+              <td>{{ entry.tagPath ?? '—' }}</td>
+              <td>{{ measurement(entry.value, entry.unitSymbol) }}</td>
+              <td>{{ entry.actorUsername ?? '—' }}</td>
+              <td>
+                @if (entry.detectedAfterRestart) {
+                  <span class="tag">first seen after restart</span>
+                }
+                @if (reasonText(entry); as reason) { <span class="tag">{{ reason }}</span> }
+                @if (entry.unrecordedTransitions !== null) {
+                  <span class="tag">
+                    {{ entry.unrecordedTransitions }}
+                    {{ entry.unrecordedTransitions === 1 ? 'transition' : 'transitions' }} not recorded
+                  </span>
+                }
+                @if (gapWindow(entry); as window) { <span class="tag">{{ window }}</span> }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </main>
+} @else if (view() === 'templates') {
   <main>
     <aside>
       <div class="pane-head"><h2>Templates</h2></div>
@@ -541,7 +609,7 @@
       <h3 class="summary-head">Alarm summary</h3>
       <table class="summary">
         <thead>
-          <tr><th>Tag</th><th>Condition</th><th>Raised</th><th>State</th></tr>
+          <tr><th>Tag</th><th>Condition</th><th>Raised</th><th>State</th><th>Acknowledged by</th><th></th></tr>
         </thead>
         <tbody>
           @for (alarm of alarms(); track alarm.definitionId) {
@@ -552,6 +620,25 @@
               </td>
               <td>{{ alarm.raisedAtUtc | date: 'HH:mm:ss' }}</td>
               <td>{{ alarm.state }}</td>
+              <!-- Who saw it belongs where the alarm is listed, not only in the journal. -->
+              <td>{{ alarm.acknowledgedBy ?? '—' }}</td>
+              <td>
+                <!-- An acknowledged alarm leaves the banner but is still standing, so
+                     shelving has to be reachable from here or it cannot be reached at
+                     all once someone has acknowledged it. -->
+                @if (auth.canOperate(alarm.siteId) && alarm.state !== 'Cleared') {
+                  <select class="shelve-for" [attr.aria-label]="'Shelve ' + alarm.tagPath + ' for'"
+                          [value]="chosenShelve(alarm) ?? ''"
+                          (change)="chooseShelve(alarm, $any($event.target).value)">
+                    <option value="" disabled>Shelve for…</option>
+                    @for (choice of shelveChoices; track choice.minutes) {
+                      <option [value]="choice.minutes">{{ choice.label }}</option>
+                    }
+                  </select>
+                  <button type="button" class="ghost" (click)="shelve(alarm)"
+                          [disabled]="chosenShelve(alarm) === null">Shelve</button>
+                }
+              </td>
             </tr>
           }
         </tbody>

@@ -98,6 +98,41 @@ public sealed class TimescaleHistorian : IHistorian
         return results;
     }
 
+    public async Task<DateTimeOffset?> LastIngestedAtAsync(CancellationToken cancellationToken)
+    {
+        // The hypertable is partitioned by source time, not ingestion time, so an unbounded
+        // max(ingested_at) would read every chunk ever written. Recent source times are
+        // tried first and the window widened only when they hold nothing. A sample that
+        // arrived late with an old source time can be missed by a narrow window; the
+        // answer is then earlier than the truth, which widens the recorded outage rather
+        // than hiding any of it.
+        foreach (var window in new TimeSpan?[] { TimeSpan.FromDays(1), TimeSpan.FromDays(30), null })
+        {
+            await using var command = _dataSource.CreateCommand(
+                window is null
+                    ? "SELECT max(ingested_at) FROM tag_sample"
+                    : "SELECT max(ingested_at) FROM tag_sample WHERE source_time >= now() - @window");
+
+            if (window is { } span)
+            {
+                command.Parameters.AddWithValue("window", span);
+            }
+
+            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (result is DateTime utc)
+            {
+                return new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc));
+            }
+
+            if (result is DateTimeOffset value)
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
     private static async Task WriteNullableAsync<T>(
         NpgsqlBinaryImporter writer,
         T? value,

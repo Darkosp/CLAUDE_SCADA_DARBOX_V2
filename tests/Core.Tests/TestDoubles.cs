@@ -30,6 +30,9 @@ internal sealed class RecordingHistorian : IHistorian
             Written.Where(s => s.TagId == tagId && s.SourceTimestampUtc >= fromUtc && s.SourceTimestampUtc < toUtc)
                 .OrderBy(s => s.SourceTimestampUtc)
                 .ToList());
+
+    public Task<DateTimeOffset?> LastIngestedAtAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(Written.Count == 0 ? (DateTimeOffset?)null : Written.Max(s => s.IngestedAtUtc));
 }
 
 internal sealed class RecordingSubscriber : ITagValueSubscriber
@@ -41,4 +44,21 @@ internal sealed class RecordingSubscriber : ITagValueSubscriber
         Received.AddRange(snapshots);
         return ValueTask.CompletedTask;
     }
+}
+
+/// <summary>A historian whose database is down: every write throws.</summary>
+internal sealed class FailingHistorian : IHistorian
+{
+    public Task WriteAsync(IReadOnlyList<HistorianSample> samples, CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("The historian is unavailable.");
+
+    public Task<IReadOnlyList<HistorianSample>> ReadAsync(
+        Guid tagId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("The historian is unavailable.");
+
+    public Task<DateTimeOffset?> LastIngestedAtAsync(CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("The historian is unavailable.");
 }

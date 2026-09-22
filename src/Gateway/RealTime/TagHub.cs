@@ -100,11 +100,9 @@ public sealed class TagHub : Hub
     public IReadOnlyList<AlarmDto> GetCurrentAlarms()
     {
         var access = Caller.From(Context.User, _users.Current).Access;
-        var catalog = _catalogSource.Current;
-
         return _alarmEngine.GetCurrent()
-            .Where(alarm => access.CanSeeTag(catalog, alarm.TagId))
-            .Select(alarm => AlarmDto.From(alarm, catalog.SiteOfTag(alarm.TagId)))
+            .Where(alarm => access.CanView(alarm.SiteId))
+            .Select(AlarmDto.From)
             .ToList();
     }
 }

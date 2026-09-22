@@ -4,6 +4,7 @@ import {
   Access,
   Alarm,
   AlarmDefinition,
+  AlarmEvent,
   DeviceTemplate,
   LoginResponse,
   Site,
@@ -151,6 +152,11 @@ export class Api {
 
   // ---- alarms (Operator) --------------------------------------------------
 
+  /** The journal, newest first. The Gateway filters it to the caller's Sites (ADR-0011). */
+  journal(limit = 200): Promise<AlarmEvent[]> {
+    return this.get<AlarmEvent[]>(`/api/alarms/journal?limit=${limit}`);
+  }
+
   alarms(): Promise<Alarm[]> {
     return this.get<Alarm[]>('/api/alarms');
   }
@@ -159,8 +165,9 @@ export class Api {
     return this.send('POST', `/api/alarms/${definitionId}/acknowledge`, null);
   }
 
-  shelve(definitionId: string): Promise<unknown> {
-    return this.send('POST', `/api/alarms/${definitionId}/shelve`, null);
+  /** Shelves an alarm; the gateway refuses a shelf with no end, or longer than its maximum. */
+  shelve(definitionId: string, durationMinutes: number): Promise<unknown> {
+    return this.send('POST', `/api/alarms/${definitionId}/shelve`, { durationMinutes });
   }
 
   // ---- users (Admin) ------------------------------------------------------

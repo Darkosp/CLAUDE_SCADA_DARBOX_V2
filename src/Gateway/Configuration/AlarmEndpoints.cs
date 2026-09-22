@@ -15,24 +15,43 @@ internal static class AlarmEndpoints
 {
     internal static void MapAlarmApi(this WebApplication app)
     {
-        app.MapGet("/api/alarms", (IAlarmEngine alarms, TagCatalogSource catalogSource, Caller caller) =>
-        {
-            var catalog = catalogSource.Current;
+        // Filtered by the Site fixed when each alarm was raised (ADR-0013), so an alarm whose
+        // tag has since been deleted is still shown to exactly the people who could see it.
+        app.MapGet("/api/alarms", (IAlarmEngine alarms, Caller caller) =>
+            Results.Ok(alarms.GetCurrent()
+                .Where(alarm => caller.Access.CanView(alarm.SiteId))
+                .Select(AlarmDto.From)));
 
-            return Results.Ok(alarms.GetCurrent()
-                .Where(alarm => caller.Access.CanSeeTag(catalog, alarm.TagId))
-                .Select(alarm => AlarmDto.From(alarm, catalog.SiteOfTag(alarm.TagId))));
+        // The journal, newest first. The Site filter lives in the query rather than here:
+        // filtering in memory would mean reading rows the caller may not see in order to
+        // discard them, and the limit would then be applied to the wrong set.
+        app.MapGet("/api/alarms/journal", async (
+            DateTimeOffset? from,
+            DateTimeOffset? to,
+            int? limit,
+            Caller caller,
+            IAlarmJournal journal) =>
+        {
+            // An Admin is unrestricted (null); anyone else is held to their own Sites.
+            // Engine events reach both — see AlarmJournalQuery.
+            var sites = caller.Access.IsAdmin
+                ? null
+                : caller.Access.SiteRoles.Keys.ToArray();
+
+            var events = await journal.ReadHistoryAsync(
+                new AlarmJournalQuery(sites, from, to, Math.Clamp(limit ?? 200, 1, 1000)),
+                CancellationToken.None);
+
+            return Results.Ok(events.Select(AlarmEventDto.From));
         });
 
         app.MapPost("/api/alarms/{definitionId:guid}/acknowledge", async (
             Guid definitionId,
             Caller caller,
             IAlarmEngine alarms,
-            TagCatalogSource catalogSource,
-            IAuditLog audit,
-            TimeProvider timeProvider) =>
+            IAuditLog audit) =>
         {
-            var (alarm, refusal) = Operable(definitionId, "Acknowledging", caller, alarms, catalogSource);
+            var (alarm, refusal) = Operable(definitionId, "Acknowledging", caller, alarms);
             if (alarm is null)
             {
                 return refusal;
@@ -40,10 +59,15 @@ internal static class AlarmEndpoints
 
             // Not tied to the request: once the alarm has changed state, the entry saying
             // who changed it is written even if the browser has gone away.
-            var acknowledged = await alarms.AcknowledgeAsync(
-                definitionId,
-                timeProvider.GetUtcNow(),
-                CancellationToken.None);
+            bool acknowledged;
+            try
+            {
+                acknowledged = await alarms.AcknowledgeAsync(definitionId, Actor(caller), CancellationToken.None);
+            }
+            catch (AlarmJournalUnavailableException)
+            {
+                return JournalUnavailable();
+            }
 
             // Not found rather than an error: an alarm that cleared and was retired
             // between the operator seeing it and clicking is a normal race, not a fault.
@@ -52,31 +76,62 @@ internal static class AlarmEndpoints
                 return Results.NotFound();
             }
 
-            // Who acknowledged — the gap Phase 3 deliberately left open until there were
-            // users to name (ADR-0011).
             await audit.AppendAsync(Entry(caller, "alarm.acknowledge", alarm), CancellationToken.None);
             return Results.NoContent();
         });
 
         app.MapPost("/api/alarms/{definitionId:guid}/shelve", async (
             Guid definitionId,
+            ShelveRequest? request,
             Caller caller,
             IAlarmEngine alarms,
-            TagCatalogSource catalogSource,
             IAuditLog audit) =>
         {
-            var (alarm, refusal) = Operable(definitionId, "Shelving", caller, alarms, catalogSource);
+            var (alarm, refusal) = Operable(definitionId, "Shelving", caller, alarms);
             if (alarm is null)
             {
                 return refusal;
             }
 
-            if (!await alarms.ShelveAsync(definitionId, CancellationToken.None))
+            // A shelf always ends (ADR-0013): no duration is a malformed request, not an
+            // indefinite suppression.
+            if (request?.DurationMinutes is not { } minutes)
             {
-                return Results.NotFound();
+                return Results.BadRequest(new { error = "A shelve needs a duration." });
             }
 
-            await audit.AppendAsync(Entry(caller, "alarm.shelve", alarm), CancellationToken.None);
+            ShelveOutcome outcome;
+            try
+            {
+                outcome = await alarms.ShelveAsync(
+                    definitionId,
+                    Actor(caller),
+                    TimeSpan.FromMinutes(minutes),
+                    CancellationToken.None);
+            }
+            catch (AlarmJournalUnavailableException)
+            {
+                return JournalUnavailable();
+            }
+
+            switch (outcome)
+            {
+                case ShelveOutcome.NotFound:
+                    return Results.NotFound();
+
+                case ShelveOutcome.NotInAlarm:
+                    return Results.Conflict(new { error = "The value is back in range; acknowledge the alarm instead." });
+
+                case ShelveOutcome.DurationNotAllowed:
+                    return Results.BadRequest(new
+                    {
+                        error = $"A shelve lasts between one minute and {alarms.MaxShelveDuration.TotalMinutes:0} minutes.",
+                    });
+            }
+
+            await audit.AppendAsync(
+                Entry(caller, "alarm.shelve", alarm, ("durationMinutes", minutes)),
+                CancellationToken.None);
             return Results.NoContent();
         });
 
@@ -184,30 +239,49 @@ internal static class AlarmEndpoints
         Guid definitionId,
         string action,
         Caller caller,
-        IAlarmEngine alarms,
-        TagCatalogSource catalogSource)
+        IAlarmEngine alarms)
     {
-        var catalog = catalogSource.Current;
         var alarm = alarms.GetCurrent().FirstOrDefault(standing => standing.DefinitionId == definitionId);
 
         // Not found for an alarm in a Site the caller cannot see — the same answer as for
         // one that does not exist, so the refusal does not confirm it is there.
-        if (alarm is null || !caller.Access.CanSeeTag(catalog, alarm.TagId))
+        if (alarm is null || !caller.Access.CanView(alarm.SiteId))
         {
             return (null, Results.NotFound());
         }
 
-        return caller.Access.CanOperateTag(catalog, alarm.TagId)
+        return caller.Access.CanOperate(alarm.SiteId)
             ? (alarm, Results.Empty)
             : (null, ApiErrors.Forbidden($"{action} an alarm needs the Operator role on its Site."));
     }
 
-    private static AuditEntry Entry(Caller caller, string action, Alarm alarm) => new(
+    private static AlarmActor Actor(Caller caller) => new(caller.UserId, caller.Access.Username);
+
+    /// <summary>
+    /// The action was refused because it could not be recorded (ADR-0013). Unavailable
+    /// rather than a server error: nothing is wrong with the request, and retrying once the
+    /// database is back will work.
+    /// </summary>
+    private static IResult JournalUnavailable() => Results.Json(
+        new { error = "The alarm journal is unavailable, so the action was not carried out. Try again shortly." },
+        statusCode: StatusCodes.Status503ServiceUnavailable);
+
+    private static AuditEntry Entry(
+        Caller caller,
+        string action,
+        Alarm alarm,
+        params (string Key, object? Value)[] extra) => new(
         caller.UserId,
         action,
         "alarm_definition",
         alarm.DefinitionId,
-        Audit.Detail(("tagId", alarm.TagId), ("tagPath", alarm.TagPath), ("stateBefore", alarm.State.ToString())));
+        Audit.Detail(
+        [
+            ("tagId", alarm.TagId),
+            ("tagPath", alarm.TagPath),
+            ("stateBefore", alarm.State.ToString()),
+            .. extra,
+        ]));
 
     /// <summary>
     /// Why this threshold cannot be saved, or null when it can.
