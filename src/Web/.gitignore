@@ -50,3 +50,6 @@ Thumbs.db
 /src/**/*.js
 /src/**/*.js.map
 /src/**/*.d.ts
+
+# Output of the node:test compile step (npm test)
+/.node-test
