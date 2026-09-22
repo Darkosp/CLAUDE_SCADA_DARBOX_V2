@@ -21,6 +21,9 @@ import {
   TemplateTag,
   TreeDevice,
   folderOptions,
+  describeReason,
+  formatGapWindow,
+  formatMeasurement,
   mapToSettings,
   parseNumberField,
   settingsToMap,
@@ -481,6 +484,13 @@ export class App implements OnInit {
     }
 
     await this.withErrorHandling(() => this.api.shelve(alarm.definitionId, minutes).then(() => undefined));
+
+    // Back to nothing chosen. A duration left sitting in the box is the next shelf's
+    // default, which is exactly what the disabled button exists to prevent.
+    this.shelveMinutes.update(current => {
+      const { [alarm.definitionId]: _sent, ...rest } = current;
+      return rest;
+    });
   }
 
   private async loadTagAlarm(): Promise<void> {
@@ -939,6 +949,21 @@ export class App implements OnInit {
    */
   protected isEngineEvent(entry: AlarmEvent): boolean {
     return entry.occurrenceId === null;
+  }
+
+  /** Two decimals, so the journal never shows a double's arithmetic to an operator. */
+  protected measurement(value: number | null, unitSymbol: string | null): string {
+    return formatMeasurement(value, unitSymbol);
+  }
+
+  /** The gap's window, carrying dates when it crosses midnight. */
+  protected gapWindow(entry: AlarmEvent): string | null {
+    return formatGapWindow(entry.gapFromUtc, entry.gapUntilUtc);
+  }
+
+  /** A retirement reason in words rather than in the engine's vocabulary. */
+  protected reasonText(entry: AlarmEvent): string | null {
+    return describeReason(entry.reason);
   }
 
 

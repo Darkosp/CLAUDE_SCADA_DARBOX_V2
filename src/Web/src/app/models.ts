@@ -265,3 +265,89 @@ export function parseNumberField(raw: NumberField): ParsedNumber {
   const value = Number(text.replace(',', '.'));
   return Number.isFinite(value) ? { ok: true, value } : { ok: false };
 }
+
+/** Two digits, so 9:5:3 never reads as 9:5:3. */
+function pad(value: number): string {
+  return value.toString().padStart(2, '0');
+}
+
+/**
+ * A measurement as an operator should read it.
+ *
+ * A double straight from the wire reads as `4.8100000000000005 bar`, which is the
+ * arithmetic showing through rather than a pressure anyone measured. Two decimals, the
+ * same as the live value elsewhere in the client, so the two never appear to disagree.
+ */
+export function formatMeasurement(value: number | null | undefined, unitSymbol?: string | null): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '—';
+  }
+
+  const text = value.toFixed(2);
+  return unitSymbol ? `${text} ${unitSymbol}` : text;
+}
+
+/**
+ * The window a gap covers, as a reader can place in time.
+ *
+ * Times alone are enough while both ends fall on the same day. Across midnight they are
+ * not: "15:31:33 – 14:13:44" reads as an interval that ran backwards, when it is in fact
+ * an outage of nearly a day. Both ends then carry their date.
+ */
+export function formatGapWindow(
+  from: string | Date | null | undefined,
+  to: string | Date | null | undefined,
+): string | null {
+  const start = toDate(from);
+  const end = toDate(to);
+
+  if (start === null || end === null) {
+    return null;
+  }
+
+  const sameDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
+
+  const time = (at: Date) => `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+  const dated = (at: Date) =>
+    `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${time(at)}`;
+
+  return sameDay ? `${time(start)} – ${time(end)}` : `${dated(start)} – ${dated(end)}`;
+}
+
+function toDate(value: string | Date | null | undefined): Date | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Why an occurrence was retired, in words rather than in the engine's own vocabulary.
+ *
+ * An unknown reason is shown as it stands. A reason this client has not been taught is
+ * still worth more to a reader than nothing at all, and silence would hide it from
+ * whoever has to notice the gap.
+ */
+export function describeReason(reason: string | null | undefined): string | null {
+  if (!reason) {
+    return null;
+  }
+
+  switch (reason) {
+    case 'superseded-by-new-breach':
+      return 'replaced by a new alarm';
+    case 'superseded':
+      return 'replaced by a later occurrence';
+    case 'definition-removed':
+      return 'threshold deleted';
+    case 'retirement-completed-at-startup':
+      return 'closed at startup';
+    default:
+      return reason;
+  }
+}
