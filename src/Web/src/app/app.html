@@ -77,7 +77,18 @@
         @if (auth.canOperate(alarm.siteId)) {
           <button type="button" (click)="acknowledge(alarm)">Acknowledge</button>
           @if (alarm.state !== 'Cleared') {
-            <button type="button" class="ghost" (click)="shelve(alarm)">Shelve 1 h</button>
+            <!-- The button stays disabled until a duration is picked: no default is sent
+                 on behalf of an operator who has not chosen one. -->
+            <select class="shelve-for" [attr.aria-label]="'Shelve ' + alarm.tagPath + ' for'"
+                    [value]="chosenShelve(alarm) ?? ''"
+                    (change)="chooseShelve(alarm, $any($event.target).value)">
+              <option value="" disabled>Shelve for…</option>
+              @for (choice of shelveChoices; track choice.minutes) {
+                <option [value]="choice.minutes">{{ choice.label }}</option>
+              }
+            </select>
+            <button type="button" class="ghost" (click)="shelve(alarm)"
+                    [disabled]="chosenShelve(alarm) === null">Shelve</button>
           }
         }
       </div>

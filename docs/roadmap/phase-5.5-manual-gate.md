@@ -104,32 +104,19 @@ genuinely first observed on the other side of the gap.
 
 ## 8. A shelf that ends by itself
 
-The **Shelve 1 h** button in the banner is fixed at 60 minutes — there is no duration
-field in the client. For a shelf you can watch expire, call the API directly. In a
-fourth window:
+In the banner, pick **5 min** from the duration list beside the alarm, then press
+**Shelve**. The button stays disabled until a duration is chosen: nothing is sent on
+behalf of an operator who has not picked one.
 
-```powershell
-$login = Invoke-RestMethod -Method Post -Uri http://localhost:5220/api/auth/login `
-  -ContentType 'application/json' `
-  -Body '{"username":"admin","password":"choose-at-least-12-chars"}'
-
-$headers = @{ Authorization = "Bearer $($login.token)" }
-
-# The definition id is on the alarm itself.
-$alarm = (Invoke-RestMethod -Uri http://localhost:5220/api/alarms -Headers $headers)[0]
-
-Invoke-RestMethod -Method Post -Headers $headers `
-  -Uri "http://localhost:5220/api/alarms/$($alarm.definitionId)/shelve" `
-  -ContentType 'application/json' -Body '{"durationMinutes":1}'
-```
-
-One minute is the shortest the server accepts: a shelve must be positive, and
-`durationMinutes` is a whole number. The maximum is 24 hours by default
-(`Alarms:MaxShelveDuration`).
+Five minutes is the shortest offered. Shorter than that is no use to someone changing a
+sensor, and the list — 5 min, 15 min, 1 h, 4 h, 8 h, 24 h — is deliberately a set of
+choices rather than a free field, where a slip of the keyboard becomes a silence nobody
+meant. The real limit is the server's 24 hours (`Alarms:MaxShelveDuration`); the list
+stays inside it but is not what enforces it.
 
 **What must be true:** the alarm shows `Shelved` and leaves the interrupting banner.
-About a minute later — plus up to one sweep, five seconds with the setting in step 3 —
-it returns to **Active** on its own, with no click from anyone. The value never went
+About five minutes later — plus up to one sweep, five seconds with the setting in step 3
+— it returns to **Active** on its own, with no click from anyone. The value never went
 back in range; the shelf simply ended.
 
 ## 9. The outage in the journal

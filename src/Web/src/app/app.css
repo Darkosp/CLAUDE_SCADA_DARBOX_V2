@@ -205,6 +205,14 @@ button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
    thing demanding attention right now. */
 .alarm.cleared { background: #fbf7ee; }
 
+/* Sized to the banner rather than to the browser's default, so the duration picker
+   sits in the row instead of stretching it. */
+.shelve-for {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.3rem;
+}
+
 .badge {
   font-size: 0.68rem;
   font-weight: 700;

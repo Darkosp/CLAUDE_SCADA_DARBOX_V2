@@ -435,8 +435,48 @@ export class App implements OnInit {
     await this.withErrorHandling(() => this.api.acknowledge(alarm.definitionId).then(() => undefined));
   }
 
+  /**
+   * What an operator may pick from. Presets rather than a free field: a shelf is a
+   * deliberate, bounded silence, and typing a number invites both a slip of the keyboard
+   * and a duration nobody meant. The server's maximum (ADR-0013) is the real limit — this
+   * list stays inside it, but is not what enforces it.
+   */
+  protected readonly shelveChoices: ReadonlyArray<{ minutes: number; label: string }> = [
+    { minutes: 5, label: '5 min' },
+    { minutes: 15, label: '15 min' },
+    { minutes: 60, label: '1 h' },
+    { minutes: 240, label: '4 h' },
+    { minutes: 480, label: '8 h' },
+    { minutes: 1440, label: '24 h' },
+  ];
+
+  /** The duration chosen per alarm, by definition id. Nothing is chosen until it is. */
+  private readonly shelveMinutes = signal<Record<string, number>>({});
+
+  protected chosenShelve(alarm: Alarm): number | null {
+    return this.shelveMinutes()[alarm.definitionId] ?? null;
+  }
+
+  protected chooseShelve(alarm: Alarm, minutes: string): void {
+    const chosen = Number(minutes);
+
+    this.shelveMinutes.update(current => ({
+      ...current,
+      [alarm.definitionId]: chosen,
+    }));
+  }
+
+  /**
+   * Shelves for the chosen duration. There is no fallback: with nothing chosen this does
+   * nothing, so a shelf is never longer — or shorter — than someone actually asked for.
+   */
   protected async shelve(alarm: Alarm): Promise<void> {
-    await this.withErrorHandling(() => this.api.shelve(alarm.definitionId, 60).then(() => undefined));
+    const minutes = this.chosenShelve(alarm);
+    if (minutes === null) {
+      return;
+    }
+
+    await this.withErrorHandling(() => this.api.shelve(alarm.definitionId, minutes).then(() => undefined));
   }
 
   private async loadTagAlarm(): Promise<void> {
