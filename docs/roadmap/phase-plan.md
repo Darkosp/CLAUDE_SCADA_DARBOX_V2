@@ -417,6 +417,40 @@ acknowledging user; a shelved alarm returns to Active by itself when its
 shelf expires; and the journal shows the period during which nothing was
 being evaluated.
 
+**Status: gate met (2026-09-22), complete and merged to `main` (PR #9).**
+194 .NET tests pass with none skipped, against TimescaleDB and over the
+non-privileged `scada_app` connection; the client's `npm test` runs 27
+more over the pieces testable without a browser (number parsing, journal
+formatting). Sixteen mutations, server and client, each failed its named
+test for the right reason and were reverted clean; the results are in
+PR #9 rather than in the repository, since a patch bound to exact lines
+stops applying with the first edit and then looks like a check that
+exists.
+
+The gate was then walked by hand, following
+[`phase-5.5-manual-gate.md`](phase-5.5-manual-gate.md), against a live
+simulator, a restarted Gateway and a Viewer on a second Site. All three
+criteria held on screen: an acknowledged alarm kept its state, its
+raise time and its acknowledging user across a restart; a five-minute
+shelf ended by itself with an `Unshelved` row carrying no actor; and the
+restart read as `EvaluationStopped` / `EvaluationStarted` — for the
+Viewer too, who saw the outage and none of the other Site's rows.
+
+Walking it found ten things no test had. One stopped the gate at its
+first step: saving an alarm threshold threw `raw.trim is not a
+function`, because a number input hands back a number while the draft
+was declared as a string — and the fix exposed a quieter defect behind
+it, where non-numeric text silently became "no limit". The other nine
+were the screen failing an operator while behaving correctly: the banner
+showing the value at raise without saying so, two words for one state,
+the acknowledging user visible only in the journal, no way to shelve an
+alarm once acknowledged, a shelf duration that stayed selected after
+use, raw doubles, an outage window without its date across midnight,
+the journal stacking above Browse, and internal slugs in the Note
+column. All ten were fixed and re-checked on screen before merge. This
+is the same lesson as Phase 2's, at larger scale: a green suite said
+nothing about any of them.
+
 **Implementation notes:**
 
 - Core gains a persistence dependency it did not have. It stays an

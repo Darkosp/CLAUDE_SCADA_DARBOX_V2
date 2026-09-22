@@ -82,17 +82,28 @@ from one that does not exist. Don't "improve" that into a clearer 403;
 it exists so Site-scoped paths cannot be used to enumerate what a user
 may not know about, and there is a test that fails if it changes.
 
-**Next: Phase 5.5 (alarm journal), decided but not started.** ADR-0013
-settles it: alarms persist as an append-only `alarm_event` journal that
-is the source of truth, with the live list rebuilt from it at startup —
-no second "current alarms" table. Evaluation start/stop is journalled so
-an outage reads as an outage rather than as a quiet period, a clear
-first seen after a restart is marked as observed-then rather than given
-a recovery time nothing witnessed, and shelving gains a required,
-capped expiry. It is numbered 5.5 because accepted ADRs already use
-"Phase 6" to mean deployment packaging. **On `main` today alarm state is
-still in memory only and a restart still erases it** — check the code,
-not the ADR.
+**Phase 5.5 (alarm journal) is complete and merged to `main`** (PR #9;
+see `phase-plan.md`'s Phase 5.5 status note). ADR-0013 is implemented:
+alarms persist as an append-only `alarm_event` journal that is the source
+of truth, the live list is rebuilt from it at startup, evaluation
+start/stop is journalled so an outage reads as an outage, and shelving
+has a required, capped expiry chosen from a fixed list. A Journal screen
+reads the history, Site-filtered — except engine events, which belong to
+no Site and are shown to every reader, because a Viewer on one Site
+still has to know the system was not watching. **Alarm state now
+survives a Gateway restart.**
+
+The gate was walked by hand as well as tested, and the hand walk found
+ten defects the suite had passed (listed in the status note). Treat that
+as the working rule rather than an anecdote: a phase that has a screen is
+not done until someone has used the screen. Two things were deliberately
+deferred and are recorded under Phase 5.5 in `phase-plan.md`: filtering
+the journal, and flapping (deadband / on-delay), the latter needing an
+ADR before any code.
+
+**Next: Phase 6 (deployment packaging for both topologies)**, with its
+open question — whether two migrator runs can safely overlap — recorded
+in `phase-plan.md`.
 
 ## When Phase 1 (or any phase) begins
 
