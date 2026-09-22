@@ -89,6 +89,8 @@ Serves the API and the SignalR hub on `http://localhost:5220`.
 - `GET /api/tags` — every tag on a Site you can see, with its current value
 - `GET /api/tags/{id}/history?from=&to=` — historised samples for one tag
 - `/hubs/tags` — real-time push, per Site
+- `GET /api/alarms/journal?from=&to=&limit=` — the alarm journal, newest first,
+  filtered to the Sites you may see; `limit` defaults to 200 and is capped at 1000
 
 ## 5. Web client
 
@@ -104,6 +106,12 @@ Site. What a user sees and can do follows their roles: a Viewer reads, an Operat
 also write writable tags and acknowledge or shelve alarms, and only an Admin sees
 configuration, templates and users. The gateway enforces all of it regardless of what
 the page shows.
+
+**Journal** is open to everyone signed in, not just Admin: it shows the alarm journal
+(ADR-0013), filtered by the Gateway to the reader's Sites. It reads once, on open and on
+*Refresh* — history does not change under a reader, so it is deliberately not on the
+live push. Walking Phase 5.5's gate by hand is written up separately in
+[phase-5.5-manual-gate.md](phase-5.5-manual-gate.md).
 
 ## Checking the test gate
 
