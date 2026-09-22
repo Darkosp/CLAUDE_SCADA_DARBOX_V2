@@ -222,3 +222,46 @@ export interface AlarmEvent {
   gapUntilUtc: string | null;
   unrecordedTransitions: number | null;
 }
+
+/**
+ * What a numeric form field actually holds.
+ *
+ * An `<input type="number">` bound with `ngModel` hands over a **number** — or `null`
+ * once the box is empty or its contents are not a number — never the string the draft
+ * was seeded with. Declaring such a field `string` is a lie the compiler cannot catch,
+ * and it is what let `raw.trim()` reach a number and throw on the first save of an alarm
+ * threshold.
+ */
+export type NumberField = string | number | null | undefined;
+
+/** Either a value — `null` meaning the field was left blank — or a refusal. */
+export type ParsedNumber = { readonly ok: true; readonly value: number | null } | { readonly ok: false };
+
+/**
+ * Reads a number out of a form field, whatever the binding handed over.
+ *
+ * Blank stays blank: it becomes `null`, never `0`. For a limit those mean opposite
+ * things — "no limit on this side" against "the limit is zero" — and zero is an
+ * ordinary threshold. Anything that is not a number is refused rather than passed on as
+ * `NaN`, which `JSON.stringify` would quietly turn into `null` and so into "no limit".
+ */
+export function parseNumberField(raw: NumberField): ParsedNumber {
+  if (raw === null || raw === undefined) {
+    return { ok: true, value: null };
+  }
+
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw) ? { ok: true, value: raw } : { ok: false };
+  }
+
+  const text = raw.trim();
+  if (text.length === 0) {
+    return { ok: true, value: null };
+  }
+
+  // A decimal comma is what a Macedonian keyboard produces. A thousands separator
+  // would leave a second one behind and fail the check below, which is the right
+  // answer: refuse it rather than guess which one the operator meant.
+  const value = Number(text.replace(',', '.'));
+  return Number.isFinite(value) ? { ok: true, value } : { ok: false };
+}

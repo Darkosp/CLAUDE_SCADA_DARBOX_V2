@@ -13,6 +13,7 @@ import {
   DeviceTemplate,
   FolderOption,
   HistorySample,
+  NumberField,
   SettingEntry,
   Site,
   SiteRole,
@@ -21,6 +22,7 @@ import {
   TreeDevice,
   folderOptions,
   mapToSettings,
+  parseNumberField,
   settingsToMap,
 } from './models';
 import { TagStream } from './tag-stream';
@@ -37,7 +39,8 @@ interface DeviceDraft {
    * wants endpointUrl; core treats both as opaque (ADR-0002), and so does this form.
    */
   settings: SettingEntry[];
-  scanIntervalMs: number;
+  /** An emptied box makes this null, so it is read back through parseNumberField. */
+  scanIntervalMs: NumberField;
   folderId: string | null;
 }
 
@@ -47,7 +50,8 @@ interface InstantiateDraft {
   name: string;
   driverKey: string;
   settings: SettingEntry[];
-  scanIntervalMs: number;
+  /** An emptied box makes this null, so it is read back through parseNumberField. */
+  scanIntervalMs: NumberField;
   folderId: string | null;
   parameters: SettingEntry[];
 }
@@ -172,7 +176,7 @@ export class App implements OnInit {
   protected readonly propagationNote = signal<string | null>(null);
 
   protected readonly tagAlarm = signal<AlarmDefinition | null>(null);
-  protected readonly alarmDraft = signal<{ high: string; low: string } | null>(null);
+  protected readonly alarmDraft = signal<{ high: NumberField; low: NumberField } | null>(null);
 
   protected readonly writeDraft = signal('');
   protected readonly writeNote = signal<string | null>(null);
@@ -509,15 +513,20 @@ export class App implements OnInit {
       return;
     }
 
-    await this.withErrorHandling(async () => {
-      // An empty box means "no limit on this side", which is different from zero — and
-      // zero is a perfectly ordinary threshold, so the two must not collapse together.
-      const toLimit = (raw: string): number | null =>
-        raw.trim().length === 0 ? null : Number(raw);
+    // An empty box means "no limit on this side", which is different from zero — and
+    // zero is a perfectly ordinary threshold, so the two must not collapse together.
+    const high = parseNumberField(draft.high);
+    const low = parseNumberField(draft.low);
 
+    if (!high.ok || !low.ok) {
+      this.error.set('A limit must be a number, or blank for no limit on that side.');
+      return;
+    }
+
+    await this.withErrorHandling(async () => {
       await this.api.saveAlarm(tag.id, this.tagAlarm()?.id ?? null, {
-        highLimit: toLimit(draft.high),
-        lowLimit: toLimit(draft.low),
+        highLimit: high.value,
+        lowLimit: low.value,
       });
 
       this.alarmDraft.set(null);
@@ -617,12 +626,21 @@ export class App implements OnInit {
       return;
     }
 
+    // Unlike a limit, a scan interval has no "blank means none": a device that is not
+    // scanned is not a device. Caught here so an emptied box says so, rather than
+    // travelling to the Gateway as null and coming back as a validation error.
+    const scan = parseNumberField(draft.scanIntervalMs);
+    if (!scan.ok || scan.value === null) {
+      this.error.set('Scan interval must be a number of milliseconds.');
+      return;
+    }
+
     await this.withErrorHandling(async () => {
       await this.api.saveDevice(siteId, draft.id, {
         name: draft.name,
         driverKey: draft.driverKey,
         connectionSettings: settingsToMap(draft.settings),
-        scanIntervalMs: draft.scanIntervalMs,
+        scanIntervalMs: scan.value,
         folderId: draft.folderId,
       });
 
@@ -872,13 +890,19 @@ export class App implements OnInit {
       return;
     }
 
+    const scan = parseNumberField(draft.scanIntervalMs);
+    if (!scan.ok || scan.value === null) {
+      this.error.set('Scan interval must be a number of milliseconds.');
+      return;
+    }
+
     await this.withErrorHandling(async () => {
       await this.api.instantiate(siteId, {
         templateId: draft.templateId,
         name: draft.name,
         driverKey: draft.driverKey,
         connectionSettings: settingsToMap(draft.settings),
-        scanIntervalMs: draft.scanIntervalMs,
+        scanIntervalMs: scan.value,
         folderId: draft.folderId,
         parameters: settingsToMap(draft.parameters),
       });
