@@ -15,6 +15,9 @@ namespace ScadaDarbox.Persistence.TimescaleDb;
 /// </remarks>
 public static class DatabaseMigrator
 {
+    /// <summary>Where the build's migration scripts live: embedded in this assembly (ADR-0007).</summary>
+    private static readonly Assembly BuildScripts = typeof(DatabaseMigrator).Assembly;
+
     /// <summary>
     /// How long a run waits for another to finish before giving up. Longer than any migration
     /// this project has, and short enough that a hung run or a crossed deployment shows up as
@@ -29,6 +32,9 @@ public static class DatabaseMigrator
     /// <paramref name="applicationPassword"/> — all under the migration lock (ADR-0014), so a
     /// second run arriving meanwhile waits and then finds nothing to do.
     /// </summary>
+    /// <exception cref="NoMigrationScriptsException">
+    /// The build carries no migration scripts. Refused before the database is touched.
+    /// </exception>
     /// <exception cref="MigrationLockTimeoutException">
     /// Another run held the database for longer than <paramref name="lockTimeout"/>. Nothing
     /// was applied.
@@ -48,31 +54,45 @@ public static class DatabaseMigrator
     /// Scripts applied as if the build carried them — for tests that need a migration this
     /// build does not have, such as a data script meeting a second run.
     /// </param>
+    /// <param name="scriptSource">
+    /// The assembly carrying the migration scripts: the build's own unless a test stands in one
+    /// that carries none.
+    /// </param>
     internal static async Task RunAsync(
         string connectionString,
         string applicationPassword,
         TimeSpan lockTimeout,
         IReadOnlyList<(string Name, string Sql)> additionalScripts,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Assembly? scriptSource = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(applicationPassword);
+
+        // A build with no scripts would "succeed" at once and bring nothing up to date — the
+        // shape a case mismatch between the scripts' folder and the embedding glob takes on a
+        // case-sensitive build (ADR-0014). Refused before anything touches the database.
+        scriptSource ??= BuildScripts;
+        NoMigrationScriptsException.ThrowIfEmpty(ScriptNames(scriptSource), scriptSource);
 
         // Taken before DbUp reads its journal, and held through the password step: the whole
         // run is one run.
         await using var held = await MigrationLock.AcquireAsync(connectionString, lockTimeout, cancellationToken)
             .ConfigureAwait(false);
 
-        Migrate(connectionString, additionalScripts);
+        Migrate(connectionString, scriptSource, additionalScripts);
         await ApplicationRole.SetPasswordAsync(connectionString, applicationPassword, cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private static void Migrate(string connectionString, IReadOnlyList<(string Name, string Sql)> additionalScripts)
+    private static void Migrate(
+        string connectionString,
+        Assembly scriptSource,
+        IReadOnlyList<(string Name, string Sql)> additionalScripts)
     {
         var result = DeployChanges.To
             .PostgresqlDatabase(connectionString)
             .WithScriptsEmbeddedInAssembly(
-                Assembly.GetExecutingAssembly(),
+                scriptSource,
                 name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
             .WithScripts(additionalScripts.Select(script => new SqlScript(script.Name, script.Sql)))
             .WithTransactionPerScript()
@@ -89,10 +109,30 @@ public static class DatabaseMigrator
     }
 
     /// <summary>The scripts this assembly carries, in the order they would be applied.</summary>
-    public static IReadOnlyList<string> ScriptNames() =>
-        Assembly.GetExecutingAssembly()
+    public static IReadOnlyList<string> ScriptNames() => ScriptNames(BuildScripts);
+
+    internal static IReadOnlyList<string> ScriptNames(Assembly scriptSource) =>
+        scriptSource
             .GetManifestResourceNames()
             .Where(name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToList();
+}
+
+/// <summary>
+/// The build carries no migration scripts — a broken build, not an up-to-date database
+/// (ADR-0014). Both the migrator and the Gateway's schema check refuse it.
+/// </summary>
+public sealed class NoMigrationScriptsException(string assembly) : Exception(
+    $"This build carries no migration scripts: nothing under 'migrations/' was embedded in {assembly}. " +
+    "That is a broken build, not a database with nothing to do. The scripts are embedded by a path " +
+    "that must match the folder's name exactly, capitals included, on a case-sensitive build (ADR-0014).")
+{
+    internal static void ThrowIfEmpty(IReadOnlyList<string> scripts, Assembly source)
+    {
+        if (scripts.Count == 0)
+        {
+            throw new NoMigrationScriptsException(source.GetName().Name ?? source.FullName ?? "the assembly");
+        }
+    }
 }

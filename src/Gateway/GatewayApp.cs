@@ -40,6 +40,7 @@ public static class GatewayApp
     /// </param>
     /// <exception cref="SchemaVersionMismatchException">The database is not at this build's schema.</exception>
     /// <exception cref="UnsafeDatabaseRoleException">The connection could rewrite the audit trail.</exception>
+    /// <exception cref="NoMigrationScriptsException">This build carries no migration scripts to check against.</exception>
     public static async Task<WebApplication> BuildAsync(string[] args, Action<WebApplicationBuilder>? configure = null)
     {
         var builder = WebApplication.CreateBuilder(args);
