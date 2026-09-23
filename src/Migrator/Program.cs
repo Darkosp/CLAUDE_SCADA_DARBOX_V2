@@ -8,6 +8,7 @@ using ScadaDarbox.Persistence.TimescaleDb;
 
 const string ConnectionVariable = "SCADA_MIGRATOR_CONNECTION";
 const string AppPasswordVariable = "SCADA_APP_DB_PASSWORD";
+const string LockTimeoutVariable = "SCADA_MIGRATOR_LOCK_TIMEOUT_SECONDS";
 
 var connectionString = Environment.GetEnvironmentVariable(ConnectionVariable);
 var appPassword = Environment.GetEnvironmentVariable(AppPasswordVariable);
@@ -23,10 +24,24 @@ if (string.IsNullOrWhiteSpace(connectionString) || string.IsNullOrEmpty(appPassw
     return 2;
 }
 
+// How long to wait for another migrator run to finish (ADR-0014). Optional; a value that is
+// there but unusable is refused rather than quietly replaced by the default.
+var lockTimeout = DatabaseMigrator.DefaultLockTimeout;
+var lockTimeoutSetting = Environment.GetEnvironmentVariable(LockTimeoutVariable);
+if (!string.IsNullOrWhiteSpace(lockTimeoutSetting))
+{
+    if (!int.TryParse(lockTimeoutSetting, out var seconds) || seconds <= 0)
+    {
+        Console.Error.WriteLine($"{LockTimeoutVariable} must be a whole number of seconds greater than zero.");
+        return 2;
+    }
+
+    lockTimeout = TimeSpan.FromSeconds(seconds);
+}
+
 try
 {
-    DatabaseMigrator.Migrate(connectionString);
-    await ApplicationRole.SetPasswordAsync(connectionString, appPassword, CancellationToken.None);
+    await DatabaseMigrator.RunAsync(connectionString, appPassword, lockTimeout, CancellationToken.None);
 }
 catch (Exception exception)
 {

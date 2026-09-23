@@ -16,19 +16,63 @@ namespace ScadaDarbox.Persistence.TimescaleDb;
 public static class DatabaseMigrator
 {
     /// <summary>
-    /// Brings the database up to date, creating it from nothing if necessary.
+    /// How long a run waits for another to finish before giving up. Longer than any migration
+    /// this project expects to run, so that a wait which gives up means something is wrong.
     /// </summary>
-    /// <exception cref="InvalidOperationException">
-    /// A migration failed. The host must not continue serving against a schema in an
-    /// unknown state, so this is thrown rather than logged and swallowed.
+    public static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// A whole migrator run (ADR-0012): brings the database up to date, creating it from
+    /// nothing if necessary, then lets the application role log in with
+    /// <paramref name="applicationPassword"/> — all under the migration lock (ADR-0014), so a
+    /// second run arriving meanwhile waits and then finds nothing to do.
+    /// </summary>
+    /// <exception cref="MigrationLockTimeoutException">
+    /// Another run held the database for longer than <paramref name="lockTimeout"/>. Nothing
+    /// was applied.
     /// </exception>
-    public static void Migrate(string connectionString)
+    /// <exception cref="InvalidOperationException">
+    /// A migration failed. The Gateway must not serve against a schema in an unknown state, so
+    /// this is thrown rather than logged and swallowed.
+    /// </exception>
+    public static Task RunAsync(
+        string connectionString,
+        string applicationPassword,
+        TimeSpan lockTimeout,
+        CancellationToken cancellationToken) =>
+        RunAsync(connectionString, applicationPassword, lockTimeout, [], cancellationToken);
+
+    /// <param name="additionalScripts">
+    /// Scripts applied as if the build carried them — for tests that need a migration this
+    /// build does not have, such as a data script meeting a second run.
+    /// </param>
+    internal static async Task RunAsync(
+        string connectionString,
+        string applicationPassword,
+        TimeSpan lockTimeout,
+        IReadOnlyList<(string Name, string Sql)> additionalScripts,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(applicationPassword);
+
+        // Taken before DbUp reads its journal, and held through the password step: the whole
+        // run is one run.
+        await using var held = await MigrationLock.AcquireAsync(connectionString, lockTimeout, cancellationToken)
+            .ConfigureAwait(false);
+
+        Migrate(connectionString, additionalScripts);
+        await ApplicationRole.SetPasswordAsync(connectionString, applicationPassword, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static void Migrate(string connectionString, IReadOnlyList<(string Name, string Sql)> additionalScripts)
     {
         var result = DeployChanges.To
             .PostgresqlDatabase(connectionString)
             .WithScriptsEmbeddedInAssembly(
                 Assembly.GetExecutingAssembly(),
                 name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+            .WithScripts(additionalScripts.Select(script => new SqlScript(script.Name, script.Sql)))
             .WithTransactionPerScript()
             .LogToConsole()
             .Build()

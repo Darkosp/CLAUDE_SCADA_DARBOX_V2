@@ -69,8 +69,8 @@ public sealed class TestDatabase : IAsyncLifetime
 
         // Deliberately the production migrator, not a hand-written schema: a test that
         // built its own tables could pass while the shipped migration was broken.
-        DatabaseMigrator.Migrate(connectionString);
-        await ApplicationRole.SetPasswordAsync(connectionString, ApplicationPassword, CancellationToken.None);
+        await DatabaseMigrator.RunAsync(
+            connectionString, ApplicationPassword, DatabaseMigrator.DefaultLockTimeout, CancellationToken.None);
 
         DataSource = NpgsqlDataSource.Create(connectionString);
         ApplicationDataSource = NpgsqlDataSource.Create(
@@ -88,7 +88,27 @@ public sealed class TestDatabase : IAsyncLifetime
         await drop.ExecuteNonQueryAsync();
     }
 
-    private static string ConnectionStringFor(string database) =>
+    /// <summary>
+    /// A database with nothing in it, not even the migration journal — for tests about what the
+    /// migrator does to one. The caller drops it with <see cref="DropEmptyAsync"/>.
+    /// </summary>
+    internal static async Task<string> CreateEmptyAsync()
+    {
+        var name = $"scada_test_{Guid.NewGuid():N}";
+        await using var server = NpgsqlDataSource.Create(ServerConnectionString);
+        await using var create = server.CreateCommand($"CREATE DATABASE {name}");
+        await create.ExecuteNonQueryAsync();
+        return name;
+    }
+
+    internal static async Task DropEmptyAsync(string name)
+    {
+        await using var server = NpgsqlDataSource.Create(ServerConnectionString);
+        await using var drop = server.CreateCommand($"DROP DATABASE IF EXISTS {name} WITH (FORCE)");
+        await drop.ExecuteNonQueryAsync();
+    }
+
+    internal static string ConnectionStringFor(string database) =>
         $"Host={ServerHost};Port=5432;Database={database};Username=scada;Password=scada";
 
     private static readonly Lazy<bool> AvailabilityProbe = new(() =>

@@ -61,8 +61,8 @@ public sealed class ScratchDatabase : IAsyncDisposable
 
         // The production migrator and the production password step, not a hand-built
         // schema: a test that made its own tables could pass while the shipped ones were wrong.
-        DatabaseMigrator.Migrate(database.PrivilegedConnectionString);
-        await ApplicationRole.SetPasswordAsync(database.PrivilegedConnectionString, ApplicationPassword, CancellationToken.None);
+        await DatabaseMigrator.RunAsync(
+            database.PrivilegedConnectionString, ApplicationPassword, DatabaseMigrator.DefaultLockTimeout, CancellationToken.None);
 
         return database;
     }
