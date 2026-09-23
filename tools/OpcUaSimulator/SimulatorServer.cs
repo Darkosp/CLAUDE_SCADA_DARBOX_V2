@@ -31,14 +31,13 @@ public sealed class SimulatorServer : StandardServer
 
     /// <summary>
     /// Starts a server on the given port and returns it, already accepting sessions.
-    /// <paramref name="host"/> is the name in the endpoint URL clients are told to use.
     /// </summary>
     /// <remarks>
     /// Security is deliberately minimal: an unsecured endpoint and anonymous users. This
     /// is a test fixture, and matching the driver's Phase 4 posture keeps the exercise
     /// honest rather than testing a configuration nobody runs.
     /// </remarks>
-    public static async Task<SimulatorServer> StartAsync(string host, int port, CancellationToken cancellationToken)
+    public static async Task<SimulatorServer> StartAsync(int port, CancellationToken cancellationToken)
     {
         var telemetry = DefaultTelemetry.Create(_ => { });
 
@@ -52,7 +51,7 @@ public sealed class SimulatorServer : StandardServer
             ApplicationType = ApplicationType.Server,
             ServerConfiguration = new ServerConfiguration
             {
-                BaseAddresses = [$"opc.tcp://{host}:{port}/ScadaDarboxSimulator"],
+                BaseAddresses = [$"opc.tcp://localhost:{port}/ScadaDarboxSimulator"],
                 SecurityPolicies =
                 [
                     new ServerSecurityPolicy
@@ -72,10 +71,7 @@ public sealed class SimulatorServer : StandardServer
                 ApplicationCertificate = new CertificateIdentifier
                 {
                     StoreType = CertificateStoreType.Directory,
-                    // One per host name: the certificate lists the name clients reach the server
-                    // by, and the stack refuses one issued for another name — so a certificate
-                    // made for "localhost" cannot serve a container reached by its service name.
-                    StorePath = Path.Combine(AppContext.BaseDirectory, "simulator-pki", "own", host),
+                    StorePath = Path.Combine(AppContext.BaseDirectory, "simulator-pki", "own"),
                     SubjectName = "CN=ScadaDarbox Simulator, O=Darbo",
                 },
                 TrustedPeerCertificates = new CertificateTrustList

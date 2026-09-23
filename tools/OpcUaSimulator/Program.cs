@@ -9,32 +9,7 @@ using ScadaDarbox.Tools.OpcUaSimulator;
 // Unlike the Modbus simulator, values here carry an explicit source timestamp — the
 // thing worth exercising, since it is what the protocol supplies and Modbus cannot.
 
-//
-// Usage: [port] [--host <name>]. The host is the name in the server's endpoint URL, which is
-// what a client is told to connect back to — so it has to be a name the client can resolve.
-// "localhost" unless told otherwise; in a container, Compose passes the service's own name
-// (Phase 6).
-
-var host = "localhost";
-var port = 4840;
-
-for (var i = 0; i < args.Length; i++)
-{
-    if (args[i] == "--host" && i + 1 < args.Length && Uri.CheckHostName(args[i + 1]) != UriHostNameType.Unknown)
-    {
-        host = args[i + 1];
-        i++;
-    }
-    else if (int.TryParse(args[i], out var parsedPort))
-    {
-        port = parsedPort;
-    }
-    else
-    {
-        Console.Error.WriteLine($"Unrecognised argument '{args[i]}'. Usage: [port] [--host <name>]");
-        return 2;
-    }
-}
+var port = args.Length > 0 && int.TryParse(args[0], out var parsedPort) ? parsedPort : 4840;
 
 using var shutdown = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArgs) =>
@@ -47,7 +22,7 @@ SimulatorServer server;
 
 try
 {
-    server = await SimulatorServer.StartAsync(host, port, shutdown.Token);
+    server = await SimulatorServer.StartAsync(port, shutdown.Token);
 }
 catch (Exception exception)
 {
@@ -58,7 +33,7 @@ catch (Exception exception)
     return 1;
 }
 
-Console.WriteLine($"OPC UA simulator listening on opc.tcp://{host}:{port}/ScadaDarboxSimulator");
+Console.WriteLine($"OPC UA simulator listening on opc.tcp://localhost:{port}/ScadaDarboxSimulator");
 Console.WriteLine("  ns=2;s=Pump1.Pressure   discharge pressure (bar)");
 Console.WriteLine("  ns=2;s=Pump1.Running    pump running");
 Console.WriteLine("Press Ctrl+C to stop.");

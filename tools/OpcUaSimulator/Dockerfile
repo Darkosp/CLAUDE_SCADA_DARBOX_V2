@@ -1,5 +1,7 @@
-# The OPC UA simulator. Not part of the product. Its endpoint URL names "localhost" unless
-# given --host; Compose passes the service name, since that URL is what clients connect back to.
+# The OPC UA simulator. Not part of the product. It already listens on every interface, and
+# the driver's client replaces the "localhost" in the endpoint URL it is sent with the name it
+# reached the server by — so, unlike the Modbus simulator, it needs no option to be reachable
+# from another container (checked from one, Phase 6).
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0.400 AS build
 WORKDIR /src

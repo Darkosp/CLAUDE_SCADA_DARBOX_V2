@@ -29,7 +29,7 @@ public sealed class OpcUaDriverTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _port = FreePort();
-        _server = await SimulatorServer.StartAsync("localhost", _port, CancellationToken.None);
+        _server = await SimulatorServer.StartAsync(_port, CancellationToken.None);
     }
 
     public async Task DisposeAsync()
