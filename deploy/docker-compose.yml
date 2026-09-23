@@ -66,6 +66,10 @@ services:
       # Where the demo configuration seeded into an empty database points its device.
       Modbus__Host: modbus-sim
       Modbus__Port: "5502"
+      # ASP.NET Core's Data Protection key ring, which it creates at startup even though
+      # nothing here uses it. On a volume, it is created once rather than on every start,
+      # each time with a warning in the log.
+      DataProtection__KeysDirectory: /app/keys
     ports:
       - "${SCADA_HTTP_PORT:-8080}:8080"
     volumes:
@@ -73,6 +77,7 @@ services:
       # re-creation: a new certificate on every upgrade would be refused by any server that
       # trusted the old one.
       - gateway-pki:/app/pki
+      - gateway-keys:/app/keys
     restart: unless-stopped
 
   modbus-sim:
@@ -89,3 +94,4 @@ services:
 volumes:
   db-data:
   gateway-pki:
+  gateway-keys:

@@ -24,9 +24,9 @@ COPY --from=build /out ./
 # ASP.NET Core serves {content root}/wwwroot; the content root is this directory.
 COPY --from=web /web/dist/ScadaDarboxWeb/browser ./wwwroot
 # The OPC UA driver keeps its client certificate and trust lists in pki/ beside the binaries,
-# and creates it on first use. Everything else here is root-owned and read-only to the app
+# and creates it on first use; keys/ holds ASP.NET Core's Data Protection key ring. Everything else here is root-owned and read-only to the app
 # user, so without this every OPC UA device reads Bad.
-RUN mkdir pki && chown "$APP_UID" pki
+RUN mkdir pki keys && chown "$APP_UID" pki keys
 USER $APP_UID
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "ScadaDarbox.Gateway.dll"]

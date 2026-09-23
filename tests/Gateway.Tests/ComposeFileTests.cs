@@ -61,6 +61,23 @@ public sealed class ComposeFileTests
         Assert.Equal("no", services.GetProperty("migrator").GetProperty("restart").GetString());
     }
 
+    [RequiresDockerComposeFact]
+    public void What_the_gateway_must_keep_across_containers_is_on_named_volumes()
+    {
+        var gateway = Render(AllSet).GetProperty("services").GetProperty("gateway");
+        var mounts = gateway.GetProperty("volumes").EnumerateArray()
+            .Where(mount => mount.GetProperty("type").GetString() == "volume")
+            .Select(mount => mount.GetProperty("target").GetString())
+            .ToList();
+
+        // The OPC UA certificate: a new one would be refused by servers that trusted the old.
+        Assert.Contains("/app/pki", mounts);
+
+        // The Data Protection key ring, wherever the Gateway is told to keep it.
+        var keys = gateway.GetProperty("environment").GetProperty("DataProtection__KeysDirectory").GetString();
+        Assert.Contains(keys, mounts);
+    }
+
     [RequiresDockerComposeTheory]
     [InlineData("SCADA_DB_ADMIN_PASSWORD")]
     [InlineData("SCADA_APP_DB_PASSWORD")]
