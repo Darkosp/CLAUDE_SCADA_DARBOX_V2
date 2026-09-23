@@ -48,13 +48,24 @@ no `LOCK TABLE` anywhere in its SQL, `schemaversions` has no unique
 constraint on `scriptname`, and the order of work is read-the-journal
 then execute — check-then-act, the textbook race.
 
-A second, unrelated way to migrate nothing at all was found while
-looking: the migration scripts are embedded by a path whose case must
-match, and a case-insensitive filesystem hides a mismatch that a
-Linux container build would not. A migrator that embeds zero scripts
-"succeeds" instantly, and the Gateway's check then compares empty with
-empty and also passes. Both guarantees are satisfied and nothing has
-been migrated.
+A second, unrelated way to migrate nothing at all sits next to this
+one. The migration scripts are embedded by a path whose case must match
+the folder's, and a case-insensitive filesystem hides a disagreement
+that a case-sensitive build would not. A migrator built that way embeds
+zero scripts, finishes instantly reporting success, and ADR-0012's check
+then compares empty with empty and also passes: both guarantees satisfied,
+nothing migrated.
+
+**Correction, recorded rather than quietly fixed (2026-09-23):** when
+this ADR was written the claim was that such a mismatch already existed
+in this repository, between `migrations/` in git and `Migrations/` on a
+Windows working copy. It did not. The claim came from a directory
+listing typed with the wrong case, which Windows answers under the name
+it was given. The decision below is unchanged, because the failure mode
+itself was then demonstrated in a Linux container: built from
+`Migrations/`, the migrator embeds zero scripts and exits successfully.
+The guard is worth having for what it prevents, not for a defect that
+was there.
 
 ## Decision
 

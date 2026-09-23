@@ -547,13 +547,18 @@ journal. Walked by hand in a browser as well as tested, per the Phase
 - **Build the images from a clean checkout, not from the working
   directory.** The point is that an image cannot depend on local state —
   which is exactly what would hide the next item.
-- **`migrations/` vs `Migrations/`.** The folder is `migrations/` in git
-  and `Migrations/` on a Windows working copy, and the csproj embeds by
-  the lowercase path. Windows does not care; a Linux container build
-  does, and the result is a migrator that embeds no scripts, "succeeds"
-  instantly, and passes ADR-0012's check because empty equals empty.
-  Fix the name, and keep the guard ADR-0014 requires — zero embedded
-  scripts is a failure, not a no-op.
+- **A case-sensitive build must not embed nothing.** The folder is
+  `migrations/` and the csproj embeds it by that name; an earlier draft
+  of this note claimed git and the Windows working copy disagreed about
+  the case, and that was wrong — the mistake came from a directory
+  listing typed with the wrong case, which Windows echoes back happily.
+  The risk it pointed at is real all the same, and was then demonstrated
+  in a Linux container: built from `Migrations/`, the migrator embeds
+  **zero** scripts, exits reporting success, and ADR-0012's schema check
+  passes because empty equals empty. The guard ADR-0014 requires — zero
+  embedded scripts is a failure, in the migrator and in the Gateway's
+  check — is what closes it, together with a test comparing the `.sql`
+  files on disk with what the assembly actually carries.
 - **The simulators must be reachable from another container.** The
   Modbus simulator binds loopback today; the listen address becomes
   configurable, and Compose sets it explicitly rather than the default
