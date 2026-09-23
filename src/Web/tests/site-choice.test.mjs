@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deviceCount, siteName, siteToOpen } from '../.node-test/models.js';
+import { deviceCount, pathWithinSite, siteName, siteToOpen } from '../.node-test/models.js';
 
 const device = (id) => ({ id, name: id, driverKey: 'modbus-tcp', tags: [] });
 const folder = (id, folders = [], devices = []) => ({ id, name: id, parentFolderId: null, folders, devices });
@@ -63,4 +63,11 @@ test('with no device anywhere it falls back to the first Site, and with no Site 
 test('an alarm row names its Site', () => {
   assert.equal(siteName([bitola, skopje], 'skopje'), 'Skopje');
   assert.equal(siteName([bitola, skopje], 'elsewhere'), '—');
+});
+
+test('the Tag column does not repeat the Site its row already names', () => {
+  assert.equal(pathWithinSite('Skopje/Pump House/Discharge Pressure', 'Skopje'), 'Pump House/Discharge Pressure');
+  // Only an exact leading Site segment goes: a device merely starting with the name stays whole.
+  assert.equal(pathWithinSite('Skopje East/Pump/Pressure', 'Skopje'), 'Skopje East/Pump/Pressure');
+  assert.equal(pathWithinSite('Bitola/Pump/Pressure', 'Skopje'), 'Bitola/Pump/Pressure');
 });

@@ -27,6 +27,7 @@ import {
   formatMeasurement,
   mapToSettings,
   parseNumberField,
+  pathWithinSite,
   settingsToMap,
   siteName,
   siteToOpen,
@@ -375,6 +376,11 @@ export class App implements OnInit {
   /** The Site an alarm belongs to, by name: the summary lists every Site the reader may see. */
   protected siteNameOf(siteId: string): string {
     return siteName(this.sites(), siteId);
+  }
+
+  /** The tag's path under its Site, which the summary already names in its own column. */
+  protected tagPathInSite(alarm: Alarm): string {
+    return pathWithinSite(alarm.tagPath, this.siteNameOf(alarm.siteId));
   }
 
   protected hasNoDevices(tree: SiteTree): boolean {

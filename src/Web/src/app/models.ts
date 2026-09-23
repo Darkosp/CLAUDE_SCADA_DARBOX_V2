@@ -381,3 +381,13 @@ export async function siteToOpen(
 export function siteName(sites: Site[], siteId: string): string {
   return sites.find((site) => site.id === siteId)?.name ?? '—';
 }
+
+/**
+ * A tag's path without its leading Site, for a table that names the Site in its own column.
+ * Only a leading segment that is exactly that Site's name is removed; anything else is shown
+ * whole rather than guessed at.
+ */
+export function pathWithinSite(tagPath: string, siteName: string): string {
+  const prefix = `${siteName}/`;
+  return tagPath.startsWith(prefix) ? tagPath.slice(prefix.length) : tagPath;
+}
