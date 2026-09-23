@@ -1,6 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { HubConnection, HubConnectionBuilder, HubConnectionState } from '@microsoft/signalr';
-import { GATEWAY_URL } from './api';
 import { Auth } from './auth';
 import { Alarm } from './models';
 import { TagSnapshot } from './tag';
@@ -48,7 +47,7 @@ export class TagStream {
     }
 
     const connection = new HubConnectionBuilder()
-      .withUrl(`${GATEWAY_URL}/hubs/tags`, {
+      .withUrl('/hubs/tags', {
         // A browser cannot put a header on a WebSocket handshake, so the client sends the
         // token in the URL. The gateway accepts it only on this path and removes it before
         // anything can log the request (ADR-0011).

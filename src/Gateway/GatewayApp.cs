@@ -31,8 +31,6 @@ public static class GatewayApp
     /// <summary>The application role's database password, when the connection string carries none.</summary>
     public const string AppPasswordVariable = "SCADA_APP_DB_PASSWORD";
 
-    private const string WebClientCors = "web-client";
-
     /// <param name="args">Command-line arguments, as given to the process.</param>
     /// <param name="configure">
     /// Runs after every default registration and before the host is built, so a test can
@@ -78,19 +76,20 @@ public static class GatewayApp
         RegisterSecurity(builder, securityStore, userDirectorySource);
 
         builder.Services.AddSignalR();
-        builder.Services.AddCors(options => options.AddPolicy(WebClientCors, policy => policy
-            .WithOrigins(builder.Configuration.GetSection("WebClientOrigins").Get<string[]>()
-                         ?? ["http://localhost:4200"])
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials()));
 
         configure?.Invoke(builder);
 
         var app = builder.Build();
         ReportInitialAdmin(app.Logger, initialAdmin, userDirectorySource.Current);
 
-        app.UseCors(WebClientCors);
+        // The web client is served from here, so the browser talks to one origin and no
+        // cross-origin allowance exists at all (Phase 6). Its files are public — the sign-in
+        // screen has to load before anyone has a session — so they are served ahead of
+        // authentication; everything under /api and /hubs is still behind it. Without a
+        // built client in the web root (a developer running `ng serve`) this serves nothing.
+        app.UseDefaultFiles();
+        app.UseStaticFiles();
+
         app.UseAuthentication();
         app.UseAuthorization();
 

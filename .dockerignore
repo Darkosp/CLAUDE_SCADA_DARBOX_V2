@@ -1,0 +1,9 @@
+# The images are built from a committed tree (deploy/build-images.sh), which carries none of
+# this. These rules keep a plain `docker build .` from sending local build output too.
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.angular/
+**/.node-test/
+.git/

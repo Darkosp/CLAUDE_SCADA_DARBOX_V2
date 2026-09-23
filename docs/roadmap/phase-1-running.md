@@ -53,7 +53,8 @@ Schema changes are always a new numbered script, never a hand-applied `ALTER`.
 dotnet run --project tools/ModbusSimulator
 ```
 
-Listens on `127.0.0.1:5502` as Modbus unit 1:
+Listens on `127.0.0.1:5502` as Modbus unit 1 (`-- 5503` for another port; `--listen 0.0.0.0`
+to be reachable from other machines or containers, which the Compose stack passes):
 
 | Address | Meaning |
 |---|---|
@@ -100,7 +101,10 @@ npm install
 npm start
 ```
 
-Opens on `http://localhost:4200` with a sign-in screen. Sign in as the initial Admin,
+Opens on `http://localhost:4200` with a sign-in screen. The client addresses the Gateway by
+relative path only; `ng serve` forwards `/api` and `/hubs` to the Gateway on
+`localhost:5220` (`src/Web/proxy.conf.json`). The Gateway allows no other origin — in a
+deployment it serves the built client itself, from the same address as the API. Sign in as the initial Admin,
 then use **Users** to create further users and grant each one Viewer or Operator per
 Site. What a user sees and can do follows their roles: a Viewer reads, an Operator can
 also write writable tags and acknowledge or shelve alarms, and only an Admin sees
