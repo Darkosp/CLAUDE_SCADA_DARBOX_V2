@@ -14,8 +14,22 @@ Nothing here ships one, and none should be written into a file that is committed
 
 ## 0. Before you start
 
+**First, check that the port is free:**
+
+```powershell
+netstat -ano | Select-String ":8080"
+```
+
+Nothing may be `LISTENING` on it. If something is, pick another port for
+`SCADA_HTTP_PORT` in step 2 and use it everywhere below. Docker does not always refuse a
+port another program already holds. On the machine this guide was first walked on, an
+unrelated `ApplicationWebServer` was listening on 8080. Docker bound the port anyway,
+without complaint, and a browser opening `localhost:8080` went over IPv6 to the other
+server and showed its `Access Error: 404`. **That is not a Gateway defect.** The Gateway
+never saw the request. The check above is what catches it, and so does always opening
+`http://127.0.0.1:<port>` rather than `localhost` (below).
+
 - Docker Desktop running, and Git for Windows (its `bash` runs the image build).
-- Port **8080** free, or pick another in step 2.
 - This stack is **separate from the development database** started by the
   `docker-compose.yml` at the repository root. It has its own project name
   (`scada-darbox`), its own volumes, and does not publish the database port. Your
@@ -94,12 +108,17 @@ docker compose -f deploy/docker-compose.yml ps -a
   docker compose -f deploy/docker-compose.yml logs migrator gateway | Select-String "Error|libgssapi|not at the version"
   ```
 
-  Expected: nothing. (A `warn:` about DataProtection keys is ASP.NET's default and
-  harmless here: nothing in the Gateway uses DataProtection.)
+  Expected: nothing.
+
+- The Data Protection key ring is on the `gateway-keys` volume. On the very **first** start
+  ASP.NET creates it and logs one `warn:` "No XML encryptor configured". That is expected
+  once: nothing in the Gateway uses these keys (sessions are opaque server-side tokens,
+  ADR-0011). From the second start on, there is no Data Protection warning at all.
 
 ## 4. Sign in, on one address
 
-Open `http://localhost:8080` (or your `SCADA_HTTP_PORT`). The sign-in screen comes from the
+Open `http://127.0.0.1:8080` (or your `SCADA_HTTP_PORT`) — the IPv4 address, not
+`localhost`, for the reason in step 0. The sign-in screen comes from the
 Gateway itself: the API and the live push are on the same address, and no other origin is
 allowed. Sign in with the initial Admin from step 2.
 
@@ -128,7 +147,7 @@ In the banner, **Acknowledge** it. It stays listed, now acknowledged by your use
 docker compose -f deploy/docker-compose.yml restart gateway
 ```
 
-Wait for `http://localhost:8080` to answer, reload, sign in.
+Wait for `http://127.0.0.1:8080` to answer, reload, sign in.
 
 **What must be true:** the alarm is still listed, still **Acknowledged**, still naming
 **you**. In **Journal** → **Refresh**, the restart reads as `EvaluationStopped` followed by
