@@ -14,9 +14,6 @@ import {
   TemplateTag,
 } from './models';
 
-/** Base URL of the gateway. The Angular dev server and the gateway run separately. */
-export const GATEWAY_URL = 'http://localhost:5220';
-
 /** An error carrying the message the gateway gave, so the UI can show the real reason. */
 export class ApiError extends Error {
   constructor(
@@ -34,7 +31,7 @@ export class Api {
   // ---- session ------------------------------------------------------------
 
   async login(username: string, password: string): Promise<LoginResponse> {
-    const response = await fetch(`${GATEWAY_URL}/api/auth/login`, {
+    const response = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
@@ -202,14 +199,17 @@ export class Api {
 
   // ---- transport ----------------------------------------------------------
 
+  // Every path is relative: the gateway serves this client, so the API and the hub are on
+  // the page's own origin (Phase 6). `ng serve` forwards them to a local gateway through
+  // proxy.conf.json.
   private async get<T>(path: string): Promise<T> {
-    const response = await fetch(`${GATEWAY_URL}${path}`, { headers: this.headers(false) });
+    const response = await fetch(path, { headers: this.headers(false) });
     await this.ensureOk(response);
     return (await response.json()) as T;
   }
 
   private async send(method: string, path: string, body: unknown): Promise<unknown> {
-    const response = await fetch(`${GATEWAY_URL}${path}`, {
+    const response = await fetch(path, {
       method,
       headers: this.headers(body !== null),
       body: body === null ? undefined : JSON.stringify(body),
