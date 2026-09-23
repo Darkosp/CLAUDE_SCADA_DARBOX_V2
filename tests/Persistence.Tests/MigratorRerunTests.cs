@@ -9,8 +9,9 @@ namespace ScadaDarbox.Persistence.Tests;
 /// </summary>
 /// <remarks>
 /// A second run that is not a no-op shows up only on the day someone deploys a second time
-/// — which in the Compose topologies is every restart of the stack. It is run here exactly as
-/// the migrator runs it: the migration itself, then setting the application role's password.
+/// — which in the Compose topologies is every restart of the stack. It is run here through the
+/// migrator's own entry point: the migration, then setting the application role's password,
+/// both under the migration lock (ADR-0014).
 /// </remarks>
 public sealed class MigratorRerunTests : IClassFixture<TestDatabase>
 {
@@ -36,13 +37,12 @@ public sealed class MigratorRerunTests : IClassFixture<TestDatabase>
         Assert.Contains(before.RowCounts, row => row.StartsWith("tenant|", StringComparison.Ordinal) && row != "tenant|0");
         Assert.Equal(1, before.SentinelRows);
 
-        var rerun = Record.Exception(() => DatabaseMigrator.Migrate(_database.PrivilegedConnectionString));
-        Assert.Null(rerun);
-
-        await ApplicationRole.SetPasswordAsync(
+        var rerun = await Record.ExceptionAsync(() => DatabaseMigrator.RunAsync(
             _database.PrivilegedConnectionString,
             TestDatabase.ApplicationPassword,
-            CancellationToken.None);
+            DatabaseMigrator.DefaultLockTimeout,
+            CancellationToken.None));
+        Assert.Null(rerun);
 
         var after = await SnapshotAsync(tenantId);
 
