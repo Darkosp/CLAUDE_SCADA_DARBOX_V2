@@ -30,6 +30,7 @@ header, and mark the clause in the original.
 | [0011](0011-permissions-model.md) | Opaque session token, roles/Site-scope resolved server-side per request; Site-scoped Operator/Viewer, tenant-wide Admin |
 | [0012](0012-migrations-run-outside-the-gateway.md) | Migrations run as a separate privileged step; the Gateway refuses to start unless the schema matches its build exactly (supersedes ADR-0007's execution clause) |
 | [0013](0013-alarm-journal.md) | Alarms persist as an append-only event journal, with the live list derived from it; shelving is time-bounded |
+| [0014](0014-one-migrator-at-a-time.md) | One migrator run at a time, enforced by a database advisory lock; a build with zero migration scripts refuses to run |
 
 ## Template
 

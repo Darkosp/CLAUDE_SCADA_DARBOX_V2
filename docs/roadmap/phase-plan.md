@@ -495,34 +495,95 @@ nothing about any of them.
   both in ISA-18.2) and neither is a detail of this phase: each changes
   what an alarm *is*, and so belongs in an ADR before any code.
 
-## Phase 6 — Deployment packaging for both topologies
+## Phase 6 — On-premises deployment packaging
 
-**Scope:** Docker Compose packaging for the on-premises topology, and the
-edge-agent-plus-cloud-Gateway split with MQTT store-and-forward for the
-cloud topology (Phase 0 Architecture, "Deployment topologies").
+Originally scoped as "both topologies". Split when Phase 6 began,
+because the cloud half turned out not to be a packaging job: it needs a
+push-capable driver contract, a broker, store-and-forward semantics and
+an edge identity, none of which are decided. Packaging what exists
+should not wait behind decisions that have not been made, so the cloud
+topology is now Phase 7 below.
 
-Carried in from Phase 5: both topologies run the migrator to completion
-before the Gateway container starts, and the privileged connection
-string exists only in the migrator's environment — the Gateway gets the
-non-privileged one (ADR-0011, ADR-0012). The alarm-state question raised
-in Phase 3 is no longer carried here: it became ADR-0013 and Phase 5.5,
-which runs before this phase.
+**Scope:** the on-premises topology runs from `docker compose up` on a
+machine that has only Docker — Migrator, Gateway (serving the built
+Angular client), the database, and the simulators the gate needs.
 
-**Open: can two migrators overlap?** Whether applying the migrations
-themselves is safe when two migrator runs meet has never been checked,
-only assumed. ADR-0007 deliberately set the question aside while
-migrations ran inside a single-instance Gateway; ADR-0012 moved them
-into a separate step, which makes an accidental overlap easier to cause
-— a container restart loop, two deployments crossing, an orchestrator
-starting a second replica. Phase 5 hardened one part of it by accident:
-writing the tests for a no-op second run surfaced a real collision in
-the migrator's password step, which is now fixed. That says nothing
-about the migration scripts themselves. Whatever Compose (or the cloud
-topology's orchestration) does here is the answer to this question, so
-it belongs to this phase rather than to a later incident.
+**Decisions made when this phase was planned:**
 
-**Test gate:** the full stack runs in Docker Compose, locally, in both
-configurations.
+- **The Gateway serves the web client.** The built Angular output is
+  copied into the Gateway image and served as static files from the same
+  origin. That removes the hard-coded `http://localhost:5220` in the
+  client, removes the CORS allowance for `localhost:4200`, removes a
+  container, and adds no technology to ADR-0006. The client addresses
+  the API by relative path.
+- **Concurrency of the migrator is ADR-0014**, which answers the
+  question this phase carried as open. Two migrator runs meeting is not
+  hypothetical: on an existing database a data script applies once per
+  run, with every run reporting success, and the Gateway then refuses to
+  start for good. It is fixed with a database-level advisory lock, not
+  with Compose ordering.
+- **Rollback**, which ADR-0012 deferred to this phase, stays
+  forward-only: no down-scripts. The deployment guide carries a
+  backup-and-restore step taken before the migrator runs.
+
+**Carried in from Phase 5:** the migrator runs to completion before the
+Gateway starts (`depends_on: condition: service_completed_successfully`),
+and the privileged connection string exists only in the migrator's
+environment — the Gateway gets the non-privileged one (ADR-0011,
+ADR-0012). Compose takes its secrets from required variables with no
+defaults, so a deployment cannot silently run on a password someone
+committed.
+
+**Test gate:** on a clean machine, `docker compose up` brings the whole
+on-premises stack to a working system: sign in, live values from the
+simulators, an alarm raised, the Gateway container restarted with the
+alarm still listed in the same state, a simulator stopped and its tags
+reading Bad, and `down` followed by `up` keeping both history and alarm
+journal. Walked by hand in a browser as well as tested, per the Phase
+5.5 lesson.
+
+**Implementation notes:**
+
+- **Build the images from a clean checkout, not from the working
+  directory.** The point is that an image cannot depend on local state —
+  which is exactly what would hide the next item.
+- **`migrations/` vs `Migrations/`.** The folder is `migrations/` in git
+  and `Migrations/` on a Windows working copy, and the csproj embeds by
+  the lowercase path. Windows does not care; a Linux container build
+  does, and the result is a migrator that embeds no scripts, "succeeds"
+  instantly, and passes ADR-0012's check because empty equals empty.
+  Fix the name, and keep the guard ADR-0014 requires — zero embedded
+  scripts is a failure, not a no-op.
+- **The simulators must be reachable from another container.** The
+  Modbus simulator binds loopback today; the listen address becomes
+  configurable, and Compose sets it explicitly rather than the default
+  changing for everyone.
+- Prove the Gateway container holds no privileged connection string with
+  a check that fails if one is added, not by reading the file once.
+
+## Phase 7 — Cloud topology: edge agent, broker, store-and-forward
+
+**Scope:** the edge-agent-plus-cloud-Gateway split from the Phase 0
+architecture, with an edge process that keeps measuring and buffering
+while the link is down.
+
+**Decide before any code is written** — each of these changes what the
+system *is*, not how it is packaged, so each needs an ADR:
+
+- The push-capable driver contract that Phase 4 deferred, and the MQTT
+  driver that depends on it.
+- The broker, which is not in ADR-0006's table — only the MQTTnet
+  library is — and whether the payload is Sparkplug B or our own.
+- Store-and-forward semantics: how much is buffered, what happens when
+  the buffer is full, and what quality a tag carries while the link is
+  down. Buffered samples keep the source timestamp the edge recorded
+  (ADR-0003); arrival time is never substituted for it.
+- Edge identity and transport security.
+
+**Test gate:** with the edge agent disconnected from the network for a
+period and then reconnected, the history contains the samples from the
+outage with their original timestamps, and nothing is invented for the
+period the link was down.
 
 ## Later (not yet scoped)
 

@@ -101,9 +101,24 @@ deferred and are recorded under Phase 5.5 in `phase-plan.md`: filtering
 the journal, and flapping (deadband / on-delay), the latter needing an
 ADR before any code.
 
-**Next: Phase 6 (deployment packaging for both topologies)**, with its
-open question — whether two migrator runs can safely overlap — recorded
-in `phase-plan.md`.
+**Next: Phase 6, now on-premises packaging only.** The phase was split
+when it began: packaging what exists should not wait behind the cloud
+topology's undecided questions (push-driver contract, broker,
+store-and-forward, edge identity), which are now Phase 7 and need ADRs
+before any code. Phase 6 is `docker compose up` bringing up Migrator,
+Gateway and database on a machine that has only Docker, with **the
+Gateway serving the built Angular client from its own origin** — no
+CORS, no hard-coded Gateway URL, no extra container.
+
+**ADR-0014 closes the migrator-concurrency question Phase 6 carried as
+open**, and the answer was not the reassuring one. Measured, not
+assumed: two migrators meeting on an *existing* database apply a data
+script once per run while every run reports success, after which the
+Gateway refuses to start for good. A database-level advisory lock, not
+Compose ordering, is the fix, and a build that embeds zero migration
+scripts must fail rather than "succeed" instantly — which is what a
+`migrations/` vs `Migrations/` case mismatch produces in a Linux
+container build while ADR-0012's check passes, empty against empty.
 
 ## When Phase 1 (or any phase) begins
 
