@@ -38,6 +38,7 @@ public static class GatewayApp
     /// </param>
     /// <exception cref="SchemaVersionMismatchException">The database is not at this build's schema.</exception>
     /// <exception cref="UnsafeDatabaseRoleException">The connection could rewrite the audit trail.</exception>
+    /// <exception cref="DatabaseLoginRefusedException">The database turned down the application role's login.</exception>
     /// <exception cref="NoMigrationScriptsException">This build carries no migration scripts to check against.</exception>
     public static async Task<WebApplication> BuildAsync(string[] args, Action<WebApplicationBuilder>? configure = null)
     {
@@ -51,9 +52,19 @@ public static class GatewayApp
 
         // This process never migrates (ADR-0012). It refuses to start against any schema but
         // the one it was built for, and over a connection that could rewrite the audit trail
-        // — both before it touches a single table.
-        await SchemaVersion.EnsureCurrentAsync(dataSource, startup);
-        await SchemaVersion.EnsureUnprivilegedAsync(dataSource, startup);
+        // — both before it touches a single table. These are also its first connection, so a
+        // login the database turns down is reported here too, as a refusal and not a crash.
+        try
+        {
+            await SchemaVersion.EnsureCurrentAsync(dataSource, startup);
+            await SchemaVersion.EnsureUnprivilegedAsync(dataSource, startup);
+        }
+        catch (PostgresException exception) when (DatabaseLoginRefusedException.IsLoginRefusal(exception))
+        {
+            throw new DatabaseLoginRefusedException(
+                new NpgsqlConnectionStringBuilder(dataSource.ConnectionString).Username ?? "(none)",
+                exception);
+        }
 
         // The database is prepared before the host is built so that the tag catalogue is a
         // fully-formed value by the time anything can resolve it, rather than a
