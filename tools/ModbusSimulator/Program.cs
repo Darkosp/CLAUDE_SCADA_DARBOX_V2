@@ -15,13 +15,38 @@ using NModbus.Data;
 // The register is scaled because a Modbus register is a raw 16-bit integer; the tag's
 // source address (holding:0?scale=0.01) is what gives it engineering meaning.
 
-var port = args.Length > 0 && int.TryParse(args[0], out var parsedPort) ? parsedPort : 5502;
+//
+// Usage: [port] [--listen <address>]. Listens on loopback unless told otherwise: on a developer's
+// machine nothing else needs to reach it. A container has to be reachable from the Gateway's
+// container, so Compose passes --listen 0.0.0.0 explicitly (Phase 6).
+
+var listenAddress = IPAddress.Loopback;
+var port = 5502;
+
+for (var i = 0; i < args.Length; i++)
+{
+    if (args[i] == "--listen" && i + 1 < args.Length && IPAddress.TryParse(args[i + 1], out var parsedAddress))
+    {
+        listenAddress = parsedAddress;
+        i++;
+    }
+    else if (int.TryParse(args[i], out var parsedPort))
+    {
+        port = parsedPort;
+    }
+    else
+    {
+        Console.Error.WriteLine($"Unrecognised argument '{args[i]}'. Usage: [port] [--listen <IP address>]");
+        return 2;
+    }
+}
+
 const byte UnitId = 1;
 
 var dataStore = new SlaveDataStore();
 var factory = new ModbusFactory();
 
-var listener = new TcpListener(IPAddress.Loopback, port);
+var listener = new TcpListener(listenAddress, port);
 
 try
 {
@@ -47,7 +72,7 @@ Console.CancelKeyPress += (_, eventArgs) =>
     shutdown.Cancel();
 };
 
-Console.WriteLine($"Modbus TCP simulator listening on 127.0.0.1:{port}, unit {UnitId}.");
+Console.WriteLine($"Modbus TCP simulator listening on {listenAddress}:{port}, unit {UnitId}.");
 Console.WriteLine("  holding:0  discharge pressure (hundredths of a bar)");
 Console.WriteLine("  coil:0     pump running");
 Console.WriteLine("Press Ctrl+C to stop.");
