@@ -408,6 +408,9 @@
     }
 
     @if (tree(); as siteTree) {
+      @if (hasNoDevices(siteTree)) {
+        <p class="muted">No devices on this Site yet.</p>
+      }
       <app-browse-tree
         [folders]="siteTree.folders"
         [devices]="siteTree.devices"
@@ -609,11 +612,14 @@
       <h3 class="summary-head">Alarm summary</h3>
       <table class="summary">
         <thead>
-          <tr><th>Tag</th><th>Condition</th><th>Raised</th><th>State</th><th>Acknowledged by</th><th></th></tr>
+          <tr><th>Site</th><th>Tag</th><th>Condition</th><th>Raised</th><th>State</th><th>Acknowledged by</th><th></th></tr>
         </thead>
         <tbody>
           @for (alarm of alarms(); track alarm.definitionId) {
             <tr [class.settled]="alarm.state === 'Acknowledged' || alarm.state === 'Shelved'">
+              <!-- Every Site the reader may see is listed here, not only the one being
+                   browsed — an alarm elsewhere is still an alarm — so each row says where. -->
+              <td>{{ siteNameOf(alarm.siteId) }}</td>
               <td>{{ alarm.tagPath }}</td>
               <td>
                 {{ alarm.limit === 'High' ? '≥' : '≤' }} {{ alarm.limitValue }}{{ alarm.unitSymbol ? ' ' + alarm.unitSymbol : '' }}

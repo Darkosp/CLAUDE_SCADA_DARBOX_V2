@@ -27,6 +27,9 @@ export interface Selection {
               (click)="deleteFolder.emit({ id: folder.id, name: folder.name })">×</button>
           }
         </span>
+        @if (folder.folders.length === 0 && folder.devices.length === 0) {
+          <p class="none">Empty folder.</p>
+        }
         <app-browse-tree
           [folders]="folder.folders"
           [devices]="folder.devices"

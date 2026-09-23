@@ -351,3 +351,33 @@ export function describeReason(reason: string | null | undefined): string | null
       return reason;
   }
 }
+
+/** How many devices a tree holds, at any depth of folders. */
+export function deviceCount(tree: { folders: TreeFolder[]; devices: TreeDevice[] }): number {
+  return tree.devices.length + tree.folders.reduce((sum, folder) => sum + deviceCount(folder), 0);
+}
+
+/**
+ * The Site to open on: the first, in the order given, that has a device to look at, or the
+ * first of all when none has. Found walking the Phase 6 gate: opening on a Site with nothing
+ * in it — the seeded second Site holds only an empty folder — reads as "nothing works".
+ *
+ * @param treeOf Loads one Site's tree. Sites after the chosen one are never loaded.
+ */
+export async function siteToOpen(
+  sites: Site[],
+  treeOf: (siteId: string) => Promise<{ folders: TreeFolder[]; devices: TreeDevice[] }>,
+): Promise<string | null> {
+  for (const site of sites) {
+    if (deviceCount(await treeOf(site.id)) > 0) {
+      return site.id;
+    }
+  }
+
+  return sites[0]?.id ?? null;
+}
+
+/** A Site's name for display, from the Sites the reader may see. */
+export function siteName(sites: Site[], siteId: string): string {
+  return sites.find((site) => site.id === siteId)?.name ?? '—';
+}

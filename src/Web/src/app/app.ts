@@ -21,12 +21,15 @@ import {
   TemplateTag,
   TreeDevice,
   folderOptions,
+  deviceCount,
   describeReason,
   formatGapWindow,
   formatMeasurement,
   mapToSettings,
   parseNumberField,
   settingsToMap,
+  siteName,
+  siteToOpen,
 } from './models';
 import { TagStream } from './tag-stream';
 import { formatValue, TagSnapshot } from './tag';
@@ -315,8 +318,9 @@ export class App implements OnInit {
         this.alarmDraft.set(null);
         this.writeNote.set(null);
 
-        if (sites.length > 0) {
-          await this.selectSite(sites[0].id);
+        const open = await siteToOpen(sites, (id) => this.api.tree(id));
+        if (open) {
+          await this.selectSite(open);
         }
       }
 
@@ -358,11 +362,23 @@ export class App implements OnInit {
       this.sites.set(sites);
 
       if (sites.length > 0 && !sites.some((site) => site.id === this.siteId())) {
-        await this.selectSite(sites[0].id);
+        const open = await siteToOpen(sites, (id) => this.api.tree(id));
+        if (open) {
+          await this.selectSite(open);
+        }
       }
     } catch (error) {
       this.report(error);
     }
+  }
+
+  /** The Site an alarm belongs to, by name: the summary lists every Site the reader may see. */
+  protected siteNameOf(siteId: string): string {
+    return siteName(this.sites(), siteId);
+  }
+
+  protected hasNoDevices(tree: SiteTree): boolean {
+    return deviceCount(tree) === 0;
   }
 
   protected async selectSite(siteId: string): Promise<void> {
