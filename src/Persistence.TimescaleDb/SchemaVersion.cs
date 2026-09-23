@@ -22,9 +22,22 @@ public static class SchemaVersion
     /// journal, so it works over the unprivileged application role.
     /// </remarks>
     /// <exception cref="SchemaVersionMismatchException">The schema is not the one this build expects.</exception>
-    public static async Task EnsureCurrentAsync(NpgsqlDataSource dataSource, CancellationToken cancellationToken)
+    /// <exception cref="NoMigrationScriptsException">
+    /// The build carries no scripts, so there is nothing to compare against: an empty build and a
+    /// never-migrated database would otherwise match (ADR-0014).
+    /// </exception>
+    public static Task EnsureCurrentAsync(NpgsqlDataSource dataSource, CancellationToken cancellationToken) =>
+        EnsureCurrentAsync(dataSource, typeof(DatabaseMigrator).Assembly, cancellationToken);
+
+    /// <param name="scriptSource">The assembly carrying the migration scripts; a test may stand in one without any.</param>
+    internal static async Task EnsureCurrentAsync(
+        NpgsqlDataSource dataSource,
+        System.Reflection.Assembly scriptSource,
+        CancellationToken cancellationToken)
     {
-        var expected = DatabaseMigrator.ScriptNames();
+        var expected = DatabaseMigrator.ScriptNames(scriptSource);
+        NoMigrationScriptsException.ThrowIfEmpty(expected, scriptSource);
+
         var applied = await AppliedScriptsAsync(dataSource, cancellationToken).ConfigureAwait(false);
 
         if (!expected.SequenceEqual(applied, StringComparer.Ordinal))

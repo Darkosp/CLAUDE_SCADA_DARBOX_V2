@@ -7,7 +7,7 @@ try
 {
     app = await GatewayApp.BuildAsync(args);
 }
-catch (Exception exception) when (exception is SchemaVersionMismatchException or UnsafeDatabaseRoleException)
+catch (Exception exception) when (exception is SchemaVersionMismatchException or UnsafeDatabaseRoleException or NoMigrationScriptsException)
 {
     // A refusal, not a crash (ADR-0012): the message says exactly what is wrong and what to
     // run, and a stack trace would only bury it.
