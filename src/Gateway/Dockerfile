@@ -15,6 +15,10 @@ COPY . .
 RUN dotnet publish src/Gateway/ScadaDarbox.Gateway.csproj --configuration Release --output /out --nologo
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.11
+# Npgsql probes for Kerberos (GSSAPI) when it opens a connection. Without the library, .NET
+# prints "Error: libgssapi_krb5.so.2: cannot open shared object file" — harmless, since nothing
+# here uses Kerberos, but a false "Error:" in a deployment log is how real ones get ignored.
+RUN apt-get update  && apt-get install --yes --no-install-recommends libgssapi-krb5-2  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /out ./
 # ASP.NET Core serves {content root}/wwwroot; the content root is this directory.

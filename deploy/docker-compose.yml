@@ -1,0 +1,91 @@
+# The on-premises stack (Phase 6): database, migrator, Gateway serving the web client, and the
+# simulators the gate reads from.
+#
+#   deploy/build-images.sh                       # builds scada-darbox/*:<commit> from a commit
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
+#
+# deploy/.env.example lists every variable. Secrets have no defaults: a missing one stops
+# Compose before anything starts, naming it, so a deployment cannot quietly run on a password
+# somebody committed. Passwords must not contain ';' — they are placed in connection strings.
+#
+# Not the file at the repository root: that one is the developer database only.
+
+name: scada-darbox
+
+services:
+  timescaledb:
+    # Pinned, as for development, so every installation runs the same engine.
+    image: timescale/timescaledb:2.17.2-pg17
+    environment:
+      POSTGRES_DB: scada
+      # The privileged role. Only the migrator is given its password (ADR-0011, ADR-0012).
+      POSTGRES_USER: scada
+      POSTGRES_PASSWORD: ${SCADA_DB_ADMIN_PASSWORD:?set SCADA_DB_ADMIN_PASSWORD, the privileged database password}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scada -d scada"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    # No published port: only the migrator and the Gateway reach the database, over this
+    # stack's own network.
+
+  migrator:
+    image: scada-darbox/migrator:${SCADA_IMAGE_TAG:?set SCADA_IMAGE_TAG to the commit deploy/build-images.sh built}
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      # The only service holding the privileged connection string (ADR-0012).
+      SCADA_MIGRATOR_CONNECTION: Host=timescaledb;Port=5432;Database=scada;Username=scada;Password=${SCADA_DB_ADMIN_PASSWORD:?set SCADA_DB_ADMIN_PASSWORD, the privileged database password}
+      SCADA_APP_DB_PASSWORD: ${SCADA_APP_DB_PASSWORD:?set SCADA_APP_DB_PASSWORD, the application role's database password}
+    # One-shot: runs to completion on every `up`, and is a no-op when the schema is current.
+    # A second run meeting it waits on the migration lock (ADR-0014).
+    restart: "no"
+
+  gateway:
+    image: scada-darbox/gateway:${SCADA_IMAGE_TAG:?set SCADA_IMAGE_TAG to the commit deploy/build-images.sh built}
+    depends_on:
+      # Not started until the migrator has exited 0 (ADR-0012). Without this the Gateway meets
+      # a schema that is not yet its own and refuses to start.
+      migrator:
+        condition: service_completed_successfully
+      modbus-sim:
+        condition: service_started
+    environment:
+      # The application role only; no privileged credential exists in this service.
+      ConnectionStrings__ScadaDb: Host=timescaledb;Port=5432;Database=scada;Username=scada_app
+      SCADA_APP_DB_PASSWORD: ${SCADA_APP_DB_PASSWORD:?set SCADA_APP_DB_PASSWORD, the application role's database password}
+      # The first Admin, created only while no user exists and ignored after that. Empty when
+      # not set — no account is created — never a default password. Remove both once the
+      # account exists.
+      SCADA_INITIAL_ADMIN_USERNAME: ${SCADA_INITIAL_ADMIN_USERNAME:-}
+      SCADA_INITIAL_ADMIN_PASSWORD: ${SCADA_INITIAL_ADMIN_PASSWORD:-}
+      # Where the demo configuration seeded into an empty database points its device.
+      Modbus__Host: modbus-sim
+      Modbus__Port: "5502"
+    ports:
+      - "${SCADA_HTTP_PORT:-8080}:8080"
+    volumes:
+      # The OPC UA driver's client certificate and trust lists. Kept across container
+      # re-creation: a new certificate on every upgrade would be refused by any server that
+      # trusted the old one.
+      - gateway-pki:/app/pki
+    restart: unless-stopped
+
+  modbus-sim:
+    image: scada-darbox/modbus-sim:${SCADA_IMAGE_TAG:?set SCADA_IMAGE_TAG to the commit deploy/build-images.sh built}
+    # Loopback by default; the Gateway's container has to reach it.
+    command: ["5502", "--listen", "0.0.0.0"]
+    restart: unless-stopped
+
+  opcua-sim:
+    image: scada-darbox/opcua-sim:${SCADA_IMAGE_TAG:?set SCADA_IMAGE_TAG to the commit deploy/build-images.sh built}
+    # Reached by the Gateway as opc.tcp://opcua-sim:4840/ScadaDarboxSimulator.
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  gateway-pki:
