@@ -114,6 +114,28 @@ public sealed class UnsafeDatabaseRoleException(string user) : Exception(
     $"Connect as the application role '{ApplicationRole.Name}' instead; the privileged " +
     "credential belongs to the migrator only (ADR-0011, ADR-0012).");
 
+/// <summary>The database would not let the Gateway log in.</summary>
+/// <remarks>
+/// The application role gets its login and its password from the migrator (ADR-0012), so the
+/// usual cause is a migrator that has not run, or was given a different password. Says so
+/// rather than surfacing as an unhandled exception: ADR-0012 promises a startup failure that is
+/// loud, early and says what is wrong. Never quotes the password.
+/// </remarks>
+public sealed class DatabaseLoginRefusedException(string user, PostgresException inner) : Exception(
+    $"The database refused the Gateway's login as '{user}' ({inner.SqlState}: {inner.MessageText}). " +
+    $"The migrator creates the application role '{ApplicationRole.Name}' and sets its password from " +
+    "SCADA_APP_DB_PASSWORD: has the migrator run against this database, and were the migrator and " +
+    "the Gateway given the same SCADA_APP_DB_PASSWORD?",
+    inner)
+{
+    private const string InvalidPassword = "28P01";
+    private const string InvalidAuthorization = "28000";
+
+    /// <summary>Whether the server turned the login down, as opposed to failing some other way.</summary>
+    public static bool IsLoginRefusal(PostgresException exception) =>
+        exception.SqlState is InvalidPassword or InvalidAuthorization;
+}
+
 /// <summary>The database schema is not the one this build was made for.</summary>
 public sealed class SchemaVersionMismatchException : Exception
 {
