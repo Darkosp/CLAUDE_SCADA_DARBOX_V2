@@ -117,6 +117,7 @@ public sealed class MigrationLockTests : IClassFixture<TestDatabase>
 
         await using var holder = await HoldLockAsync(_database.PrivilegedConnectionString);
         var timeout = TimeSpan.FromSeconds(2);
+        var before = await StateAsync();
 
         var clock = Stopwatch.StartNew();
         var run = DatabaseMigrator.RunAsync(
@@ -127,10 +128,19 @@ public sealed class MigrationLockTests : IClassFixture<TestDatabase>
             CancellationToken.None);
 
         // A run that waited forever would hang the suite rather than fail it.
-        var refusal = await Assert.ThrowsAsync<MigrationLockTimeoutException>(() => run.WaitAsync(Generous));
+        var outcome = await Record.ExceptionAsync(() => run.WaitAsync(Generous));
         clock.Stop();
 
-        // It waited for the lock, and not much longer than it was told to.
+        // First, and before anything about the exception: the run that waited applied nothing.
+        // The journal is entry for entry what it was, and no table gained or lost a row. A run
+        // that went ahead after its wait fails here, whatever it then reports.
+        var after = await StateAsync();
+        Assert.Equal(before.Journal, after.Journal);
+        Assert.Equal(before.RowCounts, after.RowCounts);
+
+        // It gave up for the right reason, having waited for the lock, and not much longer
+        // than it was told to.
+        var refusal = Assert.IsType<MigrationLockTimeoutException>(outcome);
         Assert.InRange(clock.Elapsed, timeout - TimeSpan.FromMilliseconds(100), timeout + TimeSpan.FromSeconds(15));
 
         // The message says why, and who is in the way.
@@ -138,10 +148,6 @@ public sealed class MigrationLockTests : IClassFixture<TestDatabase>
         Assert.Contains($"process {holder.ProcessId} (", refusal.Message, StringComparison.Ordinal);
         Assert.Contains(MigrationLock.ApplicationName, refusal.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("Password", refusal.Message, StringComparison.OrdinalIgnoreCase);
-
-        // And it did not go ahead without the lock.
-        Assert.Equal(0, await CountAsync($"SELECT count(*) FROM {table}"));
-        Assert.Equal(0, await CountAsync($"SELECT count(*) FROM schemaversions WHERE scriptname = '{scriptName}'"));
     }
 
     /// <summary>Starts every run at once and waits for all of them; null where a run succeeded.</summary>
@@ -169,6 +175,41 @@ public sealed class MigrationLockTests : IClassFixture<TestDatabase>
     /// </summary>
     private static Task<MigrationLock> HoldLockAsync(string connectionString) =>
         MigrationLock.AcquireAsync(connectionString, Generous, CancellationToken.None);
+
+    /// <summary>The whole journal, and the row count of every table: what "applied nothing" is checked against.</summary>
+    private async Task<(IReadOnlyList<string> Journal, IReadOnlyList<string> RowCounts)> StateAsync()
+    {
+        var journal = await ListAsync("SELECT scriptname || '|' || applied::text FROM schemaversions ORDER BY schemaversionsid");
+        var tables = await ListAsync(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            ORDER BY 1
+            """);
+
+        var counts = new List<string>(tables.Count);
+        foreach (var table in tables)
+        {
+            counts.Add($"{table}|{await CountAsync($"SELECT count(*) FROM \"{table}\"")}");
+        }
+
+        return (journal, counts);
+    }
+
+    private async Task<IReadOnlyList<string>> ListAsync(string sql)
+    {
+        await using var command = _database.DataSource.CreateCommand(sql);
+        await using var reader = await command.ExecuteReaderAsync();
+
+        var rows = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            rows.Add(reader.GetString(0));
+        }
+
+        return rows;
+    }
 
     private async Task<long> CountAsync(string sql)
     {

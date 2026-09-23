@@ -17,9 +17,11 @@ public static class DatabaseMigrator
 {
     /// <summary>
     /// How long a run waits for another to finish before giving up. Longer than any migration
-    /// this project expects to run, so that a wait which gives up means something is wrong.
+    /// this project has, and short enough that a hung run or a crossed deployment shows up as
+    /// a failed migrator within minutes. A deployment with a longer migration raises it with
+    /// <c>SCADA_MIGRATOR_LOCK_TIMEOUT_SECONDS</c>.
     /// </summary>
-    public static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// A whole migrator run (ADR-0012): brings the database up to date, creating it from
