@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Npgsql;
 using ScadaDarbox.Core.Alarms;
 using ScadaDarbox.Core.Configuration;
@@ -87,6 +88,15 @@ public static class GatewayApp
         RegisterSecurity(builder, securityStore, userDirectorySource);
 
         builder.Services.AddSignalR();
+
+        // ASP.NET Core creates a Data Protection key ring at startup whether or not anything
+        // uses it — nothing here does: sessions are opaque server-side tokens (ADR-0011). Left
+        // inside a container, the ring is lost with it and a warning says so on every start. A
+        // deployment names a directory on a volume; a developer's machine keeps the default.
+        if (builder.Configuration["DataProtection:KeysDirectory"] is { Length: > 0 } keysDirectory)
+        {
+            builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keysDirectory));
+        }
 
         configure?.Invoke(builder);
 
