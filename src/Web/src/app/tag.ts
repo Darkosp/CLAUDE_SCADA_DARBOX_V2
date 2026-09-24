@@ -17,9 +17,12 @@ export interface TagSnapshot {
   /** Derived display label — shown to the operator, never used as a key. */
   path: string;
   value: TagValue;
-  sourceTimestampUtc: string;
+  /** Null only when nothing has ever been measured for the tag. */
+  sourceTimestampUtc: string | null;
   quality: Quality;
   unitSymbol: string | null;
+  /** Set only on a pushed tag that has never received anything: when listening began. */
+  noDataSinceUtc?: string | null;
 }
 
 /**

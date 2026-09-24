@@ -20,7 +20,8 @@ export interface TreeDevice {
   name: string;
   driverKey: string;
   connectionSettings: Record<string, string>;
-  scanIntervalMs: number;
+  /** Null for a pushing device, which has no scan interval (ADR-0016). */
+  scanIntervalMs: number | null;
   folderId: string | null;
   tags: TreeTag[];
 }
@@ -438,4 +439,60 @@ export class SingleFlight {
       this.onBusyChange(false);
     }
   }
+}
+
+/** A driver this build has, and whether it pushes its values rather than being polled (ADR-0016). */
+export interface DriverShape {
+  key: string;
+  pushing: boolean;
+}
+
+/** Whether devices of this driver push; an unknown key is treated as polled, as the Gateway does. */
+export function pushes(drivers: DriverShape[], driverKey: string): boolean {
+  const key = driverKey.trim().toLowerCase();
+  return drivers.some((driver) => driver.pushing && driver.key.toLowerCase() === key);
+}
+
+/**
+ * The scan interval to send for a device: none for a pushing driver, which has no scan interval
+ * and would be refused one (ADR-0016); a positive number of milliseconds for a polled one.
+ */
+export function scanIntervalToSend(
+  drivers: DriverShape[],
+  driverKey: string,
+  raw: NumberField,
+): { ok: true; value: number | null } | { ok: false; error: string } {
+  if (pushes(drivers, driverKey)) {
+    return { ok: true, value: null };
+  }
+
+  const scan = parseNumberField(raw);
+  if (!scan.ok || scan.value === null || scan.value <= 0) {
+    return { ok: false, error: 'Scan interval must be a positive number of milliseconds.' };
+  }
+
+  return { ok: true, value: scan.value };
+}
+
+/**
+ * What to say about a tag that has never received anything (ADR-0016): "no data since" the moment
+ * the Gateway began listening — an observed time, not a measured one — so a device that was never
+ * set up reads differently from one that fell silent. Null for any other tag.
+ */
+export function noDataNote(
+  snapshot: { noDataSinceUtc?: string | null },
+  locale?: string,
+): string | null {
+  if (!snapshot.noDataSinceUtc) {
+    return null;
+  }
+
+  const since = new Date(snapshot.noDataSinceUtc).toLocaleString(locale, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  return `No data since ${since}`;
 }

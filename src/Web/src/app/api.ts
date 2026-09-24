@@ -6,6 +6,7 @@ import {
   AlarmDefinition,
   AlarmEvent,
   DeviceTemplate,
+  DriverShape,
   LoginResponse,
   Site,
   SiteRole,
@@ -53,6 +54,10 @@ export class Api {
   }
 
   // ---- browsing -----------------------------------------------------------
+
+  drivers(): Promise<DriverShape[]> {
+    return this.get<DriverShape[]>('/api/drivers');
+  }
 
   sites(): Promise<Site[]> {
     return this.get<Site[]>('/api/sites');

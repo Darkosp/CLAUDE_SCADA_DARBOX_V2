@@ -460,9 +460,15 @@
           }
           <button type="button" class="ghost" (click)="addSetting(draft.settings)">Add setting</button>
         </fieldset>
-        <label>Scan interval (ms)
-          <input name="scan" type="number" min="100" [(ngModel)]="draft.scanIntervalMs" />
-        </label>
+        <!-- A pushing device sends its values when they change and has no scan interval: a field
+             that exists but does nothing would be a lie told to whoever fills it in (ADR-0016). -->
+        @if (drivePushes(draft.driverKey)) {
+          <p class="muted">This driver pushes its values when they change, so there is no scan interval.</p>
+        } @else {
+          <label>Scan interval (ms)
+            <input name="scan" type="number" min="100" [(ngModel)]="draft.scanIntervalMs" />
+          </label>
+        }
         <label>Folder
           <select name="folder" [(ngModel)]="draft.folderId">
             @for (choice of folderChoices(); track choice.id) {
@@ -544,7 +550,9 @@
           <div class="reading" [class.bad]="live.quality !== 'Good'">
             <span class="value">{{ format(live) }}</span>
             @if (live.unitSymbol) { <span class="unit">{{ live.unitSymbol }}</span> }
-            <span class="meta">{{ live.quality }}</span>
+            <!-- A tag that has never received anything says since when, which tells a device never set
+                 up apart from one that fell silent (ADR-0016). -->
+            <span class="meta">{{ noDataText(live) ?? live.quality }}</span>
           </div>
           <p class="muted">{{ live.path }}</p>
         } @else {
