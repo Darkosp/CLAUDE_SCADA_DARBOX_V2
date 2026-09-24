@@ -700,12 +700,25 @@ while the link is down.
 1. The pushing contract in Core (ADR-0016), with the staleness rule and
    its mutation. No MQTT yet.
 2. `Drivers.Mqtt` as a pushing module against a local broker.
-3. The edge agent: acquisition, the on-disk buffer, reconnection.
+3. The edge agent: acquisition, the on-disk buffer, reconnection —
+   self-contained on the CLR, buffering in SQLite (**ADR-0018**, which
+   amends ADR-0006). Native AOT was tried and abandoned: the real OPC UA
+   module fails under it before it reaches the network, because that
+   stack builds objects by reflection. Open with it: `linux-arm64` is
+   unverified, and must be built and run before edge hardware is chosen.
 4. The cloud side: idempotent ingestion per (tag, source timestamp), the
    dropped-window journal entry, the skew journal entry.
 5. Compose for the cloud topology, and the deployment guide beside
    `deploy/README.md`.
 6. The hand walk, with the link cut for real.
+
+Beside these, one small step of its own: **Modbus and OPC UA do not log
+at all**, while the new MQTT module logs every refused message and every
+failed connection with its reason. Worse than the inconsistency: the OPC
+UA driver discards the parse error for an unreadable address, so a
+mistyped address and an unplugged device look identical on screen — Bad,
+with no reason anywhere. That is the silence this project keeps refusing
+elsewhere.
 
 **Test gate:** with the edge agent disconnected from the network for a
 period and then reconnected, the history contains the samples from the

@@ -34,6 +34,7 @@ header, and mark the clause in the original.
 | [0015](0015-names-unique-within-their-parent.md) | A name is unique within its parent, among live rows, ignoring case; duplicates are renamed on upgrade, not refused |
 | [0016](0016-push-capable-driver-contract.md) | A driver declares itself polled or pushing; a pushing tag goes Bad on silence rather than holding a cached value |
 | [0017](0017-edge-to-cloud-link.md) | Edge-to-cloud: our own payload over Mosquitto with TLS per edge; the edge buffers on disk, drops oldest and records the loss; alarms stay in the cloud |
+| [0018](0018-edge-agent-runtime-and-buffer.md) | The edge agent runs self-contained on the CLR (Native AOT breaks OPC UA) and buffers in SQLite (amends ADR-0006) |
 
 ## Template
 
