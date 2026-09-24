@@ -13,6 +13,9 @@
   <Folder Name="/src/Modules/Drivers.Modbus/">
     <Project Path="src/Modules/Drivers.Modbus/ScadaDarbox.Modules.Drivers.Modbus.csproj" />
   </Folder>
+  <Folder Name="/src/Modules/Drivers.Mqtt/">
+    <Project Path="src/Modules/Drivers.Mqtt/ScadaDarbox.Modules.Drivers.Mqtt.csproj" />
+  </Folder>
   <Folder Name="/src/Modules/Drivers.OpcUa/">
     <Project Path="src/Modules/Drivers.OpcUa/ScadaDarbox.Modules.Drivers.OpcUa.csproj" />
   </Folder>
@@ -25,6 +28,9 @@
   </Folder>
   <Folder Name="/tests/Drivers.Modbus.Tests/">
     <Project Path="tests/Drivers.Modbus.Tests/ScadaDarbox.Drivers.Modbus.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Drivers.Mqtt.Tests/">
+    <Project Path="tests/Drivers.Mqtt.Tests/ScadaDarbox.Drivers.Mqtt.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Drivers.OpcUa.Tests/">
     <Project Path="tests/Drivers.OpcUa.Tests/ScadaDarbox.Drivers.OpcUa.Tests.csproj" />

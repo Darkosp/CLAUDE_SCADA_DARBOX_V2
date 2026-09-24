@@ -35,7 +35,7 @@ public sealed record TreeDeviceDto(
     string Name,
     string DriverKey,
     IReadOnlyDictionary<string, string> ConnectionSettings,
-    int ScanIntervalMs,
+    int? ScanIntervalMs,
     Guid? FolderId,
     IReadOnlyList<TreeTagDto> Tags);
 
@@ -67,11 +67,14 @@ public sealed record CreateFolderRequest(string Name, Guid? ParentFolderId);
 
 public sealed record UpdateFolderRequest(string Name, Guid? ParentFolderId);
 
+/// <param name="ScanIntervalMs">
+/// Required for a polled device; must be absent for a pushing one, which has no scan interval (ADR-0016).
+/// </param>
 public sealed record SaveDeviceRequest(
     string Name,
     string DriverKey,
     IReadOnlyDictionary<string, string> ConnectionSettings,
-    int ScanIntervalMs,
+    int? ScanIntervalMs,
     Guid? FolderId);
 
 public sealed record SaveTagRequest(
@@ -80,3 +83,6 @@ public sealed record SaveTagRequest(
     UnitDto? Unit,
     string SourceAddress,
     bool IsWritable);
+
+/// <summary>A driver this build has, and whether it pushes rather than being polled (ADR-0016).</summary>
+public sealed record DriverDto(string Key, bool Pushing);

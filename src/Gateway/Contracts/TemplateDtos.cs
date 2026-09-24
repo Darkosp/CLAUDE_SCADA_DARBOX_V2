@@ -52,6 +52,6 @@ public sealed record InstantiateDeviceRequest(
     string Name,
     string DriverKey,
     IReadOnlyDictionary<string, string> ConnectionSettings,
-    int ScanIntervalMs,
+    int? ScanIntervalMs,
     Guid? FolderId,
     IReadOnlyDictionary<string, string> Parameters);

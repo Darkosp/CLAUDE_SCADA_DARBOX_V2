@@ -21,7 +21,11 @@ import {
   TemplateTag,
   TreeDevice,
   folderOptions,
+  DriverShape,
   deviceCount,
+  noDataNote,
+  pushes,
+  scanIntervalToSend,
   describeReason,
   formatGapWindow,
   formatMeasurement,
@@ -145,6 +149,9 @@ export class App implements OnInit {
   protected readonly deviceDraft = signal<DeviceDraft | null>(null);
   protected readonly tagDraft = signal<TagDraft | null>(null);
   protected readonly newFolderName = signal('');
+
+  /** The drivers this build has, and which push — so a scan interval is offered only where it means something. */
+  protected readonly drivers = signal<DriverShape[]>([]);
 
   /** A name save in flight: its Save button is disabled until the Gateway answers. */
   protected readonly saving = signal(false);
@@ -290,6 +297,19 @@ export class App implements OnInit {
   private async enter(): Promise<void> {
     void this.stream.start();
     await this.loadSites();
+    try {
+      this.drivers.set(await this.api.drivers());
+    } catch (error) {
+      this.report(error);
+    }
+  }
+
+  protected drivePushes(driverKey: string): boolean {
+    return pushes(this.drivers(), driverKey);
+  }
+
+  protected noDataText(snapshot: TagSnapshot): string | null {
+    return noDataNote(snapshot);
   }
 
   private async checkSession(): Promise<void> {
@@ -647,7 +667,9 @@ export class App implements OnInit {
       name: device.name,
       driverKey: device.driverKey,
       settings: mapToSettings(device.connectionSettings),
-      scanIntervalMs: device.scanIntervalMs,
+      // A pushing device has none; the field is hidden for it, and 1000 is only a starting point
+      // should the driver be changed to a polled one.
+      scanIntervalMs: device.scanIntervalMs ?? 1000,
       folderId: device.folderId,
     });
   }
@@ -668,12 +690,11 @@ export class App implements OnInit {
       return;
     }
 
-    // Unlike a limit, a scan interval has no "blank means none": a device that is not
-    // scanned is not a device. Caught here so an emptied box says so, rather than
-    // travelling to the Gateway as null and coming back as a validation error.
-    const scan = parseNumberField(draft.scanIntervalMs);
-    if (!scan.ok || scan.value === null) {
-      this.error.set('Scan interval must be a number of milliseconds.');
+    // Unlike a limit, a polled device's scan interval has no "blank means none": a device that
+    // is not scanned is not a device. A pushing one has none at all (ADR-0016).
+    const scan = scanIntervalToSend(this.drivers(), draft.driverKey, draft.scanIntervalMs);
+    if (!scan.ok) {
+      this.error.set(scan.error);
       return;
     }
 
@@ -932,9 +953,9 @@ export class App implements OnInit {
       return;
     }
 
-    const scan = parseNumberField(draft.scanIntervalMs);
-    if (!scan.ok || scan.value === null) {
-      this.error.set('Scan interval must be a number of milliseconds.');
+    const scan = scanIntervalToSend(this.drivers(), draft.driverKey, draft.scanIntervalMs);
+    if (!scan.ok) {
+      this.error.set(scan.error);
       return;
     }
 

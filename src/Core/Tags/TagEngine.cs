@@ -28,6 +28,10 @@ public sealed class TagEngine : ITagEngine
     private readonly Lock _pushedGate = new();
     private readonly Dictionary<Guid, PushedState> _pushed = [];
 
+    // Pushed tags that have never received anything: when listening began — observed, not
+    // measured — and whether "no data" has already been reported for them.
+    private readonly Dictionary<Guid, Listening> _listening = [];
+
     public TagEngine(
         TagCatalogSource catalogSource,
         IHistorian historian,
@@ -141,6 +145,7 @@ public sealed class TagEngine : ITagEngine
                 }
 
                 _pushed[sample.TagId] = new PushedState(sample.SourceTimestampUtc, arrivedAt, Silenced: false);
+                _listening.Remove(sample.TagId);
             }
 
             var snapshot = new TagSnapshot(
@@ -168,10 +173,22 @@ public sealed class TagEngine : ITagEngine
         var now = _timeProvider.GetUtcNow();
         var silenced = new List<TagSnapshot>();
 
+        var catalog = _catalogSource.Current;
+
         lock (_pushedGate)
         {
             foreach (var tagId in tagIds)
             {
+                if (!_pushed.ContainsKey(tagId))
+                {
+                    if (NeverReceived(tagId, now, stalenessLimit, catalog) is { } nothing)
+                    {
+                        silenced.Add(nothing);
+                    }
+
+                    continue;
+                }
+
                 if (!_pushed.TryGetValue(tagId, out var state)
                     || state.Silenced
                     || now - state.ArrivedAt <= stalenessLimit
@@ -199,6 +216,24 @@ public sealed class TagEngine : ITagEngine
         // Readers and alarms are told; history is not. The silence is a gap there, and the
         // chart already draws a gap as a gap (ADR-0016).
         await PublishAsync([], silenced, cancellationToken).ConfigureAwait(false);
+    }
+
+    public void BeginListening(IReadOnlyCollection<Guid> tagIds)
+    {
+        var now = _timeProvider.GetUtcNow();
+
+        lock (_pushedGate)
+        {
+            foreach (var tagId in tagIds)
+            {
+                // The first time only: a driver restarted by a configuration edit has still had
+                // no data since it was first listened for, not since the restart.
+                if (!_pushed.ContainsKey(tagId))
+                {
+                    _listening.TryAdd(tagId, new Listening(now, Reported: false));
+                }
+            }
+        }
     }
 
     public TagSnapshot? GetCurrent(Guid tagId) => _current.GetValueOrDefault(tagId);
@@ -256,5 +291,37 @@ public sealed class TagEngine : ITagEngine
         }
     }
 
+    /// <summary>
+    /// A pushed tag that has received nothing since listening began more than the limit ago:
+    /// Bad, with no value and no measured time — there was no measurement to take one from —
+    /// and "no data since" the moment listening began. Null while there is nothing to report.
+    /// Called under <see cref="_pushedGate"/>.
+    /// </summary>
+    private TagSnapshot? NeverReceived(Guid tagId, DateTimeOffset now, TimeSpan stalenessLimit, TagCatalog catalog)
+    {
+        if (!_listening.TryGetValue(tagId, out var listening)
+            || listening.Reported
+            || now - listening.Since <= stalenessLimit
+            || catalog.FindTag(tagId) is not { } tag)
+        {
+            return null;
+        }
+
+        var nothing = new TagSnapshot(
+            tagId,
+            catalog.PathOf(tagId),
+            Value: null,
+            SourceTimestampUtc: null,
+            Quality.Bad,
+            tag.Unit?.Symbol,
+            NoDataSinceUtc: listening.Since);
+
+        _listening[tagId] = listening with { Reported = true };
+        _current[tagId] = nothing;
+        return nothing;
+    }
+
     private sealed record PushedState(DateTimeOffset LastRealSourceTimestamp, DateTimeOffset ArrivedAt, bool Silenced);
+
+    private sealed record Listening(DateTimeOffset Since, bool Reported);
 }

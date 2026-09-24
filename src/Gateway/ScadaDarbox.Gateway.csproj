@@ -5,6 +5,7 @@
     <ProjectReference Include="..\Persistence.TimescaleDb\ScadaDarbox.Persistence.TimescaleDb.csproj" />
     <ProjectReference Include="..\Modules\Drivers.Modbus\ScadaDarbox.Modules.Drivers.Modbus.csproj" />
     <ProjectReference Include="..\Modules\Drivers.OpcUa\ScadaDarbox.Modules.Drivers.OpcUa.csproj" />
+    <ProjectReference Include="..\Modules\Drivers.Mqtt\ScadaDarbox.Modules.Drivers.Mqtt.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

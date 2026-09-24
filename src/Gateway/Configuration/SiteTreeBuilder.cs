@@ -15,7 +15,8 @@ namespace ScadaDarbox.Gateway.Configuration;
 /// </remarks>
 internal static class SiteTreeBuilder
 {
-    internal static SiteTreeDto? Build(TagCatalog catalog, Guid siteId)
+    /// <param name="shapes">Which drivers push; their devices show no scan interval (ADR-0016).</param>
+    internal static SiteTreeDto? Build(TagCatalog catalog, Guid siteId, DriverShapes? shapes = null)
     {
         var site = catalog.Sites.FirstOrDefault(s => s.Id == siteId);
         if (site is null)
@@ -39,7 +40,7 @@ internal static class SiteTreeBuilder
         // that guarantee explicit instead of leaving it to the shape of the data, and
         // doubles as the record of which folders the tree actually rendered.
         var visited = new HashSet<Guid>();
-        var foldersRendered = BuildFolders(Guid.Empty, foldersByParent, devicesByFolder, catalog, visited);
+        var foldersRendered = BuildFolders(Guid.Empty, foldersByParent, devicesByFolder, catalog, visited, shapes);
 
         // A device whose folder never appeared — deleted underneath it, or unreachable
         // through a cycle — would otherwise be grouped under a key nothing emits and
@@ -48,7 +49,7 @@ internal static class SiteTreeBuilder
         var rootDevices = devices
             .Where(device => device.FolderId is null || !visited.Contains(device.FolderId.Value))
             .OrderBy(device => device.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(device => ToDto(device, catalog))
+            .Select(device => ToDto(device, catalog, shapes))
             .ToList();
 
         return new SiteTreeDto(site.Id, site.Name, site.TimeZoneId, foldersRendered, rootDevices);
@@ -59,7 +60,8 @@ internal static class SiteTreeBuilder
         Dictionary<Guid, List<Folder>> foldersByParent,
         Dictionary<Guid, List<Device>> devicesByFolder,
         TagCatalog catalog,
-        HashSet<Guid> visited)
+        HashSet<Guid> visited,
+        DriverShapes? shapes)
     {
         if (!foldersByParent.TryGetValue(parentKey, out var children))
         {
@@ -79,8 +81,8 @@ internal static class SiteTreeBuilder
                 folder.Id,
                 folder.Name,
                 folder.ParentFolderId,
-                BuildFolders(folder.Id, foldersByParent, devicesByFolder, catalog, visited),
-                BuildDevices(folder.Id, devicesByFolder, catalog)));
+                BuildFolders(folder.Id, foldersByParent, devicesByFolder, catalog, visited, shapes),
+                BuildDevices(folder.Id, devicesByFolder, catalog, shapes)));
         }
 
         return result;
@@ -89,17 +91,22 @@ internal static class SiteTreeBuilder
     private static List<TreeDeviceDto> BuildDevices(
         Guid folderKey,
         Dictionary<Guid, List<Device>> devicesByFolder,
-        TagCatalog catalog) =>
+        TagCatalog catalog,
+        DriverShapes? shapes) =>
         devicesByFolder.TryGetValue(folderKey, out var devices)
-            ? devices.Select(device => ToDto(device, catalog)).ToList()
+            ? devices.Select(device => ToDto(device, catalog, shapes)).ToList()
             : [];
 
-    internal static TreeDeviceDto ToDto(Device device, TagCatalog catalog) => new(
+    /// <param name="shapes">
+    /// Which drivers push; a pushing device has no scan interval to show (ADR-0016). Without it,
+    /// every device is shown as polled.
+    /// </param>
+    internal static TreeDeviceDto ToDto(Device device, TagCatalog catalog, DriverShapes? shapes = null) => new(
         device.Id,
         device.Name,
         device.DriverKey,
         device.ConnectionSettings,
-        (int)device.ScanInterval.TotalMilliseconds,
+        shapes?.Pushes(device.DriverKey) is true ? null : (int)device.ScanInterval.TotalMilliseconds,
         device.FolderId,
         catalog.TagsOfDevice(device.Id)
             .OrderBy(tag => tag.Name, StringComparer.OrdinalIgnoreCase)

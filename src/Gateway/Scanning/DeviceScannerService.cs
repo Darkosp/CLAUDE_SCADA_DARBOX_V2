@@ -259,6 +259,9 @@ public sealed class DeviceScannerService : BackgroundService
     {
         await using var driver = factory.Create(device);
         var tagIds = driverTags.Select(tag => tag.TagId).ToList();
+
+        // From here on, a tag that receives nothing is "no data since now", not merely unknown.
+        _tagEngine.BeginListening(tagIds);
         var watch = WatchForSilenceAsync(device, tagIds, driver.StalenessLimit, cancellationToken);
         var sink = new TagEngineSink(_tagEngine);
 
