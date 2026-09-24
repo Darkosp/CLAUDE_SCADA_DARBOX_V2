@@ -122,15 +122,24 @@ timescaledb` returns before the database accepts connections, which is
 why the restore procedure uses `--wait`; this cost a failed restore
 during the write-up.
 
-**Next: Phase 7 (cloud topology)** — but not first. Before it, one
-small phase closes a defect the Phase 6 work exposed: **the same
-request twice creates two devices**. Nothing enforces that a name is
-unique within its parent, so a double-click or a retry after a lost
-response leaves duplicates, and the same holds for tags and folders.
-The decision is uniqueness within the parent, answered with 409, and
-the unique index must cover **active rows only** — ADR-0009's soft
-delete would otherwise let a deleted device hold its name forever. The
-ADR is still to be written.
+**Phase 6.5 (names unique within their parent) is complete and merged to
+`main`** (PRs #18, #19; ADR-0015). A device, tag or folder name is unique
+within its parent among live rows, ignoring case; the API answers 409 with
+a message that names what exists and where; and the upgrade renamed a
+duplicate that was really there rather than refusing to start, auditing
+the rename. The null parent was the trap — under plain `NULLS DISTINCT`
+the constraint quietly exempts everything sitting directly under a Site.
+
+One habit this phase leaves behind, worth more than the feature: **after
+an upgrade, hard-refresh before judging the client.** A conflict message
+appeared in the wrong place for a whole round trip because the browser
+still held the pre-upgrade client while the server was new. `index.html`
+is served `no-cache` now, but the habit is the real protection.
+
+**Next: Phase 7 (cloud topology).** It is not packaging: the push-capable
+driver contract Phase 4 deferred, the broker (ADR-0006 names only the
+MQTTnet library), store-and-forward semantics, and edge identity all need
+ADRs before any code. `phase-plan.md` lists them.
 
 ## When Phase 1 (or any phase) begins
 

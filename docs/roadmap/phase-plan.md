@@ -630,6 +630,35 @@ nothing; a name freed by a soft delete can be used again; and a
 migration run against a database seeded with duplicates renames them,
 audits each rename, and ends with the index in place.
 
+**Status: gate met (2026-09-24), complete and merged to `main`** (PRs
+#18 and #19). 228 .NET tests and 38 client tests pass, none skipped.
+The mutations did what they were asked to: without the device index a
+second row appears instead of a 409, and with plain `NULLS DISTINCT` a
+device directly under a Site and a root folder slip past the constraint
+while everything nested still gets its 409 — which is the whole reason
+that test exists.
+
+The migration was then run against real data rather than a fixture. The
+database already held a duplicate `Pump House`, created by hand while
+reproducing the defect; the upgrade renamed the later row to `Pump House
+(duplicate e48350d7-…)`, left the original and its tags and alarm alone,
+and audited the change. Writing that rename had already found one defect
+of its own: an 8-character id suffix produced two identical names,
+because seeded ids share their leading characters. The suffix is the
+whole id.
+
+Two things the hand walk found that the tests could not. The conflict
+message first appeared in the banner at the top of the page rather than
+under the Name field — **because the browser was still running the
+client from before the upgrade**. `index.html` was served without
+`Cache-Control`, so a hard refresh was the difference between seeing the
+new screen and judging the old one; it is `no-cache` now, and
+`deploy/README.md` says to hard-refresh after an upgrade before
+concluding anything about the client. The message also cited
+"(ADR-0015)", which means nothing to an operator; it now names what
+exists and where — "A device named 'Pump House' already exists directly
+under Skopje" — read from the database at the moment of the conflict.
+
 **Implementation notes:**
 
 - The trap is the null parent, and it is the same three-valued-logic
