@@ -542,6 +542,49 @@ reading Bad, and `down` followed by `up` keeping both history and alarm
 journal. Walked by hand in a browser as well as tested, per the Phase
 5.5 lesson.
 
+**Status: gate met (2026-09-23), complete and merged to `main`** (PRs
+#10–#17, one per step rather than one stack — a lesson from #11, which
+merged into its own base branch instead of `main` and left step 2 off
+`main` for four minutes without anyone noticing). 215 .NET tests and 34
+client tests pass, none skipped; sixteen-plus mutations, each failing
+its named test for the right reason, with the controls green before and
+after.
+
+The gate was walked by hand against the real stack, following
+[`phase-6-manual-gate.md`](phase-6-manual-gate.md). Everything it asks
+for held: the migrator exited before the Gateway started, the Gateway's
+environment carried no privileged credential, Compose refused to start
+without a secret and named the missing one, both simulators were read
+container-to-container by service name, an acknowledged alarm survived
+a container restart and a whole `down`/`up` with its raise time and
+acknowledging user intact, a stopped simulator read Bad with a real gap
+in the trend rather than a line drawn across it, the OPC UA certificate
+kept its thumbprint across `--force-recreate`, and a second `up`
+changed nothing.
+
+Four things the hand walk found that no test had. The client opened on
+a Site with no devices, so the first screen a new user saw was empty.
+The alarm summary ignored the Site selector and had no Site column,
+so the tree on the left and the table below it disagreed. Two
+DataProtection warnings in the Gateway log looked like errors in a
+deployment log and were not. And `localhost` on Windows resolved to
+IPv6 and reached a different local server — `ApplicationWebServer`,
+already listening on 8080 — which answered "Access Error: 404" while
+Docker had bound the same port without complaint; not a defect in the
+Gateway, but a way to lose an hour, so the guide now checks the port
+first and uses `127.0.0.1`. All four were fixed and verified on screen.
+
+Writing the deployment guide found a fifth, and the most costly of
+them: `docker compose up -d timescaledb` returns as soon as the
+container exists, not when the database is ready, so a restore run
+straight after it fails and the migrator then creates an empty
+database — the exact sequence someone follows while recovering from an
+incident. `deploy/README.md` uses `--wait` and says why. The rollback
+path was not described but executed end to end: a probe migration
+0010, an upgrade, `pg_restore` back to the earlier dump, the probe
+table gone, the older Gateway starting without a schema refusal, and
+the same again onto empty volumes as a new machine.
+
 **Implementation notes:**
 
 - **Build the images from a clean checkout, not from the working

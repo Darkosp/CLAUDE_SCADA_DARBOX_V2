@@ -101,24 +101,36 @@ deferred and are recorded under Phase 5.5 in `phase-plan.md`: filtering
 the journal, and flapping (deadband / on-delay), the latter needing an
 ADR before any code.
 
-**Next: Phase 6, now on-premises packaging only.** The phase was split
-when it began: packaging what exists should not wait behind the cloud
-topology's undecided questions (push-driver contract, broker,
-store-and-forward, edge identity), which are now Phase 7 and need ADRs
-before any code. Phase 6 is `docker compose up` bringing up Migrator,
-Gateway and database on a machine that has only Docker, with **the
-Gateway serving the built Angular client from its own origin** — no
-CORS, no hard-coded Gateway URL, no extra container.
+**Phase 6 (on-premises deployment packaging) is complete and merged to
+`main`** (PRs #10–#17; see `phase-plan.md`'s Phase 6 status note). The
+phase was split when it began — the cloud topology became Phase 7,
+because it needs ADRs (push-driver contract, broker, store-and-forward,
+edge identity) rather than packaging. What exists now: `deploy/`
+carries a Compose file, `.env.example`, `build-images.sh` and
+**`deploy/README.md`**, the guide an operator follows to install,
+upgrade and — tested end to end, not described — roll back. The Gateway
+serves the built Angular client from its own origin, so there is no
+CORS allowance and no Gateway URL in the client.
 
-**ADR-0014 closes the migrator-concurrency question Phase 6 carried as
-open**, and the answer was not the reassuring one. Measured, not
-assumed: two migrators meeting on an *existing* database apply a data
-script once per run while every run reports success, after which the
-Gateway refuses to start for good. A database-level advisory lock, not
-Compose ordering, is the fix, and a build that embeds zero migration
-scripts must fail rather than "succeed" instantly — which is what a
-`migrations/` vs `Migrations/` case mismatch produces in a Linux
-container build while ADR-0012's check passes, empty against empty.
+Three rules this phase leaves behind. **ADR-0014**: one migrator at a
+time, enforced by a database advisory lock, and a build that embeds
+zero migration scripts refuses to run — both measured, not assumed.
+**Images are built from a commit** (`deploy/build-images.sh` uses `git
+archive`), never from the working directory. And **a command that
+returns is not a system that is ready**: `docker compose up -d
+timescaledb` returns before the database accepts connections, which is
+why the restore procedure uses `--wait`; this cost a failed restore
+during the write-up.
+
+**Next: Phase 7 (cloud topology)** — but not first. Before it, one
+small phase closes a defect the Phase 6 work exposed: **the same
+request twice creates two devices**. Nothing enforces that a name is
+unique within its parent, so a double-click or a retry after a lost
+response leaves duplicates, and the same holds for tags and folders.
+The decision is uniqueness within the parent, answered with 409, and
+the unique index must cover **active rows only** — ADR-0009's soft
+delete would otherwise let a deleted device hold its name forever. The
+ADR is still to be written.
 
 ## When Phase 1 (or any phase) begins
 
