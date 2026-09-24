@@ -69,9 +69,17 @@ client shows it against the name field rather than as a bare failure.
 
 **Existing duplicates are renamed, not dropped, and the rename is audited.**
 An upgrade must not fail on data someone already has, and it must not quietly
-change what an operator sees with no trace: the migration appends a short
-suffix to the later rows and writes one `audit_log` entry per rename
-(ADR-0011's append-only trail, actor null — nobody did it).
+change what an operator sees with no trace: the migration suffixes all but one
+of each colliding set and writes one `audit_log` entry per rename (ADR-0011's
+append-only trail, actor null — nobody did it).
+
+*Corrected while implementing (2026-09-24):* this first said the **later**
+rows are renamed. No row records when it was created, so "later" is not a
+thing the database can answer. The row with the smallest id keeps the name —
+arbitrary but deterministic — and the audit entry carries both names, so an
+operator who wanted the other one can swap them. The suffix is the whole id,
+not a prefix of it: with a prefix, two renamed devices came out with the same
+name in testing, because seeded ids share their leading characters.
 
 **Idempotency keys stay out of scope**, and so does anything that makes the
 client responsible for the guarantee. Disabling Save while a request is in
