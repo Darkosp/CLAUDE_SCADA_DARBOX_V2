@@ -109,7 +109,20 @@ public static class GatewayApp
         // authentication; everything under /api and /hubs is still behind it. Without a
         // built client in the web root (a developer running `ng serve`) this serves nothing.
         app.UseDefaultFiles();
-        app.UseStaticFiles();
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            // index.html names the hashed bundles of *this* build. Without an instruction a
+            // browser may reuse a cached copy for hours after an upgrade and keep running the
+            // previous client against the new Gateway; no-cache makes it ask every time (a
+            // 304 when nothing changed). The bundles themselves are named by their content.
+            OnPrepareResponse = context =>
+            {
+                if (context.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Context.Response.Headers.CacheControl = "no-cache";
+                }
+            },
+        });
 
         app.UseAuthentication();
         app.UseAuthorization();

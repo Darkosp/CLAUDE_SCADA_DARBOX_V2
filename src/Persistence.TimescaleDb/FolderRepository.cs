@@ -55,9 +55,9 @@ public sealed class FolderRepository : IFolderRepository
                 cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
         }
-        catch (PostgresException exception) when (UniqueNames.Conflict(exception, folder: folder.Name) is { } conflict)
+        catch (PostgresException exception) when (UniqueNames.IsNameClash(exception))
         {
-            throw conflict;
+            throw await UniqueNames.FolderTakenAsync(_dataSource, folder.Name, folder.SiteId, folder.ParentFolderId, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -104,9 +104,9 @@ public sealed class FolderRepository : IFolderRepository
             updated = await connection.ExecuteAsync(
                 new CommandDefinition(sql, folder, cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
-        catch (PostgresException exception) when (UniqueNames.Conflict(exception, folder: folder.Name) is { } conflict)
+        catch (PostgresException exception) when (UniqueNames.IsNameClash(exception))
         {
-            throw conflict;
+            throw await UniqueNames.FolderTakenAsync(_dataSource, folder.Name, folder.SiteId, folder.ParentFolderId, cancellationToken).ConfigureAwait(false);
         }
 
         if (updated > 0)
