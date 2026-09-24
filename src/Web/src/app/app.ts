@@ -25,7 +25,10 @@ import {
   describeReason,
   formatGapWindow,
   formatMeasurement,
+  NameField,
+  SingleFlight,
   mapToSettings,
+  nameConflictMessage,
   parseNumberField,
   pathWithinSite,
   settingsToMap,
@@ -142,6 +145,13 @@ export class App implements OnInit {
   protected readonly deviceDraft = signal<DeviceDraft | null>(null);
   protected readonly tagDraft = signal<TagDraft | null>(null);
   protected readonly newFolderName = signal('');
+
+  /** A name save in flight: its Save button is disabled until the Gateway answers. */
+  protected readonly saving = signal(false);
+  private readonly nameSaves = new SingleFlight((busy) => this.saving.set(busy));
+
+  /** The Gateway's refusal of a name as already taken, shown against that form's name field. */
+  protected readonly nameError = signal<{ field: NameField; message: string } | null>(null);
 
   protected readonly unitPresets = UNIT_PRESETS;
 
@@ -606,7 +616,7 @@ export class App implements OnInit {
       return;
     }
 
-    await this.withErrorHandling(async () => {
+    await this.saveNamed('folder', async () => {
       await this.api.createFolder(siteId, { name, parentFolderId: null });
       this.newFolderName.set('');
       await this.reloadTree();
@@ -667,7 +677,7 @@ export class App implements OnInit {
       return;
     }
 
-    await this.withErrorHandling(async () => {
+    await this.saveNamed('device', async () => {
       await this.api.saveDevice(siteId, draft.id, {
         name: draft.name,
         driverKey: draft.driverKey,
@@ -701,7 +711,7 @@ export class App implements OnInit {
       return;
     }
 
-    await this.withErrorHandling(async () => {
+    await this.saveNamed('tag', async () => {
       // A unit belongs only on a numeric tag; the gateway refuses it elsewhere, and
       // sending one anyway would just produce an error the operator cannot act on.
       const unit = draft.valueKind === 'Numeric' ? unitBySymbol(draft.unitSymbol) : null;
@@ -928,7 +938,7 @@ export class App implements OnInit {
       return;
     }
 
-    await this.withErrorHandling(async () => {
+    await this.saveNamed('instance', async () => {
       await this.api.instantiate(siteId, {
         templateId: draft.templateId,
         name: draft.name,
@@ -1067,13 +1077,34 @@ export class App implements OnInit {
     }
   }
 
-  private async withErrorHandling(action: () => Promise<void>): Promise<void> {
+  private async withErrorHandling(action: () => Promise<void>, nameField?: NameField): Promise<void> {
     this.error.set(null);
     try {
       await action();
     } catch (error) {
-      this.report(error);
+      const taken = nameField ? nameConflictMessage(error) : null;
+      if (nameField && taken) {
+        this.nameError.set({ field: nameField, message: taken });
+      } else {
+        this.report(error);
+      }
     }
+  }
+
+  /**
+   * Saves something with a name: one request at a time, and a name already taken (409)
+   * reported against the name field rather than as a bare failure (ADR-0015).
+   */
+  private async saveNamed(field: NameField, action: () => Promise<void>): Promise<void> {
+    await this.nameSaves.run(async () => {
+      this.nameError.set(null);
+      await this.withErrorHandling(action, field);
+    });
+  }
+
+  protected nameErrorFor(field: NameField): string | null {
+    const error = this.nameError();
+    return error?.field === field ? error.message : null;
   }
 
   private report(error: unknown): void {

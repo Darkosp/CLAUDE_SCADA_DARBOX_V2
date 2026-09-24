@@ -54,14 +54,21 @@ public sealed class DeviceRepository : IDeviceRepository
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        await connection.ExecuteAsync(new CommandDefinition(
-            """
-            INSERT INTO device (id, site_id, folder_id, name, driver_key, connection_settings, scan_interval_ms)
-            VALUES (@Id, @SiteId, @FolderId, @Name, @DriverKey, @ConnectionSettings::jsonb, @ScanIntervalMs)
-            """,
-            ToParameters(device),
-            cancellationToken: cancellationToken))
-            .ConfigureAwait(false);
+        try
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO device (id, site_id, folder_id, name, driver_key, connection_settings, scan_interval_ms)
+                VALUES (@Id, @SiteId, @FolderId, @Name, @DriverKey, @ConnectionSettings::jsonb, @ScanIntervalMs)
+                """,
+                ToParameters(device),
+                cancellationToken: cancellationToken))
+                .ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (UniqueNames.Conflict(exception, device: device.Name) is { } conflict)
+        {
+            throw conflict;
+        }
     }
 
     public async Task UpdateAsync(Device device, CancellationToken cancellationToken)
@@ -71,19 +78,27 @@ public sealed class DeviceRepository : IDeviceRepository
         // who can see its history, which is not something an edit form should do.
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        var updated = await connection.ExecuteAsync(new CommandDefinition(
-            """
-            UPDATE device
-            SET folder_id = @FolderId,
-                name = @Name,
-                driver_key = @DriverKey,
-                connection_settings = @ConnectionSettings::jsonb,
-                scan_interval_ms = @ScanIntervalMs
-            WHERE id = @Id AND deleted_at IS NULL
-            """,
-            ToParameters(device),
-            cancellationToken: cancellationToken))
-            .ConfigureAwait(false);
+        int updated;
+        try
+        {
+            updated = await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE device
+                SET folder_id = @FolderId,
+                    name = @Name,
+                    driver_key = @DriverKey,
+                    connection_settings = @ConnectionSettings::jsonb,
+                    scan_interval_ms = @ScanIntervalMs
+                WHERE id = @Id AND deleted_at IS NULL
+                """,
+                ToParameters(device),
+                cancellationToken: cancellationToken))
+                .ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (UniqueNames.Conflict(exception, device: device.Name) is { } conflict)
+        {
+            throw conflict;
+        }
 
         if (updated == 0)
         {

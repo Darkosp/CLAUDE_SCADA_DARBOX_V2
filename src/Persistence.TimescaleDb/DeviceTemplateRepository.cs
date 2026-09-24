@@ -86,46 +86,55 @@ public sealed class DeviceTemplateRepository : IDeviceTemplateRepository
             .Select(templateTag => Materialise(templateTag, device))
             .ToList();
 
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        await connection.ExecuteAsync(new CommandDefinition(
-            """
-            INSERT INTO device (id, site_id, folder_id, name, driver_key, connection_settings,
-                                scan_interval_ms, template_id)
-            VALUES (@Id, @SiteId, @FolderId, @Name, @DriverKey, @ConnectionSettings::jsonb,
-                    @ScanIntervalMs, @TemplateId)
-            """,
-            new
-            {
-                device.Id,
-                device.SiteId,
-                device.FolderId,
-                device.Name,
-                device.DriverKey,
-                ConnectionSettings = ConnectionSettingsJson.Serialize(device.ConnectionSettings),
-                ScanIntervalMs = (int)device.ScanInterval.TotalMilliseconds,
-                device.TemplateId,
-            },
-            transaction,
-            cancellationToken: cancellationToken))
-            .ConfigureAwait(false);
-
-        foreach (var (name, value) in device.TemplateParameters)
+        // The device and its tags go in together; a clash on either name refuses the whole
+        // instance, and the rollback leaves nothing half-made.
+        try
         {
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
             await connection.ExecuteAsync(new CommandDefinition(
-                "INSERT INTO device_template_parameter (device_id, name, value) VALUES (@deviceId, @name, @value)",
-                new { deviceId = device.Id, name, value },
+                """
+                INSERT INTO device (id, site_id, folder_id, name, driver_key, connection_settings,
+                                    scan_interval_ms, template_id)
+                VALUES (@Id, @SiteId, @FolderId, @Name, @DriverKey, @ConnectionSettings::jsonb,
+                        @ScanIntervalMs, @TemplateId)
+                """,
+                new
+                {
+                    device.Id,
+                    device.SiteId,
+                    device.FolderId,
+                    device.Name,
+                    device.DriverKey,
+                    ConnectionSettings = ConnectionSettingsJson.Serialize(device.ConnectionSettings),
+                    ScanIntervalMs = (int)device.ScanInterval.TotalMilliseconds,
+                    device.TemplateId,
+                },
                 transaction,
                 cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
-        }
 
-        foreach (var tag in tags)
+            foreach (var (name, value) in device.TemplateParameters)
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    "INSERT INTO device_template_parameter (device_id, name, value) VALUES (@deviceId, @name, @value)",
+                    new { deviceId = device.Id, name, value },
+                    transaction,
+                    cancellationToken: cancellationToken))
+                    .ConfigureAwait(false);
+            }
+
+            foreach (var tag in tags)
+            {
+                await InsertTagAsync(connection, transaction, tag, cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (UniqueNames.Conflict(exception, device: device.Name) is { } conflict)
         {
-            await InsertTagAsync(connection, transaction, tag, cancellationToken).ConfigureAwait(false);
+            throw conflict;
         }
-
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> AddTagAsync(DeviceTemplateTag templateTag, CancellationToken cancellationToken)
@@ -142,27 +151,36 @@ public sealed class DeviceTemplateRepository : IDeviceTemplateRepository
             .Select(instance => Materialise(templateTag, instance))
             .ToList();
 
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        await connection.ExecuteAsync(new CommandDefinition(
-            """
-            INSERT INTO device_template_tag (id, template_id, name, value_kind, unit_symbol,
-                                             unit_dimension, unit_factor_to_si, unit_offset_to_si,
-                                             address_template, is_writable)
-            VALUES (@Id, @TemplateId, @Name, @ValueKind, @UnitSymbol, @UnitDimension,
-                    @UnitFactorToSi, @UnitOffsetToSi, @AddressTemplate, @IsWritable)
-            """,
-            TemplateTagParameters(templateTag),
-            transaction,
-            cancellationToken: cancellationToken))
-            .ConfigureAwait(false);
-
-        foreach (var tag in materialised)
+        // The new tag lands on every instance at once (ADR-0010). If any of them already has a
+        // tag by that name, none of them gets it.
+        try
         {
-            await InsertTagAsync(connection, transaction, tag, cancellationToken).ConfigureAwait(false);
-        }
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO device_template_tag (id, template_id, name, value_kind, unit_symbol,
+                                                 unit_dimension, unit_factor_to_si, unit_offset_to_si,
+                                                 address_template, is_writable)
+                VALUES (@Id, @TemplateId, @Name, @ValueKind, @UnitSymbol, @UnitDimension,
+                        @UnitFactorToSi, @UnitOffsetToSi, @AddressTemplate, @IsWritable)
+                """,
+                TemplateTagParameters(templateTag),
+                transaction,
+                cancellationToken: cancellationToken))
+                .ConfigureAwait(false);
+
+            foreach (var tag in materialised)
+            {
+                await InsertTagAsync(connection, transaction, tag, cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (UniqueNames.Conflict(exception, tag: templateTag.Name) is { } conflict)
+        {
+            throw conflict;
+        }
         return materialised.Count;
     }
 

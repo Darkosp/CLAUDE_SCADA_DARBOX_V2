@@ -44,14 +44,21 @@ public sealed class FolderRepository : IFolderRepository
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        await connection.ExecuteAsync(new CommandDefinition(
-            """
-            INSERT INTO folder (id, site_id, parent_folder_id, name)
-            VALUES (@Id, @SiteId, @ParentFolderId, @Name)
-            """,
-            folder,
-            cancellationToken: cancellationToken))
-            .ConfigureAwait(false);
+        try
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO folder (id, site_id, parent_folder_id, name)
+                VALUES (@Id, @SiteId, @ParentFolderId, @Name)
+                """,
+                folder,
+                cancellationToken: cancellationToken))
+                .ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (UniqueNames.Conflict(exception, folder: folder.Name) is { } conflict)
+        {
+            throw conflict;
+        }
     }
 
     public async Task UpdateAsync(Folder folder, CancellationToken cancellationToken)
@@ -91,8 +98,16 @@ public sealed class FolderRepository : IFolderRepository
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        var updated = await connection.ExecuteAsync(
-            new CommandDefinition(sql, folder, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        int updated;
+        try
+        {
+            updated = await connection.ExecuteAsync(
+                new CommandDefinition(sql, folder, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (UniqueNames.Conflict(exception, folder: folder.Name) is { } conflict)
+        {
+            throw conflict;
+        }
 
         if (updated > 0)
         {

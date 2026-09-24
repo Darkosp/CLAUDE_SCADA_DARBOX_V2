@@ -391,3 +391,51 @@ export function pathWithinSite(tagPath: string, siteName: string): string {
   const prefix = `${siteName}/`;
   return tagPath.startsWith(prefix) ? tagPath.slice(prefix.length) : tagPath;
 }
+
+/** The forms whose name the Gateway may refuse as already taken (ADR-0015). */
+export type NameField = 'folder' | 'device' | 'tag' | 'instance';
+
+/**
+ * The Gateway's reason when it refused a name as already taken — a 409 — or null for any other
+ * failure, which belongs in the general error line rather than against the name field.
+ */
+export function nameConflictMessage(error: unknown): string | null {
+  const refusal = error as { status?: unknown; message?: unknown } | null;
+  return refusal !== null && typeof refusal === 'object' && refusal.status === 409 && typeof refusal.message === 'string'
+    ? refusal.message
+    : null;
+}
+
+/**
+ * Runs one save at a time: a second press while the first is still in flight does nothing.
+ *
+ * A courtesy against a double click, and no more (ADR-0015). It cannot help a retry after a
+ * lost reply, or two people saving the same name; the database's unique index is what
+ * guarantees that, and a 409 is how it says so.
+ */
+export class SingleFlight {
+  private running = false;
+
+  constructor(private readonly onBusyChange: (busy: boolean) => void = () => undefined) {}
+
+  get busy(): boolean {
+    return this.running;
+  }
+
+  /** Runs the action unless one is already running; says whether it ran. */
+  async run(action: () => Promise<void>): Promise<boolean> {
+    if (this.running) {
+      return false;
+    }
+
+    this.running = true;
+    this.onBusyChange(true);
+    try {
+      await action();
+      return true;
+    } finally {
+      this.running = false;
+      this.onBusyChange(false);
+    }
+  }
+}

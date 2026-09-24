@@ -256,6 +256,9 @@
           <h3 class="summary-head">New device from this template</h3>
           <form class="form" (ngSubmit)="saveInstance()">
             <label>Name<input name="inName" required [(ngModel)]="draft.name" /></label>
+            @if (nameErrorFor('instance'); as taken) {
+              <p class="field-error" role="alert">{{ taken }}</p>
+            }
             <label>Driver<input name="inDriver" required [(ngModel)]="draft.driverKey" /></label>
 
             <fieldset class="settings">
@@ -291,7 +294,7 @@
             </label>
 
             <div class="actions">
-              <button type="submit" [disabled]="draft.name.trim().length === 0">Create</button>
+              <button type="submit" [disabled]="draft.name.trim().length === 0 || saving()">Create</button>
               <button type="button" class="ghost" (click)="instantiateDraft.set(null)">Cancel</button>
             </div>
           </form>
@@ -403,8 +406,11 @@
           placeholder="New folder"
           [ngModel]="newFolderName()"
           (ngModelChange)="newFolderName.set($event)" />
-        <button type="submit" [disabled]="newFolderName().trim().length === 0">Add</button>
+        <button type="submit" [disabled]="newFolderName().trim().length === 0 || saving()">Add</button>
       </form>
+      @if (nameErrorFor('folder'); as taken) {
+        <p class="field-error" role="alert">{{ taken }}</p>
+      }
     }
 
     @if (tree(); as siteTree) {
@@ -430,6 +436,9 @@
       <h2>{{ draft.id ? 'Edit device' : 'New device' }}</h2>
       <form class="form" (ngSubmit)="saveDevice()">
         <label>Name<input name="name" required [(ngModel)]="draft.name" /></label>
+        @if (nameErrorFor('device'); as taken) {
+          <p class="field-error" role="alert">{{ taken }}</p>
+        }
         <label>Driver<input name="driverKey" required [(ngModel)]="draft.driverKey" /></label>
         <!--
           Named settings rather than fixed fields: Modbus wants host/port/unitId and
@@ -460,7 +469,7 @@
         </label>
 
         <div class="actions">
-          <button type="submit" [disabled]="draft.name.trim().length === 0">Save</button>
+          <button type="submit" [disabled]="draft.name.trim().length === 0 || saving()">Save</button>
           <button type="button" class="ghost" (click)="deviceDraft.set(null)">Cancel</button>
         </div>
       </form>
@@ -496,6 +505,9 @@
             walking the DOM.
           -->
           <label>Name<input name="tagLabel" required [(ngModel)]="draft.name" /></label>
+          @if (nameErrorFor('tag'); as taken) {
+            <p class="field-error" role="alert">{{ taken }}</p>
+          }
           <label>Kind
             <select name="kind" [(ngModel)]="draft.valueKind">
               <option value="Numeric">Numeric</option>
@@ -518,7 +530,7 @@
           </label>
 
           <div class="actions">
-            <button type="submit" [disabled]="draft.name.trim().length === 0">Save</button>
+            <button type="submit" [disabled]="draft.name.trim().length === 0 || saving()">Save</button>
             <button type="button" class="ghost" (click)="tagDraft.set(null)">Cancel</button>
           </div>
         </form>
