@@ -131,9 +131,11 @@ public sealed class DeviceTemplateRepository : IDeviceTemplateRepository
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException exception) when (UniqueNames.Conflict(exception, device: device.Name) is { } conflict)
+        catch (PostgresException exception) when (UniqueNames.IsNameClash(exception))
         {
-            throw conflict;
+            throw exception.ConstraintName == UniqueNames.DeviceIndex
+                ? await UniqueNames.DeviceTakenAsync(_dataSource, device.Name, device.SiteId, device.FolderId, cancellationToken).ConfigureAwait(false)
+                : UniqueNames.TemplateTagsCollide();
         }
     }
 
@@ -177,9 +179,9 @@ public sealed class DeviceTemplateRepository : IDeviceTemplateRepository
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException exception) when (UniqueNames.Conflict(exception, tag: templateTag.Name) is { } conflict)
+        catch (PostgresException exception) when (UniqueNames.IsNameClash(exception))
         {
-            throw conflict;
+            throw await UniqueNames.TemplateTagTakenAsync(_dataSource, templateTag.Name, templateTag.TemplateId, cancellationToken).ConfigureAwait(false);
         }
         return materialised.Count;
     }

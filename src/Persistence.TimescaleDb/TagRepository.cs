@@ -53,9 +53,9 @@ public sealed class TagRepository : ITagRepository
                 cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
         }
-        catch (PostgresException exception) when (UniqueNames.Conflict(exception, tag: tag.Name) is { } conflict)
+        catch (PostgresException exception) when (UniqueNames.IsNameClash(exception))
         {
-            throw conflict;
+            throw await UniqueNames.TagTakenAsync(_dataSource, tag.Name, tag.DeviceId, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -85,9 +85,9 @@ public sealed class TagRepository : ITagRepository
                 cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
         }
-        catch (PostgresException exception) when (UniqueNames.Conflict(exception, tag: tag.Name) is { } conflict)
+        catch (PostgresException exception) when (UniqueNames.IsNameClash(exception))
         {
-            throw conflict;
+            throw await UniqueNames.TagTakenAsync(_dataSource, tag.Name, tag.DeviceId, cancellationToken).ConfigureAwait(false);
         }
 
         if (updated == 0)

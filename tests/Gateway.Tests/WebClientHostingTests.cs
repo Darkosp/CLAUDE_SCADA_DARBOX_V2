@@ -82,6 +82,21 @@ public sealed class WebClientHostingTests : IAsyncLifetime
     }
 
     [RequiresDatabaseFact]
+    public async Task The_page_that_names_the_client_bundles_is_never_reused_without_asking()
+    {
+        // Found after the Phase 6.5 upgrade: with no caching instruction a browser may keep a
+        // previous build's index.html — and so the previous client — for hours.
+        using var client = new HttpClient { BaseAddress = _baseAddress };
+
+        foreach (var path in new[] { "/", "/index.html" })
+        {
+            using var response = await client.GetAsync(path);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl?.NoCache, $"{path} is served without Cache-Control: no-cache");
+        }
+    }
+
+    [RequiresDatabaseFact]
     public async Task Serving_the_client_opens_nothing_else_without_a_session()
     {
         // The control for the test above: the files are public, the API and the hub are not.

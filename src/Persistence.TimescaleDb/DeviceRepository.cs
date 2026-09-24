@@ -65,9 +65,9 @@ public sealed class DeviceRepository : IDeviceRepository
                 cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
         }
-        catch (PostgresException exception) when (UniqueNames.Conflict(exception, device: device.Name) is { } conflict)
+        catch (PostgresException exception) when (UniqueNames.IsNameClash(exception))
         {
-            throw conflict;
+            throw await UniqueNames.DeviceTakenAsync(_dataSource, device.Name, device.SiteId, device.FolderId, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -95,9 +95,9 @@ public sealed class DeviceRepository : IDeviceRepository
                 cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
         }
-        catch (PostgresException exception) when (UniqueNames.Conflict(exception, device: device.Name) is { } conflict)
+        catch (PostgresException exception) when (UniqueNames.IsNameClash(exception))
         {
-            throw conflict;
+            throw await UniqueNames.DeviceTakenAsync(_dataSource, device.Name, device.SiteId, device.FolderId, cancellationToken).ConfigureAwait(false);
         }
 
         if (updated == 0)

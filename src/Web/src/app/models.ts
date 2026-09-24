@@ -393,7 +393,7 @@ export function pathWithinSite(tagPath: string, siteName: string): string {
 }
 
 /** The forms whose name the Gateway may refuse as already taken (ADR-0015). */
-export type NameField = 'folder' | 'device' | 'tag' | 'instance';
+export type NameField = 'folder' | 'device' | 'tag' | 'instance' | 'templateTag';
 
 /**
  * The Gateway's reason when it refused a name as already taken — a 409 — or null for any other

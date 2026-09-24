@@ -227,6 +227,9 @@
         @if (templateTagDraft(); as draft) {
           <form class="form" (ngSubmit)="saveTemplateTag()">
             <label>Name<input name="ttName" required [(ngModel)]="draft.name" /></label>
+            @if (nameErrorFor('templateTag'); as taken) {
+              <p class="field-error" role="alert">{{ taken }}</p>
+            }
             <label>Kind
               <select name="ttKind" [(ngModel)]="draft.valueKind">
                 <option value="Numeric">Numeric</option>
@@ -246,7 +249,7 @@
               <input name="ttAddress" required [(ngModel)]="draft.addressTemplate" />
             </label>
             <div class="actions">
-              <button type="submit" [disabled]="draft.name.trim().length === 0">Save</button>
+              <button type="submit" [disabled]="draft.name.trim().length === 0 || saving()">Save</button>
               <button type="button" class="ghost" (click)="templateTagDraft.set(null)">Cancel</button>
             </div>
           </form>

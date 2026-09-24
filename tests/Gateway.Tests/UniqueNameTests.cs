@@ -41,7 +41,7 @@ public sealed class UniqueNameTests : IClassFixture<GatewayTestHost>
 
         Assert.Equal(1, await CountAsync("device", name));
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
-        await AssertConflictNamingAsync(second, name);
+        await AssertRefusalAsync(second, $"A device named '{name}' already exists directly under Skopje.");
     }
 
     [RequiresDatabaseFact]
@@ -49,14 +49,15 @@ public sealed class UniqueNameTests : IClassFixture<GatewayTestHost>
     {
         var name = Unique("Booster");
         using var admin = await AdminAsync();
-        var folder = await CreateFolderAsync(admin, Skopje, Unique("Hall"), parent: null);
+        var hall = Unique("Hall");
+        var folder = await CreateFolderAsync(admin, Skopje, hall, parent: null);
 
         using var first = await admin.PostAsJsonAsync($"/api/sites/{Skopje}/devices", Device(name, folder));
         using var second = await admin.PostAsJsonAsync($"/api/sites/{Skopje}/devices", Device(name, folder));
 
         Assert.Equal(1, await CountAsync("device", name));
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
-        await AssertConflictNamingAsync(second, name);
+        await AssertRefusalAsync(second, $"A device named '{name}' already exists in Skopje / {hall}.");
     }
 
     [RequiresDatabaseFact]
@@ -71,7 +72,7 @@ public sealed class UniqueNameTests : IClassFixture<GatewayTestHost>
 
         Assert.Equal(1, await CountAsync("folder", name));
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
-        await AssertConflictNamingAsync(second, name);
+        await AssertRefusalAsync(second, $"A folder named '{name}' already exists directly under Skopje.");
     }
 
     [RequiresDatabaseFact]
@@ -79,14 +80,15 @@ public sealed class UniqueNameTests : IClassFixture<GatewayTestHost>
     {
         var name = Unique("Basement");
         using var admin = await AdminAsync();
-        var parent = await CreateFolderAsync(admin, Skopje, Unique("Building"), parent: null);
+        var building = Unique("Building");
+        var parent = await CreateFolderAsync(admin, Skopje, building, parent: null);
 
         using var first = await admin.PostAsJsonAsync($"/api/sites/{Skopje}/folders", new CreateFolderRequest(name, parent));
         using var second = await admin.PostAsJsonAsync($"/api/sites/{Skopje}/folders", new CreateFolderRequest(name, parent));
 
         Assert.Equal(1, await CountAsync("folder", name));
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
-        await AssertConflictNamingAsync(second, name);
+        await AssertRefusalAsync(second, $"A folder named '{name}' already exists in Skopje / {building}.");
     }
 
     [RequiresDatabaseFact]
@@ -94,14 +96,15 @@ public sealed class UniqueNameTests : IClassFixture<GatewayTestHost>
     {
         var name = Unique("Discharge");
         using var admin = await AdminAsync();
-        var device = await CreateDeviceAsync(admin, Skopje, Unique("Pump"), folderId: null);
+        var pump = Unique("Pump");
+        var device = await CreateDeviceAsync(admin, Skopje, pump, folderId: null);
 
         using var first = await admin.PostAsJsonAsync($"/api/devices/{device}/tags", Tag(name));
         using var second = await admin.PostAsJsonAsync($"/api/devices/{device}/tags", Tag(name));
 
         Assert.Equal(1, await CountAsync("tag", name));
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
-        await AssertConflictNamingAsync(second, name);
+        await AssertRefusalAsync(second, $"The device Skopje / {pump} already has a tag named '{name}'.");
     }
 
     [RequiresDatabaseFact]
@@ -167,7 +170,7 @@ public sealed class UniqueNameTests : IClassFixture<GatewayTestHost>
 
         using var rename = await admin.PutAsJsonAsync($"/api/sites/{Skopje}/devices/{other}", Device(taken, folderId: null));
 
-        await AssertConflictNamingAsync(rename, taken);
+        await AssertRefusalAsync(rename, $"A device named '{taken}' already exists directly under Skopje.");
         Assert.Equal(1, await CountAsync("device", taken));
     }
 
@@ -189,12 +192,41 @@ public sealed class UniqueNameTests : IClassFixture<GatewayTestHost>
             $"/api/sites/{Skopje}/devices/from-template",
             new InstantiateDeviceRequest(template, name, "modbus-tcp", new Dictionary<string, string>(), 1000, FolderId: null, new Dictionary<string, string>()));
 
-        await AssertConflictNamingAsync(instance, name);
+        await AssertRefusalAsync(instance, $"A device named '{name}' already exists directly under Skopje.");
 
         // Rolled back together: no second device, and no orphaned tag from the template.
         Assert.Equal(1, await CountAsync("device", name));
         Assert.Equal(0, await ScalarAsync(
             "SELECT count(*) FROM tag t JOIN device_template_tag tt ON tt.id = t.template_tag_id WHERE tt.template_id = @template",
+            ("template", template)));
+    }
+
+    [RequiresDatabaseFact]
+    public async Task A_template_tag_that_a_device_made_from_it_already_has_is_refused()
+    {
+        var admin = await _host.LoginAsAdminAsync();
+        using var client = _host.CreateClient(admin);
+        var template = await _host.CreateTemplateAsync(admin, Unique("Booster template"));
+        var deviceName = Unique("Booster");
+
+        using var instance = await client.PostAsJsonAsync(
+            $"/api/sites/{Skopje}/devices/from-template",
+            new InstantiateDeviceRequest(template, deviceName, "modbus-tcp", new Dictionary<string, string>(), 1000, FolderId: null, new Dictionary<string, string>()));
+        instance.EnsureSuccessStatusCode();
+        var device = await instance.Content.ReadFromJsonAsync<Guid>();
+
+        // A tag added to the device by hand, then the same name added to its template.
+        using var own = await client.PostAsJsonAsync($"/api/devices/{device}/tags", Tag("Flow"));
+        own.EnsureSuccessStatusCode();
+
+        using var onTemplate = await client.PostAsJsonAsync(
+            $"/api/templates/{template}/tags",
+            new SaveTemplateTagRequest("Flow", "Numeric", Unit: null, "holding:1", IsWritable: false));
+
+        await AssertRefusalAsync(onTemplate,
+            $"The device Skopje / {deviceName}, made from this template, already has a tag named 'Flow', so it cannot be added to the template.");
+        Assert.Equal(0, await ScalarAsync(
+            "SELECT count(*) FROM device_template_tag WHERE template_id = @template AND deleted_at IS NULL",
             ("template", template)));
     }
 
@@ -221,13 +253,17 @@ public sealed class UniqueNameTests : IClassFixture<GatewayTestHost>
         return await response.Content.ReadFromJsonAsync<Guid>();
     }
 
-    private static async Task AssertConflictNamingAsync(HttpResponseMessage response, string name)
+    /// <summary>
+    /// A 409 whose message is exactly what the operator reads: what has the name, and where —
+    /// in their words, with no constraint or decision-record number in it.
+    /// </summary>
+    private static async Task AssertRefusalAsync(HttpResponseMessage response, string expected)
     {
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         var error = body.GetProperty("error").GetString();
-        Assert.Contains($"'{name}'", error, StringComparison.Ordinal);
-        Assert.Contains("already exists", error, StringComparison.Ordinal);
+        Assert.Equal(expected, error);
+        Assert.DoesNotContain("ADR", error, StringComparison.Ordinal);
     }
 
     /// <summary>Rows in <paramref name="table"/> with exactly this name, read over the Gateway's own connection.</summary>
