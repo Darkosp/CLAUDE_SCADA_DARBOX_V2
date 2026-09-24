@@ -393,3 +393,10 @@ code {
   padding: 0.1rem 0.3rem;
   border-radius: 4px;
 }
+
+/* A name the Gateway refused as already taken (ADR-0015), shown under that name field. */
+.field-error {
+  color: #b3261e;
+  font-size: 0.85rem;
+  margin: -0.25rem 0 0.25rem;
+}
