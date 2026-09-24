@@ -32,6 +32,8 @@ header, and mark the clause in the original.
 | [0013](0013-alarm-journal.md) | Alarms persist as an append-only event journal, with the live list derived from it; shelving is time-bounded |
 | [0014](0014-one-migrator-at-a-time.md) | One migrator run at a time, enforced by a database advisory lock; a build with zero migration scripts refuses to run |
 | [0015](0015-names-unique-within-their-parent.md) | A name is unique within its parent, among live rows, ignoring case; duplicates are renamed on upgrade, not refused |
+| [0016](0016-push-capable-driver-contract.md) | A driver declares itself polled or pushing; a pushing tag goes Bad on silence rather than holding a cached value |
+| [0017](0017-edge-to-cloud-link.md) | Edge-to-cloud: our own payload over Mosquitto with TLS per edge; the edge buffers on disk, drops oldest and records the loss; alarms stay in the cloud |
 
 ## Template
 

@@ -680,18 +680,32 @@ under Skopje" — read from the database at the moment of the conflict.
 architecture, with an edge process that keeps measuring and buffering
 while the link is down.
 
-**Decide before any code is written** — each of these changes what the
-system *is*, not how it is packaged, so each needs an ADR:
+**Decided before any code (2026-09-24), in two ADRs:**
 
-- The push-capable driver contract that Phase 4 deferred, and the MQTT
-  driver that depends on it.
-- The broker, which is not in ADR-0006's table — only the MQTTnet
-  library is — and whether the payload is Sparkplug B or our own.
-- Store-and-forward semantics: how much is buffered, what happens when
-  the buffer is full, and what quality a tag carries while the link is
-  down. Buffered samples keep the source timestamp the edge recorded
-  (ADR-0003); arrival time is never substituted for it.
-- Edge identity and transport security.
+- **ADR-0016** — a driver declares itself polled or pushing, and Core
+  treats the two differently by contract. A pushing driver is never
+  asked "what is the value now", because it has no honest answer;
+  silence past a declared staleness limit reads as Bad, not as
+  unchanged. This is the contract Phase 4 deferred rather than deform.
+- **ADR-0017** — the link itself. The edge acquires and buffers but does
+  not evaluate alarms, so an outage costs alarm coverage and not data,
+  and ADR-0013 makes that visible; the payload is ours rather than
+  Sparkplug B, carrying exactly ADR-0003's fields; Mosquitto is the
+  broker, over TLS with a certificate per edge and a topic prefix it
+  may not publish outside of; the buffer is bounded, on disk, survives
+  a restart, drops oldest first, and records the window it lost.
+
+**Steps, each a PR of its own, merged as its proof completes:**
+
+1. The pushing contract in Core (ADR-0016), with the staleness rule and
+   its mutation. No MQTT yet.
+2. `Drivers.Mqtt` as a pushing module against a local broker.
+3. The edge agent: acquisition, the on-disk buffer, reconnection.
+4. The cloud side: idempotent ingestion per (tag, source timestamp), the
+   dropped-window journal entry, the skew journal entry.
+5. Compose for the cloud topology, and the deployment guide beside
+   `deploy/README.md`.
+6. The hand walk, with the link cut for real.
 
 **Test gate:** with the edge agent disconnected from the network for a
 period and then reconnected, the history contains the samples from the
