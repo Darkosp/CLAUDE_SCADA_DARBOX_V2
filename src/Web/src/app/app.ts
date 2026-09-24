@@ -850,7 +850,7 @@ export class App implements OnInit {
       return;
     }
 
-    await this.withErrorHandling(async () => {
+    await this.saveNamed('templateTag', async () => {
       const result = await this.api.addTemplateTag(template.id, {
         name: draft.name,
         valueKind: draft.valueKind,
