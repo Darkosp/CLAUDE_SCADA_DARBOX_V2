@@ -79,6 +79,7 @@ public sealed class GatewayTestHost : IAsyncLifetime
                 builder.Services.RemoveAll<IDeviceDriverFactory>();
                 builder.Services.AddSingleton<IDeviceDriverFactory>(Drivers);
                 builder.Services.AddSingleton<IDeviceDriverFactory>(OtherDrivers);
+                builder.Services.AddSingleton<IPushingDeviceDriverFactory>(new FakePushingDriverFactory());
 
                 // Every level, for this provider only: the query-token test must hold even
                 // against the most verbose logging someone could switch on.

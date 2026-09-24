@@ -24,6 +24,21 @@ public interface ITagEngine
     /// </summary>
     Task IngestAsync(IReadOnlyList<TagReading> readings, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Accepts samples a pushing driver handed over (ADR-0016): every one goes to history, and
+    /// a tag's current value moves only forward in source time. A late sample — no newer than
+    /// the tag's last real one — is stored, but changes nothing a reader or an alarm sees.
+    /// </summary>
+    Task AcceptPushedAsync(IReadOnlyList<TagReading> samples, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads silence as loss (ADR-0016): each of <paramref name="tagIds"/> whose current value
+    /// arrived longer than <paramref name="stalenessLimit"/> ago becomes Bad, carrying no value
+    /// and the time of its last real sample. Nothing is written to history. The tag stays Bad
+    /// until a newer sample arrives.
+    /// </summary>
+    Task MarkSilentTagsAsync(IReadOnlyCollection<Guid> tagIds, TimeSpan stalenessLimit, CancellationToken cancellationToken);
+
     /// <summary>The last known state of one tag, or null if it has never reported.</summary>
     TagSnapshot? GetCurrent(Guid tagId);
 

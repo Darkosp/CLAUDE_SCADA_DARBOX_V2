@@ -20,6 +20,7 @@ public sealed class DeviceScannerService : BackgroundService
     private readonly TagCatalogSource _catalogSource;
     private readonly ITagEngine _tagEngine;
     private readonly IReadOnlyDictionary<string, IDeviceDriverFactory> _factoriesByKey;
+    private readonly IReadOnlyDictionary<string, IPushingDeviceDriverFactory> _pushingFactoriesByKey;
     private readonly ILogger<DeviceScannerService> _logger;
 
     private readonly Lock _gate = new();
@@ -31,6 +32,7 @@ public sealed class DeviceScannerService : BackgroundService
         TagCatalogSource catalogSource,
         ITagEngine tagEngine,
         IEnumerable<IDeviceDriverFactory> driverFactories,
+        IEnumerable<IPushingDeviceDriverFactory> pushingDriverFactories,
         ILogger<DeviceScannerService> logger)
     {
         _catalogSource = catalogSource;
@@ -40,6 +42,16 @@ public sealed class DeviceScannerService : BackgroundService
         // Compile-time composition: the factories are whatever the composition root
         // registered, matched to a device only by its opaque driver key (ADR-0002).
         _factoriesByKey = driverFactories.ToDictionary(f => f.DriverKey, StringComparer.OrdinalIgnoreCase);
+        _pushingFactoriesByKey = pushingDriverFactories.ToDictionary(f => f.DriverKey, StringComparer.OrdinalIgnoreCase);
+
+        // One key, one shape (ADR-0016). A key registered as both would make whether a device
+        // is polled or pushing depend on which dictionary was asked first.
+        var both = _factoriesByKey.Keys.Intersect(_pushingFactoriesByKey.Keys, StringComparer.OrdinalIgnoreCase).ToList();
+        if (both.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Driver key(s) {string.Join(", ", both)} are registered as both polled and pushing.");
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -119,7 +131,16 @@ public sealed class DeviceScannerService : BackgroundService
                     continue;
                 }
 
-                if (!_factoriesByKey.TryGetValue(device.DriverKey, out var factory))
+                Func<CancellationToken, Task> run;
+                if (_factoriesByKey.TryGetValue(device.DriverKey, out var factory))
+                {
+                    run = token => ScanDeviceAsync(device, factory, tags, token);
+                }
+                else if (_pushingFactoriesByKey.TryGetValue(device.DriverKey, out var pushingFactory))
+                {
+                    run = token => RunPushingDeviceAsync(device, pushingFactory, tags, token);
+                }
+                else
                 {
                     _logger.LogError(
                         "Device {DeviceName} needs driver '{DriverKey}', which is not part of this build.",
@@ -129,9 +150,7 @@ public sealed class DeviceScannerService : BackgroundService
                 }
 
                 var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_stoppingToken);
-                var task = Task.Run(
-                    () => ScanDeviceAsync(device, factory, tags, cancellation.Token),
-                    CancellationToken.None);
+                var task = Task.Run(() => run(cancellation.Token), CancellationToken.None);
 
                 _running[device.Id] = new RunningScan(cancellation, task, SignatureOf(device, catalog));
             }
@@ -221,6 +240,99 @@ public sealed class DeviceScannerService : BackgroundService
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Runs one pushing device (ADR-0016): the driver hands samples over as they arrive, and a
+    /// watch beside it reads silence past the driver's limit as loss.
+    /// </summary>
+    /// <remarks>
+    /// The watch runs whatever the driver does. A driver that fails, hangs or never connects
+    /// hands nothing over — which is exactly the silence the watch exists to report — so the
+    /// watch must not depend on the driver staying healthy.
+    /// </remarks>
+    private async Task RunPushingDeviceAsync(
+        Device device,
+        IPushingDeviceDriverFactory factory,
+        IReadOnlyList<DriverTag> driverTags,
+        CancellationToken cancellationToken)
+    {
+        await using var driver = factory.Create(device);
+        var tagIds = driverTags.Select(tag => tag.TagId).ToList();
+        var watch = WatchForSilenceAsync(device, tagIds, driver.StalenessLimit, cancellationToken);
+        var sink = new TagEngineSink(_tagEngine);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await driver.RunAsync(driverTags, sink, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(
+                    exception,
+                    "Pushing driver for device {DeviceName} failed; its tags read Bad once silent for {Limit}.",
+                    device.Name,
+                    driver.StalenessLimit);
+            }
+
+            try
+            {
+                await Task.Delay(PushingRestartDelay, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+
+        await watch.ConfigureAwait(false);
+    }
+
+    /// <summary>How long a pushing driver that returned or failed waits before it is run again.</summary>
+    private static readonly TimeSpan PushingRestartDelay = TimeSpan.FromSeconds(5);
+
+    private async Task WatchForSilenceAsync(
+        Device device,
+        IReadOnlyCollection<Guid> tagIds,
+        TimeSpan stalenessLimit,
+        CancellationToken cancellationToken)
+    {
+        // Often enough that loss shows within a fraction of the limit past it; never so often
+        // that a long limit means a busy loop, nor so rarely that a short one is missed by seconds.
+        var interval = TimeSpan.FromTicks(Math.Clamp(
+            stalenessLimit.Ticks / 4,
+            TimeSpan.FromMilliseconds(250).Ticks,
+            TimeSpan.FromSeconds(5).Ticks));
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
+                await _tagEngine.MarkSilentTagsAsync(tagIds, stalenessLimit, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "Checking device {DeviceName} for silence failed.", device.Name);
+            }
+        }
+    }
+
+    /// <summary>Where a pushing driver's samples go: the tag engine's pushed path, never the polled one.</summary>
+    private sealed class TagEngineSink(ITagEngine engine) : IPushedSampleSink
+    {
+        public Task AcceptAsync(IReadOnlyList<TagReading> samples, CancellationToken cancellationToken) =>
+            engine.AcceptPushedAsync(samples, cancellationToken);
     }
 
     private async Task StopAllAsync()
