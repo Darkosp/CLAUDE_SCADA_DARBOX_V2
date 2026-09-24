@@ -161,6 +161,71 @@ public sealed class PushedTagTests
         Assert.Null(current.Value);
     }
 
+    [Fact]
+    public async Task A_pushed_tag_that_never_receives_anything_reads_Bad_with_no_data_since_listening_began()
+    {
+        // A device that was never set up, or never reached, must not read as "unknown" for ever:
+        // silence is not Good, and neither is absence. But nothing was ever measured, so there is
+        // no measured time to give it — only when the Gateway began listening, which it observed.
+        var (engine, clock, historian, subscriber) = Build();
+        engine.BeginListening([TagId]);
+
+        clock.Now = Start + Limit + TimeSpan.FromSeconds(1);
+        await engine.MarkSilentTagsAsync([TagId], Limit, CancellationToken.None);
+
+        // Without the rule this is null — "no value", indistinguishable from not configured.
+        var current = engine.GetCurrent(TagId);
+        Assert.NotNull(current);
+        Assert.Equal(Quality.Bad, current.Quality);
+        Assert.Null(current.Value);
+
+        // No measured time, because there was no measurement; the observed one instead.
+        Assert.Null(current.SourceTimestampUtc);
+        Assert.Equal(Start, current.NoDataSinceUtc);
+
+        // Nothing written to history, and readers told once.
+        Assert.Empty(historian.Written);
+        Assert.Single(subscriber.Received);
+        await engine.MarkSilentTagsAsync([TagId], Limit, CancellationToken.None);
+        Assert.Single(subscriber.Received);
+    }
+
+    [Fact]
+    public async Task A_never_heard_tag_is_given_its_limit_before_it_reads_Bad()
+    {
+        // The control for the test above: listening for a moment is not yet silence.
+        var (engine, clock, _, _) = Build();
+        engine.BeginListening([TagId]);
+
+        clock.Now = Start + Limit;
+        await engine.MarkSilentTagsAsync([TagId], Limit, CancellationToken.None);
+
+        Assert.Null(engine.GetCurrent(TagId));
+    }
+
+    [Fact]
+    public async Task The_first_sample_ends_no_data_and_a_restart_does_not_move_its_start()
+    {
+        var (engine, clock, _, _) = Build();
+        engine.BeginListening([TagId]);
+
+        // A driver restarted by a configuration edit has still had no data since the first time.
+        clock.Now = Start.AddSeconds(10);
+        engine.BeginListening([TagId]);
+        clock.Now = Start + Limit + TimeSpan.FromSeconds(1);
+        await engine.MarkSilentTagsAsync([TagId], Limit, CancellationToken.None);
+        Assert.Equal(Start, engine.GetCurrent(TagId)!.NoDataSinceUtc);
+
+        // Then something arrives.
+        var measuredAt = clock.Now.AddSeconds(-1);
+        await engine.AcceptPushedAsync([Sample(4.2, measuredAt)], CancellationToken.None);
+
+        var current = engine.GetCurrent(TagId)!;
+        Assert.Equal(Quality.Good, current.Quality);
+        Assert.Equal(measuredAt, current.SourceTimestampUtc);
+        Assert.Null(current.NoDataSinceUtc);
+    }
+
     private static TagReading Sample(double value, DateTimeOffset measuredAt) =>
         new(TagId, new TagValue.Numeric(value), measuredAt, Quality.Good);
 

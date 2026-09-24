@@ -40,3 +40,26 @@ public sealed class FakePushingDriverFactory : IPushingDeviceDriverFactory
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }
+
+/// <summary>
+/// A pushing source that is started and never sends anything — a device that was never set up,
+/// or never reached (ADR-0016).
+/// </summary>
+public sealed class SilentPushingDriverFactory : IPushingDeviceDriverFactory
+{
+    public const string Key = "fake-push-silent";
+
+    public string DriverKey => Key;
+
+    public IPushingDeviceDriver Create(Device device) => new Driver();
+
+    private sealed class Driver : IPushingDeviceDriver
+    {
+        public TimeSpan StalenessLimit => FakePushingDriverFactory.Limit;
+
+        public Task RunAsync(IReadOnlyList<DriverTag> tags, IPushedSampleSink sink, CancellationToken cancellationToken) =>
+            Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+}

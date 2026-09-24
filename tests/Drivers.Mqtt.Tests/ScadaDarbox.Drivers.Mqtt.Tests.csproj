@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -10,7 +10,9 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <!-- An in-process broker for the MQTT end-to-end test; the deployed broker is Mosquitto (ADR-0017). -->
+    <!-- An in-process broker, as the OPC UA tests run a real in-process server: the driver is
+         tested against something that actually speaks MQTT. Tests only; the deployed broker is
+         Mosquitto (ADR-0017). -->
     <PackageReference Include="MQTTnet.Server" Version="5.2.0.1603" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
@@ -21,7 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Gateway\ScadaDarbox.Gateway.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Drivers.Mqtt\ScadaDarbox.Modules.Drivers.Mqtt.csproj" />
   </ItemGroup>
 
 </Project>

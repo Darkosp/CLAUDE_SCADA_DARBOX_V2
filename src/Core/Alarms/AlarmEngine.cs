@@ -469,7 +469,11 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
         // first-evaluation-after-restart mark. Crucially the standing alarm is left exactly
         // as it is: a device going offline must never look like the value returning to
         // normal.
-        if (snapshot.Quality != Quality.Good || snapshot.Value is not TagValue.Numeric numeric)
+        // Nor is one with no measured time: a Good value always has one, and a snapshot without
+        // one is a tag that has never received anything (ADR-0016).
+        if (snapshot.Quality != Quality.Good
+            || snapshot.Value is not TagValue.Numeric numeric
+            || snapshot.SourceTimestampUtc is not { } measuredAt)
         {
             return false;
         }
@@ -510,7 +514,7 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
             breach.Value.LimitValue,
             numeric.Value,
             snapshot.UnitSymbol,
-            snapshot.SourceTimestampUtc,
+            measuredAt,
             AlarmState.Active,
             AcknowledgedAtUtc: null,
             ClearedAtUtc: null)
@@ -524,7 +528,7 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
 
         var raised = Event(alarm, AlarmEventType.Raised, now, catalog) with
         {
-            SourceTimeUtc = snapshot.SourceTimestampUtc,
+            SourceTimeUtc = measuredAt,
             Value = numeric.Value,
             DetectedAfterRestart = afterRestart,
         };

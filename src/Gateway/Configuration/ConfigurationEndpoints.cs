@@ -21,7 +21,12 @@ internal static class ConfigurationEndpoints
                 .OrderBy(site => site.Name, StringComparer.OrdinalIgnoreCase)
                 .Select(site => new SiteDto(site.Id, site.Name, site.TimeZoneId))));
 
-        app.MapGet("/api/sites/{siteId:guid}/tree", (Guid siteId, TagCatalogSource catalogSource, Caller caller) =>
+        // Which drivers this build has, and which push — so the device form offers a scan
+        // interval only where one means something (ADR-0016).
+        app.MapGet("/api/drivers", (DriverShapes shapes) =>
+            Results.Ok(shapes.All.Select(driver => new DriverDto(driver.Key, driver.Pushing))));
+
+        app.MapGet("/api/sites/{siteId:guid}/tree", (Guid siteId, TagCatalogSource catalogSource, DriverShapes shapes, Caller caller) =>
         {
             // The most literal reading of Phase 5's gate: a whole Site's configuration.
             // Not found rather than forbidden, so the answer does not confirm the Site
@@ -31,7 +36,7 @@ internal static class ConfigurationEndpoints
                 return Results.NotFound();
             }
 
-            var tree = SiteTreeBuilder.Build(catalogSource.Current, siteId);
+            var tree = SiteTreeBuilder.Build(catalogSource.Current, siteId, shapes);
             return tree is null ? Results.NotFound() : Results.Ok(tree);
         });
 
@@ -105,9 +110,15 @@ internal static class ConfigurationEndpoints
             Guid siteId,
             SaveDeviceRequest request,
             IDeviceRepository devices,
+            DriverShapes shapes,
             ConfigurationReloader reloader,
             CancellationToken cancellationToken) =>
         {
+            if (shapes.ScanIntervalProblem(request.DriverKey, request.ScanIntervalMs) is { } problem)
+            {
+                return Results.BadRequest(new { error = problem });
+            }
+
             var device = ToDomain(Guid.NewGuid(), siteId, request);
 
             return await SaveAsync(
@@ -122,12 +133,21 @@ internal static class ConfigurationEndpoints
             Guid deviceId,
             SaveDeviceRequest request,
             IDeviceRepository devices,
+            DriverShapes shapes,
             ConfigurationReloader reloader,
-            CancellationToken cancellationToken) => await SaveAsync(
+            CancellationToken cancellationToken) =>
+        {
+            if (shapes.ScanIntervalProblem(request.DriverKey, request.ScanIntervalMs) is { } problem)
+            {
+                return Results.BadRequest(new { error = problem });
+            }
+
+            return await SaveAsync(
                 () => devices.UpdateAsync(ToDomain(deviceId, siteId, request), cancellationToken),
                 reloader,
                 cancellationToken,
-                Results.NoContent)).AdminWrite("device.update", "device", "deviceId");
+                Results.NoContent);
+        }).AdminWrite("device.update", "device", "deviceId");
 
         app.MapDelete("/api/sites/{siteId:guid}/devices/{deviceId:guid}", async (
             Guid deviceId,
@@ -139,14 +159,14 @@ internal static class ConfigurationEndpoints
                 cancellationToken,
                 Results.NoContent)).AdminWrite("device.delete", "device", "deviceId");
 
-        app.MapGet("/api/devices/{deviceId:guid}", (Guid deviceId, TagCatalogSource catalogSource, Caller caller) =>
+        app.MapGet("/api/devices/{deviceId:guid}", (Guid deviceId, TagCatalogSource catalogSource, DriverShapes shapes, Caller caller) =>
         {
             var catalog = catalogSource.Current;
             var device = catalog.FindDevice(deviceId);
 
             return device is null || !caller.Access.CanView(device.SiteId)
                 ? Results.NotFound()
-                : Results.Ok(SiteTreeBuilder.ToDto(device, catalog));
+                : Results.Ok(SiteTreeBuilder.ToDto(device, catalog, shapes));
         });
     }
 
@@ -244,16 +264,27 @@ internal static class ConfigurationEndpoints
         return success();
     }
 
-    private static Device ToDomain(Guid id, Guid siteId, SaveDeviceRequest request) => new()
+    private static Device ToDomain(Guid id, Guid siteId, SaveDeviceRequest request)
     {
-        Id = id,
-        SiteId = siteId,
-        FolderId = request.FolderId,
-        Name = request.Name,
-        DriverKey = request.DriverKey,
-        ConnectionSettings = request.ConnectionSettings,
-        ScanInterval = TimeSpan.FromMilliseconds(request.ScanIntervalMs),
-    };
+        var device = new Device
+        {
+            Id = id,
+            SiteId = siteId,
+            FolderId = request.FolderId,
+            Name = request.Name,
+            DriverKey = request.DriverKey,
+            ConnectionSettings = request.ConnectionSettings,
+        };
+
+        // A pushing device has none (ADR-0016): the stored column keeps its default, nothing
+        // reads it, and the API never shows it. Refused before this point if one was sent.
+        if (request.ScanIntervalMs is { } scanIntervalMs)
+        {
+            device.ScanInterval = TimeSpan.FromMilliseconds(scanIntervalMs);
+        }
+
+        return device;
+    }
 
     private static bool TryToDomain(
         Guid id,

@@ -111,9 +111,15 @@ internal static class TemplateEndpoints
             Guid siteId,
             InstantiateDeviceRequest request,
             IDeviceTemplateRepository templates,
+            DriverShapes shapes,
             ConfigurationReloader reloader,
             CancellationToken cancellationToken) =>
         {
+            if (shapes.ScanIntervalProblem(request.DriverKey, request.ScanIntervalMs) is { } problem)
+            {
+                return Results.BadRequest(new { error = problem });
+            }
+
             var device = new Device
             {
                 Id = Guid.NewGuid(),
@@ -122,10 +128,15 @@ internal static class TemplateEndpoints
                 Name = request.Name,
                 DriverKey = request.DriverKey,
                 ConnectionSettings = request.ConnectionSettings,
-                ScanInterval = TimeSpan.FromMilliseconds(request.ScanIntervalMs),
                 TemplateId = request.TemplateId,
                 TemplateParameters = request.Parameters,
             };
+
+            // A pushing device has none (ADR-0016): the stored default is never read or shown.
+            if (request.ScanIntervalMs is { } scanIntervalMs)
+            {
+                device.ScanInterval = TimeSpan.FromMilliseconds(scanIntervalMs);
+            }
 
             try
             {

@@ -15,6 +15,7 @@ using ScadaDarbox.Gateway.RealTime;
 using ScadaDarbox.Gateway.Scanning;
 using ScadaDarbox.Gateway.Security;
 using ScadaDarbox.Modules.Drivers.Modbus;
+using ScadaDarbox.Modules.Drivers.Mqtt;
 using ScadaDarbox.Modules.Drivers.OpcUa;
 using ScadaDarbox.Persistence.TimescaleDb;
 
@@ -183,6 +184,8 @@ public static class GatewayApp
         // project and registered here by hand. Nothing is scanned for or loaded dynamically.
         services.AddSingleton<IDeviceDriverFactory, ModbusTcpDriverFactory>();
         services.AddSingleton<IDeviceDriverFactory, OpcUaDriverFactory>();
+        services.AddSingleton<IPushingDeviceDriverFactory>(provider =>
+            new MqttPushingDriverFactory(provider.GetRequiredService<ILoggerFactory>()));
         services.AddSingleton<TagWriter>();
 
         // Before the scanner: hosted services start in registration order and stop in
@@ -190,6 +193,7 @@ public static class GatewayApp
         // EvaluationStopped is written after the last (ADR-0013).
         services.AddHostedService<AlarmEngineLifecycle>();
         services.AddHostedService<ShelveExpirySweeper>();
+        services.AddSingleton<DriverShapes>();
         services.AddHostedService<DeviceScannerService>();
     }
 
@@ -251,9 +255,11 @@ public static class GatewayApp
                         tag.Id,
                         tagCatalog.PathOf(tag.Id),
                         TagValueDto.None,
-                        DateTimeOffset.MinValue,
+                        // Nothing measured yet, so no measurement time: not year 0001 standing in for one.
+                        SourceTimestampUtc: null,
                         "Bad",
-                        tag.Unit?.Symbol));
+                        tag.Unit?.Symbol,
+                        NoDataSinceUtc: null));
 
             return Results.Ok(tags);
         });

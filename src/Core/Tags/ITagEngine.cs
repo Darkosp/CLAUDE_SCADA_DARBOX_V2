@@ -39,6 +39,13 @@ public interface ITagEngine
     /// </summary>
     Task MarkSilentTagsAsync(IReadOnlyCollection<Guid> tagIds, TimeSpan stalenessLimit, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Records that the Gateway has begun listening for these pushed tags, for any that has not
+    /// been listened for before. A tag that then receives nothing within its staleness limit
+    /// reads Bad with no measured time, and "no data since" this moment (ADR-0016).
+    /// </summary>
+    void BeginListening(IReadOnlyCollection<Guid> tagIds);
+
     /// <summary>The last known state of one tag, or null if it has never reported.</summary>
     TagSnapshot? GetCurrent(Guid tagId);
 

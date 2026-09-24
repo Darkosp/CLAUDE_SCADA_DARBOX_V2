@@ -38,13 +38,19 @@ public sealed record TagValueDto(
 /// <summary>Wire form of a live tag value.</summary>
 /// <param name="TagId">The stable identity clients bind to (ADR-0001).</param>
 /// <param name="Path">Derived display label — for showing to an operator, never for binding.</param>
+/// <param name="SourceTimestampUtc">When the value was measured; null only if nothing ever was.</param>
+/// <param name="NoDataSinceUtc">
+/// On a tag that has never received anything: when the Gateway began listening for it — an
+/// observed time, for "no data since", never a measurement time (ADR-0016).
+/// </param>
 public sealed record TagSnapshotDto(
     Guid TagId,
     string Path,
     TagValueDto Value,
-    DateTimeOffset SourceTimestampUtc,
+    DateTimeOffset? SourceTimestampUtc,
     string Quality,
-    string? UnitSymbol)
+    string? UnitSymbol,
+    DateTimeOffset? NoDataSinceUtc)
 {
     public static TagSnapshotDto From(TagSnapshot snapshot) => new(
         snapshot.TagId,
@@ -52,7 +58,8 @@ public sealed record TagSnapshotDto(
         TagValueDto.From(snapshot.Value),
         snapshot.SourceTimestampUtc,
         snapshot.Quality.ToString(),
-        snapshot.UnitSymbol);
+        snapshot.UnitSymbol,
+        snapshot.NoDataSinceUtc);
 }
 
 /// <summary>

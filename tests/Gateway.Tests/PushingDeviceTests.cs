@@ -30,7 +30,7 @@ public sealed class PushingDeviceTests : IClassFixture<GatewayTestHost>
 
         using var created = await client.PostAsJsonAsync(
             $"/api/sites/{DemoConfigurationSeeder.SiteId}/devices",
-            new SaveDeviceRequest($"Edge {Guid.NewGuid():N}"[..13], FakePushingDriverFactory.Key, new Dictionary<string, string>(), 1000, FolderId: null));
+            new SaveDeviceRequest($"Edge {Guid.NewGuid():N}"[..13], FakePushingDriverFactory.Key, new Dictionary<string, string>(), ScanIntervalMs: null, FolderId: null));
         created.EnsureSuccessStatusCode();
         var device = await created.Content.ReadFromJsonAsync<Guid>();
 
