@@ -609,6 +609,42 @@ the same again onto empty volumes as a new machine.
 - Prove the Gateway container holds no privileged connection string with
   a check that fails if one is added, not by reading the file once.
 
+## Phase 6.5 — Names unique within their parent
+
+Numbered 6.5 for the same reason 5.5 was: it runs before Phase 7 without
+renumbering anything that already points at "Phase 7" meaning the cloud
+topology. It is small, and it closes a defect Phase 6 exposed rather than
+building something new.
+
+**Scope:** ADR-0015 — a device, tag or folder name is unique within its
+parent among rows that are not deleted, case-insensitively; the API
+answers 409; an upgrade over a database that already holds duplicates
+renames the later rows and writes each rename to `audit_log`. The client
+shows the 409 against the name field, and disables Save while a request
+is in flight — the second as a courtesy, not as the guarantee.
+
+**Test gate:** the same create request issued twice leaves one device
+and a 409, including for a device directly under a Site and for a root
+folder, where `NULLS DISTINCT` would otherwise make the constraint do
+nothing; a name freed by a soft delete can be used again; and a
+migration run against a database seeded with duplicates renames them,
+audits each rename, and ends with the index in place.
+
+**Implementation notes:**
+
+- The trap is the null parent, and it is the same three-valued-logic
+  trap this project has now met twice. A plain unique index over
+  `(site_id, folder_id, lower(name))` silently exempts every device
+  sitting directly under a Site. PostgreSQL 17 has `NULLS NOT
+  DISTINCT`; whatever is used, the test for the null case is what
+  proves it.
+- Removing the index must make the duplicate test fail by creating a
+  second row — the mutation, as usual, is the evidence.
+- An idempotency key is deliberately not part of this. It solves a
+  different problem (the client cannot distinguish "already created" from
+  "refused"), and it belongs to whichever phase first needs machine
+  clients rather than people.
+
 ## Phase 7 — Cloud topology: edge agent, broker, store-and-forward
 
 **Scope:** the edge-agent-plus-cloud-Gateway split from the Phase 0
