@@ -620,7 +620,7 @@
               <!-- Every Site the reader may see is listed here, not only the one being
                    browsed — an alarm elsewhere is still an alarm — so each row says where. -->
               <td>{{ siteNameOf(alarm.siteId) }}</td>
-              <td>{{ alarm.tagPath }}</td>
+              <td>{{ tagPathInSite(alarm) }}</td>
               <td>
                 {{ alarm.limit === 'High' ? '≥' : '≤' }} {{ alarm.limitValue }}{{ alarm.unitSymbol ? ' ' + alarm.unitSymbol : '' }}
               </td>

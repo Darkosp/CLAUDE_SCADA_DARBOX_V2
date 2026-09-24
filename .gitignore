@@ -13,3 +13,6 @@ appsettings.Development.local.json
 
 # Deployment secrets (deploy/.env.example is the committed template)
 deploy/.env
+
+# Database backups taken by the steps in deploy/README.md
+backups/
