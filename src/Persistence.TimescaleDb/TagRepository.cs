@@ -40,16 +40,23 @@ public sealed class TagRepository : ITagRepository
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        await connection.ExecuteAsync(new CommandDefinition(
-            """
-            INSERT INTO tag (id, device_id, name, value_kind, unit_symbol, unit_dimension,
-                             unit_factor_to_si, unit_offset_to_si, source_address, is_writable)
-            VALUES (@Id, @DeviceId, @Name, @ValueKind, @UnitSymbol, @UnitDimension,
-                    @UnitFactorToSi, @UnitOffsetToSi, @SourceAddress, @IsWritable)
-            """,
-            ToParameters(tag),
-            cancellationToken: cancellationToken))
-            .ConfigureAwait(false);
+        try
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO tag (id, device_id, name, value_kind, unit_symbol, unit_dimension,
+                                 unit_factor_to_si, unit_offset_to_si, source_address, is_writable)
+                VALUES (@Id, @DeviceId, @Name, @ValueKind, @UnitSymbol, @UnitDimension,
+                        @UnitFactorToSi, @UnitOffsetToSi, @SourceAddress, @IsWritable)
+                """,
+                ToParameters(tag),
+                cancellationToken: cancellationToken))
+                .ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (UniqueNames.Conflict(exception, tag: tag.Name) is { } conflict)
+        {
+            throw conflict;
+        }
     }
 
     public async Task UpdateAsync(Tag tag, CancellationToken cancellationToken)
@@ -59,21 +66,29 @@ public sealed class TagRepository : ITagRepository
         // would silently reinterpret historian rows already keyed by this tag's ID.
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        var updated = await connection.ExecuteAsync(new CommandDefinition(
-            """
-            UPDATE tag
-            SET name = @Name,
-                unit_symbol = @UnitSymbol,
-                unit_dimension = @UnitDimension,
-                unit_factor_to_si = @UnitFactorToSi,
-                unit_offset_to_si = @UnitOffsetToSi,
-                source_address = @SourceAddress,
-                is_writable = @IsWritable
-            WHERE id = @Id AND deleted_at IS NULL
-            """,
-            ToParameters(tag),
-            cancellationToken: cancellationToken))
-            .ConfigureAwait(false);
+        int updated;
+        try
+        {
+            updated = await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE tag
+                SET name = @Name,
+                    unit_symbol = @UnitSymbol,
+                    unit_dimension = @UnitDimension,
+                    unit_factor_to_si = @UnitFactorToSi,
+                    unit_offset_to_si = @UnitOffsetToSi,
+                    source_address = @SourceAddress,
+                    is_writable = @IsWritable
+                WHERE id = @Id AND deleted_at IS NULL
+                """,
+                ToParameters(tag),
+                cancellationToken: cancellationToken))
+                .ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (UniqueNames.Conflict(exception, tag: tag.Name) is { } conflict)
+        {
+            throw conflict;
+        }
 
         if (updated == 0)
         {

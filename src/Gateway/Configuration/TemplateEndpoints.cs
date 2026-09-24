@@ -79,6 +79,10 @@ internal static class TemplateEndpoints
             {
                 return Results.BadRequest(new { error = exception.Message });
             }
+            catch (ConfigurationConflictException exception)
+            {
+                return Results.Conflict(new { error = exception.Message });
+            }
         }).AdminWrite("template.add_tag", "device_template", "templateId");
 
         app.MapDelete("/api/templates/{templateId:guid}/tags/{templateTagId:guid}", async (
@@ -132,6 +136,10 @@ internal static class TemplateEndpoints
                 // Nothing was written — the addresses are resolved before the first
                 // insert — so this is a request to fix, not a half-created device.
                 return Results.BadRequest(new { error = exception.Message });
+            }
+            catch (ConfigurationConflictException exception)
+            {
+                return Results.Conflict(new { error = exception.Message });
             }
 
             await reloader.ReloadAsync(cancellationToken);
