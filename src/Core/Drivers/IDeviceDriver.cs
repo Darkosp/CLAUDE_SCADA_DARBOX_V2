@@ -9,10 +9,16 @@ namespace ScadaDarbox.Core.Drivers;
 public sealed record DriverTag(Guid TagId, string SourceAddress, TagValueKind ValueKind);
 
 /// <summary>
-/// A live connection to one device. Implemented by driver modules, never by core:
-/// this contract is protocol-agnostic and core carries no knowledge of any specific
+/// A live connection to one <em>polled</em> device: Core asks, on the device's scan interval,
+/// and the driver answers with what the device says now. Implemented by driver modules, never
+/// by core: this contract is protocol-agnostic and core carries no knowledge of any specific
 /// protocol (ADR-0002).
 /// </summary>
+/// <remarks>
+/// A device that publishes rather than answers implements <see cref="IPushingDeviceDriver"/>
+/// instead (ADR-0016). The two are distinct types on purpose: a pushing driver has no honest
+/// answer to "what is the value now", so it is never given a method that asks.
+/// </remarks>
 public interface IDeviceDriver : IAsyncDisposable
 {
     /// <summary>Establishes the connection. May be called again to reconnect.</summary>
@@ -37,7 +43,7 @@ public interface IDeviceDriver : IAsyncDisposable
 }
 
 /// <summary>
-/// Creates drivers for the devices of one protocol. Driver modules register an
+/// Creates polled drivers for the devices of one protocol. Driver modules register an
 /// implementation against core's contracts at compile time; nothing is discovered
 /// by reflection or loaded dynamically (ADR-0002).
 /// </summary>

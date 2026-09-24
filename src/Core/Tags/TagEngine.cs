@@ -8,6 +8,12 @@ namespace ScadaDarbox.Core.Tags;
 /// The read path from the Phase 0 architecture: driver readings land here, update the
 /// current value, and fan out to (a) the historian and (b) every push subscriber.
 /// </summary>
+/// <remarks>
+/// Two ways in, one per driver shape (ADR-0016). A polled driver's readings are the device's
+/// answer to "what is it now", and each one becomes current as it comes. A pushing driver's
+/// samples may arrive late and out of order; they all go to history, but a tag's current value
+/// only moves forward in source time — and silence past the driver's limit reads as loss.
+/// </remarks>
 public sealed class TagEngine : ITagEngine
 {
     private readonly TagCatalogSource _catalogSource;
@@ -15,6 +21,12 @@ public sealed class TagEngine : ITagEngine
     private readonly IReadOnlyList<ITagValueSubscriber> _subscribers;
     private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<Guid, TagSnapshot> _current = new();
+
+    // Pushed tags only (ADR-0016): the source time of the last real sample that became current,
+    // when it arrived, and whether its silence has already been reported, so a sweep does not
+    // republish the same loss every time it runs.
+    private readonly Lock _pushedGate = new();
+    private readonly Dictionary<Guid, PushedState> _pushed = [];
 
     public TagEngine(
         TagCatalogSource catalogSource,
@@ -58,6 +70,11 @@ public sealed class TagEngine : ITagEngine
                 continue;
             }
 
+            // Every polled reading becomes current, in the order it came, whatever its source
+            // time. Deliberately not the pushed rule below: a polled driver's Bad reading is
+            // stamped with the Gateway's clock, while its Good ones may carry the device's
+            // (OPC UA). A device clock ahead of the Gateway's would make "never backwards" keep
+            // the last Good value on screen while the device is unreachable (ADR-0003).
             var snapshot = new TagSnapshot(
                 reading.TagId,
                 catalog.PathOf(reading.TagId),
@@ -77,11 +94,123 @@ public sealed class TagEngine : ITagEngine
                 reading.Quality));
         }
 
+        await PublishAsync(samples, snapshots, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task AcceptPushedAsync(IReadOnlyList<TagReading> samples, CancellationToken cancellationToken)
+    {
         if (samples.Count == 0)
         {
             return;
         }
 
+        var arrivedAt = _timeProvider.GetUtcNow();
+        var catalog = _catalogSource.Current;
+
+        var history = new List<HistorianSample>(samples.Count);
+        var becameCurrent = new List<TagSnapshot>();
+
+        // In source-timestamp order per tag (ADR-0016), so a batch that arrives shuffled still
+        // writes its history in order and leaves each tag's newest sample current.
+        var ordered = samples
+            .Where(sample => catalog.FindTag(sample.TagId) is not null)
+            .OrderBy(sample => sample.TagId)
+            .ThenBy(sample => sample.SourceTimestampUtc);
+
+        foreach (var sample in ordered)
+        {
+            var tag = catalog.FindTag(sample.TagId)!;
+
+            // Late is not wrong: every sample is kept, at its own source time (ADR-0003).
+            history.Add(new HistorianSample(
+                sample.TagId,
+                sample.Value,
+                sample.SourceTimestampUtc,
+                arrivedAt,
+                sample.Quality));
+
+            lock (_pushedGate)
+            {
+                // Only a sample newer than the last real one moves the current value. Anything
+                // else — a late arrival, a replay of the same sample — would move it backwards
+                // in time, or undo a loss that silence had already been reported against.
+                if (_pushed.TryGetValue(sample.TagId, out var state)
+                    && sample.SourceTimestampUtc <= state.LastRealSourceTimestamp)
+                {
+                    continue;
+                }
+
+                _pushed[sample.TagId] = new PushedState(sample.SourceTimestampUtc, arrivedAt, Silenced: false);
+            }
+
+            var snapshot = new TagSnapshot(
+                sample.TagId,
+                catalog.PathOf(sample.TagId),
+                sample.Value,
+                sample.SourceTimestampUtc,
+                sample.Quality,
+                tag.Unit?.Symbol);
+
+            _current[sample.TagId] = snapshot;
+            becameCurrent.Add(snapshot);
+        }
+
+        // Readers and alarms see only what became current: an alarm evaluated on a late sample
+        // would change state on the strength of the past (ADR-0016).
+        await PublishAsync(history, becameCurrent, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task MarkSilentTagsAsync(
+        IReadOnlyCollection<Guid> tagIds,
+        TimeSpan stalenessLimit,
+        CancellationToken cancellationToken)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var silenced = new List<TagSnapshot>();
+
+        lock (_pushedGate)
+        {
+            foreach (var tagId in tagIds)
+            {
+                if (!_pushed.TryGetValue(tagId, out var state)
+                    || state.Silenced
+                    || now - state.ArrivedAt <= stalenessLimit
+                    || !_current.TryGetValue(tagId, out var current))
+                {
+                    continue;
+                }
+
+                // Bad, with no value and the time of the last real sample. What is known is when
+                // something was last measured, and nothing about what it is now: not "unchanged",
+                // not the last value carried forward, and not a timestamp nobody measured.
+                var loss = current with
+                {
+                    Value = null,
+                    Quality = Quality.Bad,
+                    SourceTimestampUtc = state.LastRealSourceTimestamp,
+                };
+
+                _pushed[tagId] = state with { Silenced = true };
+                _current[tagId] = loss;
+                silenced.Add(loss);
+            }
+        }
+
+        // Readers and alarms are told; history is not. The silence is a gap there, and the
+        // chart already draws a gap as a gap (ADR-0016).
+        await PublishAsync([], silenced, cancellationToken).ConfigureAwait(false);
+    }
+
+    public TagSnapshot? GetCurrent(Guid tagId) => _current.GetValueOrDefault(tagId);
+
+    public IReadOnlyList<TagSnapshot> GetAllCurrent() => _current.Values.ToList();
+
+    /// <summary>Hands samples to the historian and snapshots to every push subscriber.</summary>
+    private async Task PublishAsync(
+        IReadOnlyList<HistorianSample> samples,
+        IReadOnlyList<TagSnapshot> snapshots,
+        CancellationToken cancellationToken)
+    {
         // Recording a value and acting on it are independent (ADR-0013). If a failed historian
         // write — or a failing push to one subscriber — stopped the rest, a database outage
         // would also stop alarm evaluation: nothing watched, exactly when the system still
@@ -89,24 +218,30 @@ public sealed class TagEngine : ITagEngine
         // loop still reports it.
         var failures = new List<Exception>();
 
-        try
-        {
-            await _historian.WriteAsync(samples, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            failures.Add(exception);
-        }
-
-        foreach (var subscriber in _subscribers)
+        if (samples.Count > 0)
         {
             try
             {
-                await subscriber.OnTagValuesAsync(snapshots, cancellationToken).ConfigureAwait(false);
+                await _historian.WriteAsync(samples, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 failures.Add(exception);
+            }
+        }
+
+        if (snapshots.Count > 0)
+        {
+            foreach (var subscriber in _subscribers)
+            {
+                try
+                {
+                    await subscriber.OnTagValuesAsync(snapshots, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    failures.Add(exception);
+                }
             }
         }
 
@@ -121,7 +256,5 @@ public sealed class TagEngine : ITagEngine
         }
     }
 
-    public TagSnapshot? GetCurrent(Guid tagId) => _current.GetValueOrDefault(tagId);
-
-    public IReadOnlyList<TagSnapshot> GetAllCurrent() => _current.Values.ToList();
+    private sealed record PushedState(DateTimeOffset LastRealSourceTimestamp, DateTimeOffset ArrivedAt, bool Silenced);
 }
