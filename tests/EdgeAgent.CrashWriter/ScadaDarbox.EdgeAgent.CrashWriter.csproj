@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Test tool only: a separate process that writes the edge buffer, so a test can kill it for
+       real — mid-transaction — and reopen what it left. Not part of the edge agent. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EdgeAgent\ScadaDarbox.EdgeAgent.csproj" />
+  </ItemGroup>
+
+</Project>

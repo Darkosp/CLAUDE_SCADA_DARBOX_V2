@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The edge agent (Phase 7): reads the plant's devices, buffers on disk, and ships samples to
+    the cloud Gateway over MQTT (ADR-0017).
+
+    Deliberately NOT Native AOT and NOT trimmed (ADR-0018). The OPC UA stack builds objects by
+    reflection; under AOT it fails before it reaches the network, and trimming removes what
+    reflection needs for the same reason. Do not turn either on to make the binary smaller.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishAot>false</PublishAot>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\ScadaDarbox.Core.csproj" />
+    <ProjectReference Include="..\Modules\Drivers.Modbus\ScadaDarbox.Modules.Drivers.Modbus.csproj" />
+    <ProjectReference Include="..\Modules\Drivers.OpcUa\ScadaDarbox.Modules.Drivers.OpcUa.csproj" />
+    <!-- For the wire format only (SamplePayload), so the edge and the Gateway share one definition. -->
+    <ProjectReference Include="..\Modules\Drivers.Mqtt\ScadaDarbox.Modules.Drivers.Mqtt.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ADR-0018: the edge buffer. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ScadaDarbox.EdgeAgent.Tests" />
+    <InternalsVisibleTo Include="ScadaDarbox.EdgeAgent.CrashWriter" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
