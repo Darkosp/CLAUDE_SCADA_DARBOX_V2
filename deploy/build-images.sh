@@ -32,5 +32,6 @@ build migrator        src/Migrator/Dockerfile
 build gateway         src/Gateway/Dockerfile
 build modbus-sim      tools/ModbusSimulator/Dockerfile
 build opcua-sim       tools/OpcUaSimulator/Dockerfile
+build edge-agent      src/EdgeAgent/Dockerfile
 
-echo "Built scada-darbox/{migrator,gateway,modbus-sim,opcua-sim}:${tag} from ${commit}."
+echo "Built scada-darbox/{migrator,gateway,modbus-sim,opcua-sim,edge-agent}:${tag} from ${commit}."

@@ -50,14 +50,20 @@ public sealed class UplinkService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var client = new MqttClientFactory().CreateMqttClient();
-        var connection = new MqttClientOptionsBuilder()
+        var builder = new MqttClientOptionsBuilder()
             .WithTcpServer(_options.Broker.Host, _options.Broker.Port)
             .WithClientId($"scada-edge-{_options.Id}")
             // MQTT 5, not 3.1.1: a 3.1.1 PUBACK has no reason code, and a broker that refuses a
             // publish — an ACL outside this edge's prefix — acknowledges it all the same. Removing
             // on that acknowledgement would delete samples the broker threw away (ADR-0017).
-            .WithProtocolVersion(MqttProtocolVersion.V500)
-            .Build();
+            .WithProtocolVersion(MqttProtocolVersion.V500);
+
+        if (_options.Broker.UsesTls)
+        {
+            builder = builder.WithMutualTls(_options.Broker.TlsFiles);
+        }
+
+        var connection = builder.Build();
 
         try
         {
@@ -147,6 +153,9 @@ public sealed class UplinkService : BackgroundService
                     .WithTopic(_options.SamplesTopic)
                     .WithPayload(payload)
                     .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                    // Not to expire anything: the broker counts it down while it holds the
+                    // message, which tells the receiver how long it waited (SamplePayload).
+                    .WithMessageExpiryInterval(SamplePayload.MessageExpirySeconds)
                     .Build(),
                 cancellationToken).ConfigureAwait(false);
 

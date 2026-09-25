@@ -1,0 +1,30 @@
+{
+  "Edge": {
+    "Buffer": {
+      "MaxPendingSamples": 1000000
+    },
+    "Devices": [
+      {
+        "Name": "Pump skid",
+        "Driver": "opc-ua",
+        "ScanIntervalMs": 1000,
+        "Settings": {
+          "endpointUrl": "opc.tcp://192.0.2.10:4840/Server",
+          "acceptUntrustedCertificates": "false"
+        },
+        "Tags": [
+          { "Id": "00000000-0000-0000-0000-000000000000", "Address": "ns=2;s=Pump1.Pressure", "Kind": "Numeric" }
+        ]
+      },
+      {
+        "Name": "Discharge PLC",
+        "Driver": "modbus-tcp",
+        "ScanIntervalMs": 1000,
+        "Settings": { "host": "192.0.2.20", "port": "502" },
+        "Tags": [
+          { "Id": "00000000-0000-0000-0000-000000000000", "Address": "holding:0", "Kind": "Numeric" }
+        ]
+      }
+    ]
+  }
+}
