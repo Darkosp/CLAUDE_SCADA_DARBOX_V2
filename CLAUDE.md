@@ -220,8 +220,13 @@ src/
     Drivers.Modbus/          Modbus TCP driver (Phase 1)
     Drivers.OpcUa/           (Phase 4)
     Drivers.Mqtt/            (Phase 4)
-  EdgeAgent/                .NET Native AOT edge process (cloud topology,
-                            not needed until that topology is built)
+  EdgeAgent/                edge process for the cloud topology (Phase 7):
+                            acquisition, an on-disk SQLite buffer, and the
+                            uplink. Self-contained on the ordinary runtime,
+                            **not** Native AOT and not trimmed — ADR-0018,
+                            because the OPC UA stack builds objects by
+                            reflection and fails under AOT before it reaches
+                            the network
   Web/                      Angular application
 tools/
   ModbusSimulator/          simulated device used by the Phase 1 test gate
