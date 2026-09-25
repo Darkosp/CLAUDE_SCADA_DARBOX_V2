@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using MQTTnet;
 using MQTTnet.Formatter;
 using MQTTnet.Protocol;
+using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.EdgeAgent.Buffer;
 using ScadaDarbox.Modules.Drivers.Mqtt;
 
@@ -15,9 +16,16 @@ namespace ScadaDarbox.EdgeAgent.Uplink;
 /// filling meanwhile, and nothing is lost unless it fills past its bound — which is recorded.
 /// </summary>
 /// <remarks>
+/// <para>
 /// At least once: a batch the broker received but whose acknowledgement was lost is sent again.
 /// The cloud Gateway makes ingestion idempotent per (tag, source timestamp) rather than trusting
-/// that duplicates will not happen (ADR-0017, Phase 7 step 4).
+/// that duplicates will not happen (ADR-0017).
+/// </para>
+/// <para>
+/// Every message also carries this edge's clock at the moment of sending, and any lost windows
+/// not yet reported. A report is marked sent under the same acknowledgement as the samples it
+/// travelled with; until then it goes out again with the next message.
+/// </para>
 /// </remarks>
 public sealed class UplinkService : BackgroundService
 {
@@ -29,12 +37,14 @@ public sealed class UplinkService : BackgroundService
     private readonly EdgeOptions _options;
     private readonly SampleBuffer _buffer;
     private readonly ILogger<UplinkService> _logger;
+    private readonly TimeProvider _clock;
 
-    public UplinkService(IOptions<EdgeOptions> options, SampleBuffer buffer, ILogger<UplinkService> logger)
+    public UplinkService(IOptions<EdgeOptions> options, SampleBuffer buffer, ILogger<UplinkService> logger, TimeProvider? clock = null)
     {
         _options = options.Value;
         _buffer = buffer;
         _logger = logger;
+        _clock = clock ?? TimeProvider.System;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -78,16 +88,19 @@ public sealed class UplinkService : BackgroundService
                 }
 
                 var batch = _buffer.Peek(BatchSize);
-                if (batch.Count == 0)
+                var losses = _buffer.TakeLossesToSend();
+                if (batch.Count == 0 && losses.Count == 0)
                 {
                     await Task.Delay(IdleDelay, stoppingToken).ConfigureAwait(false);
                     continue;
                 }
 
-                if (await SendAsync(client, batch, stoppingToken).ConfigureAwait(false))
+                if (await SendAsync(client, batch, losses, stoppingToken).ConfigureAwait(false))
                 {
-                    // Removed only now, after the broker has said it has them.
-                    _buffer.Acknowledge(batch[^1].Sequence);
+                    // Removed, and reported, only now — after the broker has said it has them.
+                    _buffer.Acknowledge(
+                        batch.Count > 0 ? batch[^1].Sequence : null,
+                        losses.Select(loss => loss.LossId).ToList());
                 }
                 else
                 {
@@ -116,14 +129,23 @@ public sealed class UplinkService : BackgroundService
     }
 
     /// <summary>Publishes one batch at QoS 1; true only when the broker acknowledged it.</summary>
-    private async Task<bool> SendAsync(IMqttClient client, IReadOnlyList<BufferedSample> batch, CancellationToken cancellationToken)
+    private async Task<bool> SendAsync(
+        IMqttClient client,
+        IReadOnlyList<BufferedSample> batch,
+        IReadOnlyList<LostWindow> losses,
+        CancellationToken cancellationToken)
     {
         try
         {
+            var payload = SamplePayload.Write(
+                batch.Select(sample => sample.Reading),
+                losses.Select(loss => new SourceLoss(loss.LossId, loss.Count, loss.FromSourceUtc, loss.ToSourceUtc)),
+                _clock.GetUtcNow());
+
             var result = await client.PublishAsync(
                 new MqttApplicationMessageBuilder()
                     .WithTopic(_options.SamplesTopic)
-                    .WithPayload(SamplePayload.Write(batch.Select(sample => sample.Reading)))
+                    .WithPayload(payload)
                     .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
                     .Build(),
                 cancellationToken).ConfigureAwait(false);

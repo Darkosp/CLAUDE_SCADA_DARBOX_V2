@@ -708,7 +708,10 @@ while the link is down.
    unverified, and must be built and run before edge hardware is chosen.
 4. The cloud side: idempotent ingestion per (tag, source timestamp), the
    dropped-window journal entry, the skew journal entry.
-5. Compose for the cloud topology, and the deployment guide beside
+5. TLS, per-edge certificates and broker ACLs; the Gateway's persistent
+   session and acknowledge-after-store (the ADR-0017 addendum); Mosquitto's
+   queue limits set so the broker does not discard what it is holding.
+   Then Compose for the cloud topology and the deployment guide beside
    `deploy/README.md`.
 6. The hand walk, with the link cut for real.
 

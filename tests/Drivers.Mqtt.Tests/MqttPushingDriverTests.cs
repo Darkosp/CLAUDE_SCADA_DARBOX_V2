@@ -42,12 +42,30 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
         var sink = new RecordingSink();
 
         await using var run = await StartAsync(sink);
-        await PublishAsync(SamplePayload.Write([new TagReading(Pressure, new TagValue.Numeric(4.2), measuredAt, Quality.Good)]));
+        await PublishAsync(Samples([new TagReading(Pressure, new TagValue.Numeric(4.2), measuredAt, Quality.Good)]));
 
         var sample = Assert.Single(await sink.WaitForAsync(1));
         Assert.Equal(new TagValue.Numeric(4.2), sample.Value);
         Assert.Equal(measuredAt, sample.SourceTimestampUtc);
         Assert.Equal(Quality.Good, sample.Quality);
+    }
+
+    [Fact]
+    public async Task The_senders_clock_and_its_loss_reports_are_handed_over_beside_the_samples()
+    {
+        var sink = new RecordingSink();
+        var sentAt = new DateTimeOffset(2026, 9, 25, 8, 0, 0, TimeSpan.Zero);
+        var loss = new SourceLoss(Guid.NewGuid(), 1200, sentAt.AddHours(-5), sentAt.AddHours(-4));
+
+        await using var run = await StartAsync(sink);
+        await PublishAsync(SamplePayload.Write(
+            [new TagReading(Pressure, new TagValue.Numeric(4.2), sentAt.AddSeconds(-1), Quality.Good)],
+            [loss],
+            sentAt));
+
+        await sink.WaitForAsync(1);
+        Assert.Equal(loss, Assert.Single(sink.Losses));
+        Assert.Equal(sentAt, Assert.Single(sink.Clocks));
     }
 
     [Fact]
@@ -57,7 +75,7 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
         var start = DateTimeOffset.UtcNow.AddMinutes(-3);
 
         await using var run = await StartAsync(sink);
-        await PublishAsync(SamplePayload.Write(Enumerable.Range(0, 5)
+        await PublishAsync(Samples(Enumerable.Range(0, 5)
             .Select(i => new TagReading(Pressure, new TagValue.Numeric(i), start.AddSeconds(i), Quality.Good))));
 
         Assert.Equal(5, (await sink.WaitForAsync(5)).Count);
@@ -72,7 +90,7 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
         await using var run = await StartAsync(sink);
         await PublishAsync("this is not a message");
         await PublishAsync("""{ "version": 99, "samples": [] }""");
-        await PublishAsync(SamplePayload.Write([new TagReading(Pressure, new TagValue.Numeric(1.5), DateTimeOffset.UtcNow, Quality.Good)]));
+        await PublishAsync(Samples([new TagReading(Pressure, new TagValue.Numeric(1.5), DateTimeOffset.UtcNow, Quality.Good)]));
 
         var sample = Assert.Single(await sink.WaitForAsync(1));
         Assert.Equal(new TagValue.Numeric(1.5), sample.Value);
@@ -94,7 +112,7 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
         _broker = await StartBrokerAsync();
 
         await _subscribed.Task.WaitAsync(TimeSpan.FromSeconds(15));
-        await PublishAsync(SamplePayload.Write([new TagReading(Pressure, new TagValue.Numeric(2.5), DateTimeOffset.UtcNow, Quality.Good)]));
+        await PublishAsync(Samples([new TagReading(Pressure, new TagValue.Numeric(2.5), DateTimeOffset.UtcNow, Quality.Good)]));
 
         Assert.Equal(new TagValue.Numeric(2.5), Assert.Single(await sink.WaitForAsync(1)).Value);
     }
@@ -118,7 +136,7 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
         using var second = new CancellationTokenSource();
         var secondRun = driver.RunAsync(Tags, sink, second.Token);
 
-        await PublishAsync(SamplePayload.Write([new TagReading(Pressure, new TagValue.Numeric(3.5), DateTimeOffset.UtcNow, Quality.Good)]));
+        await PublishAsync(Samples([new TagReading(Pressure, new TagValue.Numeric(3.5), DateTimeOffset.UtcNow, Quality.Good)]));
         await sink.WaitForAsync(1);
 
         // Long enough for a second delivery to have arrived, if there were going to be one.
@@ -185,6 +203,9 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
         await publisher.DisconnectAsync();
     }
 
+    /// <summary>Samples alone, sent now by the sender's clock.</summary>
+    private static string Samples(IEnumerable<TagReading> samples) => SamplePayload.Write(samples, [], DateTimeOffset.UtcNow);
+
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private static int FreePort()
@@ -200,9 +221,25 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
 
         public List<TagReading> Samples => Calls.SelectMany(call => call).ToList();
 
+        public ConcurrentQueue<SourceLoss> Losses { get; } = new();
+
+        public ConcurrentQueue<DateTimeOffset> Clocks { get; } = new();
+
         public Task AcceptAsync(IReadOnlyList<TagReading> samples, CancellationToken cancellationToken)
         {
             Calls.Enqueue(samples);
+            return Task.CompletedTask;
+        }
+
+        public Task ReportLossAsync(SourceLoss loss, CancellationToken cancellationToken)
+        {
+            Losses.Enqueue(loss);
+            return Task.CompletedTask;
+        }
+
+        public Task ReportSourceClockAsync(DateTimeOffset sourceClockUtc, CancellationToken cancellationToken)
+        {
+            Clocks.Enqueue(sourceClockUtc);
             return Task.CompletedTask;
         }
 

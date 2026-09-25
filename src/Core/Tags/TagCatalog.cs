@@ -90,6 +90,12 @@ public sealed class TagCatalog
     /// </summary>
     public string PathOf(Guid tagId) => _pathsByTagId.GetValueOrDefault(tagId, "<unknown>");
 
+    /// <summary>
+    /// The derived display path for a device, e.g. <c>Skopje/Pump House</c>. Presentation only.
+    /// </summary>
+    public string DevicePathOf(Guid deviceId) =>
+        _devicesById.TryGetValue(deviceId, out var device) ? string.Join('/', DeviceSegments(device)) : "<unknown>";
+
     private string BuildPath(Tag tag)
     {
         if (!_devicesById.TryGetValue(tag.DeviceId, out var device))
@@ -97,6 +103,14 @@ public sealed class TagCatalog
             return tag.Name;
         }
 
+        var segments = DeviceSegments(device);
+        segments.Add(tag.Name);
+
+        return string.Join('/', segments);
+    }
+
+    private List<string> DeviceSegments(Device device)
+    {
         var segments = new List<string>();
 
         if (_sitesById.TryGetValue(device.SiteId, out var site))
@@ -106,9 +120,7 @@ public sealed class TagCatalog
 
         segments.AddRange(FolderNamesFromSite(device.FolderId));
         segments.Add(device.Name);
-        segments.Add(tag.Name);
-
-        return string.Join('/', segments);
+        return segments;
     }
 
     /// <summary>

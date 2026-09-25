@@ -194,6 +194,11 @@ public static class GatewayApp
         services.AddHostedService<AlarmEngineLifecycle>();
         services.AddHostedService<ShelveExpirySweeper>();
         services.AddSingleton<DriverShapes>();
+
+        // How far a pushing source's clock may disagree with this one before the journal says
+        // so (ADR-0017). Transit time is inside the comparison, so this is not a precision.
+        services.AddSingleton(new PushedSourceSettings(
+            builder.Configuration.GetValue("PushedSources:ClockSkewTolerance", PushedSourceSettings.DefaultClockSkewTolerance)));
         services.AddHostedService<DeviceScannerService>();
     }
 

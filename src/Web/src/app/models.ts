@@ -201,6 +201,9 @@ export interface LoginResponse {
  * JournalGap — which belong to no Site because an outage applies to the whole Gateway.
  * Every signed-in user sees those; alarm events are filtered to the reader's Sites by the
  * Gateway, never here.
+ *
+ * SamplesLost and SourceClockSkew are about a pushing source — an edge (ADR-0017). They name
+ * a device and its Site, and no alarm.
  */
 export interface AlarmEvent {
   type: string;
@@ -222,6 +225,49 @@ export interface AlarmEvent {
   gapFromUtc: string | null;
   gapUntilUtc: string | null;
   unrecordedTransitions: number | null;
+  deviceId: string | null;
+  lostSamples: number | null;
+  clockSkewSeconds: number | null;
+}
+
+/**
+ * Whether an entry is the engine speaking: it names neither an alarm nor a Site. A source's
+ * own event names no alarm either, but it does name the Site its device is on.
+ */
+export function isEngineEvent(entry: Pick<AlarmEvent, 'occurrenceId' | 'siteId'>): boolean {
+  return entry.occurrenceId === null && entry.siteId === null;
+}
+
+/**
+ * What a source's own journal entry says, in words: how many samples it dropped, or how far
+ * its clock is from the Gateway's and in which direction. Null for every other entry.
+ */
+export function describeSourceEvent(
+  entry: Pick<AlarmEvent, 'type' | 'lostSamples' | 'clockSkewSeconds'>,
+): string | null {
+  if (entry.type === 'SamplesLost' && entry.lostSamples !== null) {
+    return `${entry.lostSamples} ${entry.lostSamples === 1 ? 'sample' : 'samples'} dropped at the source`;
+  }
+
+  if (entry.type === 'SourceClockSkew' && entry.clockSkewSeconds !== null) {
+    const direction = entry.clockSkewSeconds > 0 ? 'ahead of' : 'behind';
+    return `source clock ${formatDuration(Math.abs(entry.clockSkewSeconds))} ${direction} the Gateway's`;
+  }
+
+  return null;
+}
+
+/** A length of time as a reader would say it: seconds, then minutes, then hours. */
+function formatDuration(seconds: number): string {
+  if (seconds < 120) {
+    return `${Math.round(seconds)} s`;
+  }
+
+  if (seconds < 7200) {
+    return `${Math.round(seconds / 60)} min`;
+  }
+
+  return `${(seconds / 3600).toFixed(1)} h`;
 }
 
 /**

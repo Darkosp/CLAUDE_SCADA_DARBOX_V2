@@ -13,10 +13,15 @@ namespace ScadaDarbox.Modules.Drivers.Mqtt;
 /// <remarks>
 /// <code>
 /// {
-///   "version": 1,
+///   "version": 2,
+///   "sentAtUtc": "2026-09-24T12:00:05Z",
 ///   "samples": [
 ///     { "tagId": "…", "sourceTimestampUtc": "2026-09-24T12:00:00Z", "quality": "Good",
 ///       "value": { "kind": "numeric", "numeric": 4.2 } }
+///   ],
+///   "lost": [
+///     { "lossId": "…", "count": 1200,
+///       "fromSourceUtc": "2026-09-24T03:00:00Z", "toSourceUtc": "2026-09-24T03:20:00Z" }
 ///   ]
 /// }
 /// </code>
@@ -26,13 +31,22 @@ namespace ScadaDarbox.Modules.Drivers.Mqtt;
 /// a Good sample without a value is a contradiction and is refused, never read as zero.
 /// </para>
 /// <para>
+/// <c>sentAtUtc</c> is the sender's clock when it sent the message — not when anything was
+/// measured — so the receiver can compare clocks without guessing from sample times, which may be
+/// hours old in a backlog. <c>lost</c> lists samples the sender measured and then dropped
+/// (ADR-0017); a report is repeated until the message carrying it is acknowledged, so each has an
+/// id and the receiver records it once.
+/// </para>
+/// <para>
 /// This is a compatibility surface we own across versions. A message of any other version is
-/// refused whole rather than guessed at.
+/// refused whole rather than guessed at. Version 1 had neither field: a version 1 reader would
+/// have read a version 2 message and silently ignored its losses, which is why these fields
+/// needed a new version rather than an optional addition.
 /// </para>
 /// </remarks>
 public static class SamplePayload
 {
-    public const int Version = 1;
+    public const int Version = 2;
 
     /// <summary>Reads one message for the given tags.</summary>
     /// <param name="tags">The tags the receiving device has, by id; samples for any other tag are not accepted.</param>
@@ -63,9 +77,20 @@ public static class SamplePayload
             return SamplePayloadResult.Refused($"version {version} is not understood (this build reads version {Version})");
         }
 
+        if (ReadTime(message["sentAtUtc"], out var sentAt) is { } clockProblem)
+        {
+            return SamplePayloadResult.Refused($"sentAtUtc: {Describe(clockProblem)}");
+        }
+
         if (message["samples"] is not JsonArray samples)
         {
             return SamplePayloadResult.Refused("no samples array");
+        }
+
+        if (message["lost"] is not JsonArray lostArray)
+        {
+            // Required, even empty: an absent list and "nothing was lost" must not look alike.
+            return SamplePayloadResult.Refused("no lost array");
         }
 
         var accepted = new List<TagReading>(samples.Count);
@@ -88,11 +113,28 @@ public static class SamplePayload
             }
         }
 
-        return new SamplePayloadResult(accepted, rejected, unknown, Refusal: null);
+        var lost = new List<SourceLoss>(lostArray.Count);
+        for (var index = 0; index < lostArray.Count; index++)
+        {
+            if (ReadLoss(lostArray[index]) is { } loss)
+            {
+                lost.Add(loss);
+            }
+            else
+            {
+                rejected.Add($"lost {index}: not a loss report with an id, a count of at least 1 and an ordered window of source times");
+            }
+        }
+
+        return new SamplePayloadResult(accepted, rejected, unknown, Refusal: null)
+        {
+            SentAtUtc = sentAt.ToUniversalTime(),
+            Lost = lost,
+        };
     }
 
-    /// <summary>Writes samples as one message.</summary>
-    public static string Write(IEnumerable<TagReading> samples)
+    /// <summary>Writes samples, and any losses to report, as one message sent at <paramref name="sentAtUtc"/>.</summary>
+    public static string Write(IEnumerable<TagReading> samples, IEnumerable<SourceLoss> lost, DateTimeOffset sentAtUtc)
     {
         var array = new JsonArray();
         foreach (var sample in samples)
@@ -100,13 +142,73 @@ public static class SamplePayload
             array.Add(new JsonObject
             {
                 ["tagId"] = sample.TagId.ToString(),
-                ["sourceTimestampUtc"] = sample.SourceTimestampUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+                ["sourceTimestampUtc"] = Time(sample.SourceTimestampUtc),
                 ["quality"] = sample.Quality.ToString(),
                 ["value"] = WriteValue(sample.Value),
             });
         }
 
-        return new JsonObject { ["version"] = Version, ["samples"] = array }.ToJsonString();
+        var losses = new JsonArray();
+        foreach (var loss in lost)
+        {
+            losses.Add(new JsonObject
+            {
+                ["lossId"] = loss.LossId.ToString(),
+                ["count"] = loss.Count,
+                ["fromSourceUtc"] = Time(loss.FromSourceUtc),
+                ["toSourceUtc"] = Time(loss.ToSourceUtc),
+            });
+        }
+
+        return new JsonObject
+        {
+            ["version"] = Version,
+            ["sentAtUtc"] = Time(sentAtUtc),
+            ["samples"] = array,
+            ["lost"] = losses,
+        }.ToJsonString();
+    }
+
+    private static string Time(DateTimeOffset value) => value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+
+    private static SourceLoss? ReadLoss(JsonNode? node)
+    {
+        if (node is not JsonObject loss
+            || loss["lossId"]?.GetValueKind() != JsonValueKind.String
+            || !Guid.TryParse(loss["lossId"]!.GetValue<string>(), out var lossId)
+            || loss["count"] is not JsonValue countNode
+            || !countNode.TryGetValue<long>(out var count)
+            || count < 1
+            || ReadTime(loss["fromSourceUtc"], out var from) is not null
+            || ReadTime(loss["toSourceUtc"], out var to) is not null
+            || from > to)
+        {
+            return null;
+        }
+
+        return new SourceLoss(lossId, count, from.ToUniversalTime(), to.ToUniversalTime());
+    }
+
+    /// <summary>A time with an explicit offset or Z, or why not.</summary>
+    private static SampleProblem? ReadTime(JsonNode? node, out DateTimeOffset time)
+    {
+        time = default;
+
+        if (node?.GetValueKind() != JsonValueKind.String)
+        {
+            return SampleProblem.NoTimestamp;
+        }
+
+        // An explicit offset or Z only. A time without one would be read in whatever zone this
+        // server is in — a time made up by the reader, not given by the sender.
+        var text = node.GetValue<string>();
+        if (!DateTimeOffset.TryParseExact(text, "O", CultureInfo.InvariantCulture, DateTimeStyles.None, out time)
+            && !DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out time))
+        {
+            return SampleProblem.NoTimestamp;
+        }
+
+        return HasOffset(text) ? null : SampleProblem.TimestampWithoutOffset;
     }
 
     private static JsonObject WriteValue(TagValue? value) => value switch
@@ -150,23 +252,9 @@ public static class SamplePayload
             return SampleProblem.UnknownTag;
         }
 
-        if (sample["sourceTimestampUtc"]?.GetValueKind() != JsonValueKind.String)
+        if (ReadTime(sample["sourceTimestampUtc"], out var measuredAt) is { } timeProblem)
         {
-            return SampleProblem.NoTimestamp;
-        }
-
-        // An explicit offset or Z only. A time without one would be read in whatever zone this
-        // server is in — a measurement time made up by the reader, not given by the source.
-        var text = sample["sourceTimestampUtc"]!.GetValue<string>();
-        if (!DateTimeOffset.TryParseExact(text, "O", CultureInfo.InvariantCulture, DateTimeStyles.None, out var measuredAt)
-            && !DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out measuredAt))
-        {
-            return SampleProblem.NoTimestamp;
-        }
-
-        if (!HasOffset(text))
-        {
-            return SampleProblem.TimestampWithoutOffset;
+            return timeProblem;
         }
 
         if (sample["quality"]?.GetValueKind() != JsonValueKind.String
@@ -248,8 +336,8 @@ public static class SamplePayload
     {
         SampleProblem.NotAnObject => "not an object",
         SampleProblem.NoTagId => "no tag id",
-        SampleProblem.NoTimestamp => "no readable source timestamp",
-        SampleProblem.TimestampWithoutOffset => "source timestamp has no offset or Z",
+        SampleProblem.NoTimestamp => "no readable timestamp",
+        SampleProblem.TimestampWithoutOffset => "timestamp has no offset or Z",
         SampleProblem.UnknownQuality => "no known quality",
         SampleProblem.BadValue => "no readable value",
         SampleProblem.GoodWithoutValue => "Good quality with no value",
@@ -269,5 +357,11 @@ public sealed record SamplePayloadResult(
     int UnknownTags,
     string? Refusal)
 {
+    /// <summary>The sender's clock when it sent the message; null only on a refused message.</summary>
+    public DateTimeOffset? SentAtUtc { get; init; }
+
+    /// <summary>Losses the sender reported, each well formed.</summary>
+    public IReadOnlyList<SourceLoss> Lost { get; init; } = [];
+
     public static SamplePayloadResult Refused(string reason) => new([], [], 0, reason);
 }

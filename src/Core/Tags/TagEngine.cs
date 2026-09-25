@@ -161,8 +161,10 @@ public sealed class TagEngine : ITagEngine
         }
 
         // Readers and alarms see only what became current: an alarm evaluated on a late sample
-        // would change state on the strength of the past (ADR-0016).
-        await PublishAsync(history, becameCurrent, cancellationToken).ConfigureAwait(false);
+        // would change state on the strength of the past (ADR-0016). History is written once per
+        // (tag, source time): a pushed batch can be delivered twice (ADR-0017), and a replay is
+        // neither current nor new.
+        await PublishAsync(history, becameCurrent, cancellationToken, once: true).ConfigureAwait(false);
     }
 
     public async Task MarkSilentTagsAsync(
@@ -241,10 +243,12 @@ public sealed class TagEngine : ITagEngine
     public IReadOnlyList<TagSnapshot> GetAllCurrent() => _current.Values.ToList();
 
     /// <summary>Hands samples to the historian and snapshots to every push subscriber.</summary>
+    /// <param name="once">Write through <see cref="IHistorian.WriteOnceAsync"/>: samples that may arrive again.</param>
     private async Task PublishAsync(
         IReadOnlyList<HistorianSample> samples,
         IReadOnlyList<TagSnapshot> snapshots,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool once = false)
     {
         // Recording a value and acting on it are independent (ADR-0013). If a failed historian
         // write — or a failing push to one subscriber — stopped the rest, a database outage
@@ -257,7 +261,14 @@ public sealed class TagEngine : ITagEngine
         {
             try
             {
-                await _historian.WriteAsync(samples, cancellationToken).ConfigureAwait(false);
+                if (once)
+                {
+                    await _historian.WriteOnceAsync(samples, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _historian.WriteAsync(samples, cancellationToken).ConfigureAwait(false);
+                }
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {

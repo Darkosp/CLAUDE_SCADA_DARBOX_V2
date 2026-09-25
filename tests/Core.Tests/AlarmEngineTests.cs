@@ -894,6 +894,23 @@ internal sealed class RecordingAlarmJournal : IAlarmJournal
         return Task.CompletedTask;
     }
 
+    public Task<bool> AppendLossOnceAsync(AlarmEvent loss, CancellationToken cancellationToken)
+    {
+        if (Failing)
+        {
+            throw new InvalidOperationException("The journal is unavailable.");
+        }
+
+        if (_all.Any(recorded => recorded.LossId == loss.LossId))
+        {
+            return Task.FromResult(false);
+        }
+
+        Appends++;
+        _all.Add(loss);
+        return Task.FromResult(true);
+    }
+
     /// <summary>All or nothing, as the database's transaction is: a failure writes none of them.</summary>
     public Task AppendAsync(IReadOnlyList<AlarmEvent> events, CancellationToken cancellationToken)
     {

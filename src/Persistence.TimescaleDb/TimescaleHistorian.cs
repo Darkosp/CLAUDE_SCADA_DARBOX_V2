@@ -55,6 +55,67 @@ public sealed class TimescaleHistorian : IHistorian
         await writer.CompleteAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<int> WriteOnceAsync(IReadOnlyList<HistorianSample> samples, CancellationToken cancellationToken)
+    {
+        if (samples.Count == 0)
+        {
+            return 0;
+        }
+
+        // Not COPY: COPY has no ON CONFLICT. One statement over parallel arrays instead, so a
+        // batch is still a single round trip. The conflict target names the partial index from
+        // migration 0011 by its columns and predicate; a duplicate inside the same batch is
+        // dropped the same way as one already stored.
+        var count = samples.Count;
+        var tagIds = new Guid[count];
+        var sourceTimes = new DateTimeOffset[count];
+        var ingestedAt = new DateTimeOffset[count];
+        var qualities = new short[count];
+        var kinds = new short?[count];
+        var numerics = new double?[count];
+        var booleans = new bool?[count];
+        var texts = new string?[count];
+        var codes = new int?[count];
+        var labels = new string?[count];
+
+        for (var index = 0; index < count; index++)
+        {
+            var sample = samples[index];
+            tagIds[index] = sample.TagId;
+            sourceTimes[index] = sample.SourceTimestampUtc.ToUniversalTime();
+            ingestedAt[index] = sample.IngestedAtUtc.ToUniversalTime();
+            qualities[index] = (short)sample.Quality;
+            kinds[index] = (short?)sample.Value?.Kind;
+            (numerics[index], booleans[index], texts[index], codes[index], labels[index]) = TagValueMapping.ToColumns(sample.Value);
+        }
+
+        await using var command = _dataSource.CreateCommand(
+            """
+            INSERT INTO tag_sample (tag_id, source_time, ingested_at, quality, value_kind,
+                                    numeric_value, boolean_value, text_value, discrete_code, discrete_label, pushed)
+            SELECT tag_id, source_time, ingested_at, quality, value_kind,
+                   numeric_value, boolean_value, text_value, discrete_code, discrete_label, true
+            FROM unnest(@tag_ids, @source_times, @ingested_at, @qualities, @kinds,
+                        @numerics, @booleans, @texts, @codes, @labels)
+                 AS s (tag_id, source_time, ingested_at, quality, value_kind,
+                       numeric_value, boolean_value, text_value, discrete_code, discrete_label)
+            ON CONFLICT (tag_id, source_time) WHERE pushed DO NOTHING
+            """);
+
+        command.Parameters.AddWithValue("tag_ids", NpgsqlDbType.Array | NpgsqlDbType.Uuid, tagIds);
+        command.Parameters.AddWithValue("source_times", NpgsqlDbType.Array | NpgsqlDbType.TimestampTz, sourceTimes);
+        command.Parameters.AddWithValue("ingested_at", NpgsqlDbType.Array | NpgsqlDbType.TimestampTz, ingestedAt);
+        command.Parameters.AddWithValue("qualities", NpgsqlDbType.Array | NpgsqlDbType.Smallint, qualities);
+        command.Parameters.AddWithValue("kinds", NpgsqlDbType.Array | NpgsqlDbType.Smallint, kinds);
+        command.Parameters.AddWithValue("numerics", NpgsqlDbType.Array | NpgsqlDbType.Double, numerics);
+        command.Parameters.AddWithValue("booleans", NpgsqlDbType.Array | NpgsqlDbType.Boolean, booleans);
+        command.Parameters.AddWithValue("texts", NpgsqlDbType.Array | NpgsqlDbType.Text, texts);
+        command.Parameters.AddWithValue("codes", NpgsqlDbType.Array | NpgsqlDbType.Integer, codes);
+        command.Parameters.AddWithValue("labels", NpgsqlDbType.Array | NpgsqlDbType.Text, labels);
+
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<HistorianSample>> ReadAsync(
         Guid tagId,
         DateTimeOffset fromUtc,

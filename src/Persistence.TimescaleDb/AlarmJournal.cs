@@ -14,7 +14,8 @@ public sealed class AlarmJournal : IAlarmJournal
     private const string Columns = """
         event_type, occurrence_id, definition_id, tag_id, site_id, source_time, recorded_at,
         actor_user_id, actor_username, alarm_limit, limit_value, value, unit_symbol, tag_path,
-        detected_after_restart, shelved_until, reason, gap_from, gap_until, unrecorded_transitions
+        detected_after_restart, shelved_until, reason, gap_from, gap_until, unrecorded_transitions,
+        device_id, lost_samples, loss_id, clock_skew_seconds
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -25,7 +26,8 @@ public sealed class AlarmJournal : IAlarmJournal
         INSERT INTO alarm_event ({Columns})
         VALUES (@event_type, @occurrence_id, @definition_id, @tag_id, @site_id, @source_time, @recorded_at,
                 @actor_user_id, @actor_username, @alarm_limit, @limit_value, @value, @unit_symbol, @tag_path,
-                @detected_after_restart, @shelved_until, @reason, @gap_from, @gap_until, @unrecorded_transitions)
+                @detected_after_restart, @shelved_until, @reason, @gap_from, @gap_until, @unrecorded_transitions,
+                @device_id, @lost_samples, @loss_id, @clock_skew_seconds)
         """;
 
     public async Task AppendAsync(AlarmEvent alarmEvent, CancellationToken cancellationToken)
@@ -58,6 +60,21 @@ public sealed class AlarmJournal : IAlarmJournal
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<bool> AppendLossOnceAsync(AlarmEvent loss, CancellationToken cancellationToken)
+    {
+        if (loss.Type != AlarmEventType.SamplesLost || loss.LossId is null)
+        {
+            throw new ArgumentException("Only a SamplesLost event with a loss id can be recorded once by its id.", nameof(loss));
+        }
+
+        // ON CONFLICT DO NOTHING needs only INSERT, which is all the application role has on
+        // this table (ADR-0013): a repeated report is simply not inserted, nothing is updated.
+        await using var command = _dataSource.CreateCommand(Insert + " ON CONFLICT (loss_id) DO NOTHING");
+        Bind(command.Parameters, loss);
+
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
+    }
+
     private static void Bind(NpgsqlParameterCollection parameters, AlarmEvent alarmEvent)
     {
         parameters.AddWithValue("event_type", alarmEvent.Type.ToString());
@@ -80,6 +97,10 @@ public sealed class AlarmJournal : IAlarmJournal
         Add(parameters, "gap_from", NpgsqlDbType.TimestampTz, alarmEvent.GapFromUtc);
         Add(parameters, "gap_until", NpgsqlDbType.TimestampTz, alarmEvent.GapUntilUtc);
         Add(parameters, "unrecorded_transitions", NpgsqlDbType.Integer, alarmEvent.UnrecordedTransitions);
+        Add(parameters, "device_id", NpgsqlDbType.Uuid, alarmEvent.DeviceId);
+        Add(parameters, "lost_samples", NpgsqlDbType.Bigint, alarmEvent.LostSamples);
+        Add(parameters, "loss_id", NpgsqlDbType.Uuid, alarmEvent.LossId);
+        Add(parameters, "clock_skew_seconds", NpgsqlDbType.Double, alarmEvent.ClockSkewSeconds);
     }
 
     public async Task<IReadOnlyList<AlarmEvent>> ReadOpenAsync(CancellationToken cancellationToken)
@@ -172,6 +193,10 @@ public sealed class AlarmJournal : IAlarmJournal
             GapFromUtc = Nullable<DateTimeOffset>(reader, 17),
             GapUntilUtc = Nullable<DateTimeOffset>(reader, 18),
             UnrecordedTransitions = Nullable<int>(reader, 19),
+            DeviceId = Nullable<Guid>(reader, 20),
+            LostSamples = Nullable<long>(reader, 21),
+            LossId = Nullable<Guid>(reader, 22),
+            ClockSkewSeconds = Nullable<double>(reader, 23),
         };
     }
 
