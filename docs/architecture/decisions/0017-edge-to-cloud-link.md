@@ -61,10 +61,18 @@ clustered broker can replace it later without touching the payload.
   ACL as well as by the Gateway. Site scoping (ADR-0011) is not weakened by
   the fact that data now arrives over a broker: an edge that publishes another
   site's topic is refused at the broker and the attempt is audited.
-- Delivery is QoS 1, and **the edge removes a batch from its buffer only when
-  the broker has acknowledged it**. At-least-once means duplicates are
-  possible; the Gateway makes ingestion idempotent per (tag, source timestamp)
-  rather than trusting that they will not happen.
+- Delivery is QoS 1, over **MQTT 5**, and **the edge removes a batch from its
+  buffer only when the broker has acknowledged it**. At-least-once means
+  duplicates are possible; the Gateway makes ingestion idempotent per (tag,
+  source timestamp) rather than trusting that they will not happen.
+
+  *Added while implementing (2026-09-25):* the protocol version is not a
+  detail. This ADR first said only "QoS 1". In MQTT 3.1.1 a `PUBACK` carries
+  no reason code, so a publish the broker **refused** arrives looking exactly
+  like one it accepted — and the edge would then delete from its buffer the
+  batch that was thrown away, silently, which is the one thing the buffer
+  exists to prevent. MQTT 5 carries the reason code. A mutation proved it:
+  under 3.1.1 a refused batch left 0 pending and 20 "acknowledged".
 
 **4. The buffer is bounded, drops oldest first, and says so.**
 

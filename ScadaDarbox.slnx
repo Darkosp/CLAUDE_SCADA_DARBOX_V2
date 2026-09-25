@@ -3,6 +3,9 @@
   <Folder Name="/src/Core/">
     <Project Path="src/Core/ScadaDarbox.Core.csproj" />
   </Folder>
+  <Folder Name="/src/EdgeAgent/">
+    <Project Path="src/EdgeAgent/ScadaDarbox.EdgeAgent.csproj" />
+  </Folder>
   <Folder Name="/src/Gateway/">
     <Project Path="src/Gateway/ScadaDarbox.Gateway.csproj" />
   </Folder>
@@ -34,6 +37,12 @@
   </Folder>
   <Folder Name="/tests/Drivers.OpcUa.Tests/">
     <Project Path="tests/Drivers.OpcUa.Tests/ScadaDarbox.Drivers.OpcUa.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/EdgeAgent.CrashWriter/">
+    <Project Path="tests/EdgeAgent.CrashWriter/ScadaDarbox.EdgeAgent.CrashWriter.csproj" />
+  </Folder>
+  <Folder Name="/tests/EdgeAgent.Tests/">
+    <Project Path="tests/EdgeAgent.Tests/ScadaDarbox.EdgeAgent.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Gateway.Tests/">
     <Project Path="tests/Gateway.Tests/ScadaDarbox.Gateway.Tests.csproj" />
