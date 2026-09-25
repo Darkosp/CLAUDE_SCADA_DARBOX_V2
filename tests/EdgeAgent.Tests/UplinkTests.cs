@@ -86,7 +86,8 @@ public sealed class UplinkTests : IAsyncLifetime
         // acknowledgement, and the samples would be deleted.
         await StartBrokerAsync(refuse: true);
 
-        using var buffer = SampleBuffer.Open(_path, maxPending: 10_000);
+        // Full, too: five dropped, so the refused message also carried a loss report.
+        using var buffer = SampleBuffer.Open(_path, maxPending: 15);
         buffer.Append(Samples(20));
 
         using var uplink = Uplink(buffer);
@@ -95,8 +96,11 @@ public sealed class UplinkTests : IAsyncLifetime
         await uplink.StopAsync(CancellationToken.None);
 
         var account = buffer.Account();
-        Assert.Equal((Pending: 20L, Acknowledged: 0L), (account.Pending, account.Acknowledged));
+        Assert.Equal((Pending: 15L, Acknowledged: 0L), (account.Pending, account.Acknowledged));
         Assert.Empty(account.Problems());
+
+        // Nor is the loss taken as reported: the cloud has not heard of it.
+        Assert.Single(buffer.UnsentLosses());
     }
 
     private UplinkService Uplink(SampleBuffer buffer) => new(
@@ -135,7 +139,9 @@ public sealed class UplinkTests : IAsyncLifetime
         var tags = new Dictionary<Guid, DriverTag> { [Tag] = new(Tag, "t", TagValueKind.Numeric) };
         _cloud.ApplicationMessageReceivedAsync += message =>
         {
-            foreach (var sample in SamplePayload.Read(message.ApplicationMessage.ConvertPayloadToString(), tags).Accepted)
+            var read = SamplePayload.Read(message.ApplicationMessage.ConvertPayloadToString(), tags);
+            Assert.Null(read.Refusal);
+            foreach (var sample in read.Accepted)
             {
                 _received.Enqueue(sample);
             }

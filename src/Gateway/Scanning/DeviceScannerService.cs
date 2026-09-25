@@ -1,4 +1,5 @@
 using System.Globalization;
+using ScadaDarbox.Core.Alarms;
 using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Model;
 using ScadaDarbox.Core.Tags;
@@ -21,6 +22,9 @@ public sealed class DeviceScannerService : BackgroundService
     private readonly ITagEngine _tagEngine;
     private readonly IReadOnlyDictionary<string, IDeviceDriverFactory> _factoriesByKey;
     private readonly IReadOnlyDictionary<string, IPushingDeviceDriverFactory> _pushingFactoriesByKey;
+    private readonly IAlarmJournal _journal;
+    private readonly TimeProvider _clock;
+    private readonly PushedSourceSettings _pushedSources;
     private readonly ILogger<DeviceScannerService> _logger;
 
     private readonly Lock _gate = new();
@@ -33,10 +37,16 @@ public sealed class DeviceScannerService : BackgroundService
         ITagEngine tagEngine,
         IEnumerable<IDeviceDriverFactory> driverFactories,
         IEnumerable<IPushingDeviceDriverFactory> pushingDriverFactories,
+        IAlarmJournal journal,
+        TimeProvider clock,
+        PushedSourceSettings pushedSources,
         ILogger<DeviceScannerService> logger)
     {
         _catalogSource = catalogSource;
         _tagEngine = tagEngine;
+        _journal = journal;
+        _clock = clock;
+        _pushedSources = pushedSources;
         _logger = logger;
 
         // Compile-time composition: the factories are whatever the composition root
@@ -263,7 +273,13 @@ public sealed class DeviceScannerService : BackgroundService
         // From here on, a tag that receives nothing is "no data since now", not merely unknown.
         _tagEngine.BeginListening(tagIds);
         var watch = WatchForSilenceAsync(device, tagIds, driver.StalenessLimit, cancellationToken);
-        var sink = new TagEngineSink(_tagEngine);
+        var recorder = new PushedSourceRecorder(
+            device,
+            _catalogSource.Current.DevicePathOf(device.Id),
+            _journal,
+            _clock,
+            _pushedSources.ClockSkewTolerance);
+        var sink = new TagEngineSink(_tagEngine, recorder, device, _logger);
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -331,11 +347,43 @@ public sealed class DeviceScannerService : BackgroundService
         }
     }
 
-    /// <summary>Where a pushing driver's samples go: the tag engine's pushed path, never the polled one.</summary>
-    private sealed class TagEngineSink(ITagEngine engine) : IPushedSampleSink
+    /// <summary>
+    /// Where a pushing driver's samples go — the tag engine's pushed path, never the polled one —
+    /// and what it reports about its source goes to the journal.
+    /// </summary>
+    private sealed class TagEngineSink(
+        ITagEngine engine,
+        PushedSourceRecorder recorder,
+        Device device,
+        ILogger logger) : IPushedSampleSink
     {
         public Task AcceptAsync(IReadOnlyList<TagReading> samples, CancellationToken cancellationToken) =>
             engine.AcceptPushedAsync(samples, cancellationToken);
+
+        public async Task ReportLossAsync(SourceLoss loss, CancellationToken cancellationToken)
+        {
+            if (await recorder.RecordLossAsync(loss, cancellationToken).ConfigureAwait(false))
+            {
+                logger.LogWarning(
+                    "Device {DeviceName}: the source dropped {Count} sample(s) measured between {From:O} and {To:O}; journalled.",
+                    device.Name,
+                    loss.Count,
+                    loss.FromSourceUtc,
+                    loss.ToSourceUtc);
+            }
+        }
+
+        public async Task ReportSourceClockAsync(DateTimeOffset sourceClockUtc, CancellationToken cancellationToken)
+        {
+            if (await recorder.ObserveSourceClockAsync(sourceClockUtc, cancellationToken).ConfigureAwait(false) is { } skew)
+            {
+                logger.LogWarning(
+                    "Device {DeviceName}: the source's clock is {Seconds:F0} s {Direction} the Gateway's; journalled. Its samples keep the times it gave them.",
+                    device.Name,
+                    skew.Duration().TotalSeconds,
+                    skew > TimeSpan.Zero ? "ahead of" : "behind");
+            }
+        }
     }
 
     private async Task StopAllAsync()

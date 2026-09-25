@@ -47,7 +47,28 @@ public interface IPushedSampleSink
     /// moves a tag's current value backwards in time (ADR-0016).
     /// </summary>
     Task AcceptAsync(IReadOnlyList<TagReading> samples, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The source reports samples it measured but could not deliver — a buffer that filled
+    /// during an outage and dropped its oldest (ADR-0017). Recorded, so the hole in history is a
+    /// stated one; the same report arriving again is recorded once.
+    /// </summary>
+    Task ReportLossAsync(SourceLoss loss, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The source says what its clock read when it sent what just arrived. Compared with the
+    /// Gateway's own clock; a disagreement beyond tolerance is recorded, and no sample's time is
+    /// changed because of it (ADR-0017).
+    /// </summary>
+    Task ReportSourceClockAsync(DateTimeOffset sourceClockUtc, CancellationToken cancellationToken);
 }
+
+/// <summary>Samples a source dropped rather than delivered (ADR-0017).</summary>
+/// <param name="LossId">The source's own id for this loss: the key that makes a repeated report one entry.</param>
+/// <param name="Count">How many samples; at least one.</param>
+/// <param name="FromSourceUtc">The source time of the oldest sample dropped.</param>
+/// <param name="ToSourceUtc">The source time of the newest sample dropped.</param>
+public sealed record SourceLoss(Guid LossId, long Count, DateTimeOffset FromSourceUtc, DateTimeOffset ToSourceUtc);
 
 /// <summary>
 /// Creates pushing drivers for the devices of one source. Matched to a device by its opaque

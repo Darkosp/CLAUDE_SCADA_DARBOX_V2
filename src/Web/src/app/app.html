@@ -143,7 +143,8 @@
             <tr [class.engine]="isEngineEvent(entry)">
               <td>{{ entry.recordedAtUtc | date: 'yyyy-MM-dd HH:mm:ss' }}</td>
               <td>{{ entry.type }}</td>
-              <!-- Engine events name no tag: an outage is not about one piece of equipment. -->
+              <!-- Engine events name no tag: an outage is not about one piece of equipment.
+                   A source's own event names its device here instead. -->
               <td>{{ entry.tagPath ?? '—' }}</td>
               <td>{{ measurement(entry.value, entry.unitSymbol) }}</td>
               <td>{{ entry.actorUsername ?? '—' }}</td>
@@ -152,6 +153,7 @@
                   <span class="tag">first seen after restart</span>
                 }
                 @if (reasonText(entry); as reason) { <span class="tag">{{ reason }}</span> }
+                @if (sourceNote(entry); as note) { <span class="tag">{{ note }}</span> }
                 @if (entry.unrecordedTransitions !== null) {
                   <span class="tag">
                     {{ entry.unrecordedTransitions }}

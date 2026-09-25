@@ -77,7 +77,7 @@ public sealed class MqttDeviceTests : IClassFixture<GatewayTestHost>, IAsyncLife
         // Measured a minute ago, sent now — as from an edge buffer. Published until the Gateway,
         // which subscribes when it notices the new device, has taken it.
         var measuredAt = new DateTimeOffset(DateTime.UtcNow.AddMinutes(-1).Ticks / TimeSpan.TicksPerMillisecond * TimeSpan.TicksPerMillisecond, TimeSpan.Zero);
-        var message = SamplePayload.Write([new TagReading(tagId, new TagValue.Numeric(6.25), measuredAt, Quality.Good)]);
+        var message = SamplePayload.Write([new TagReading(tagId, new TagValue.Numeric(6.25), measuredAt, Quality.Good)], [], DateTimeOffset.UtcNow);
 
         JsonElement live = default;
         await GatewayTestHost.WaitUntilAsync(

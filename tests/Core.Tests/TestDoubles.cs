@@ -13,12 +13,30 @@ internal sealed class StubTimeProvider(DateTimeOffset now) : TimeProvider
 
 internal sealed class RecordingHistorian : IHistorian
 {
+    private readonly HashSet<(Guid, DateTimeOffset)> _writtenOnce = [];
+
     public List<HistorianSample> Written { get; } = [];
 
     public Task WriteAsync(IReadOnlyList<HistorianSample> samples, CancellationToken cancellationToken)
     {
         Written.AddRange(samples);
         return Task.CompletedTask;
+    }
+
+    /// <summary>The database's rule, kept in memory: one row per (tag, source time) written this way.</summary>
+    public Task<int> WriteOnceAsync(IReadOnlyList<HistorianSample> samples, CancellationToken cancellationToken)
+    {
+        var stored = 0;
+        foreach (var sample in samples)
+        {
+            if (_writtenOnce.Add((sample.TagId, sample.SourceTimestampUtc)))
+            {
+                Written.Add(sample);
+                stored++;
+            }
+        }
+
+        return Task.FromResult(stored);
     }
 
     public Task<IReadOnlyList<HistorianSample>> ReadAsync(
@@ -50,6 +68,9 @@ internal sealed class RecordingSubscriber : ITagValueSubscriber
 internal sealed class FailingHistorian : IHistorian
 {
     public Task WriteAsync(IReadOnlyList<HistorianSample> samples, CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("The historian is unavailable.");
+
+    public Task<int> WriteOnceAsync(IReadOnlyList<HistorianSample> samples, CancellationToken cancellationToken) =>
         throw new InvalidOperationException("The historian is unavailable.");
 
     public Task<IReadOnlyList<HistorianSample>> ReadAsync(

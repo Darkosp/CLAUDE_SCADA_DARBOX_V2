@@ -23,13 +23,27 @@ namespace ScadaDarbox.EdgeAgent.Buffer;
 /// between them leaves samples gone that nothing accounts for.
 /// </para>
 /// <para>
+/// A lost window is reported to the cloud until a message carrying it is acknowledged, then kept
+/// here marked sent: the accounting above still needs it. Each has an id of its own, so the cloud
+/// records a report it receives twice once (ADR-0017).
+/// </para>
+/// <para>
+/// One outage is one window, not one per scan. Acquisition appends a scan at a time, so a full
+/// buffer drops a sample or two with every append; recorded separately, nine hours of outage would
+/// be tens of thousands of journal entries saying the same thing. A drop therefore extends the last
+/// window when it continues it — but only while that window is unsealed: once the uplink has taken a
+/// window into a message it is sealed, because the cloud may already hold it under its id, and a
+/// window changed after that would never be recorded at its new size.
+/// </para>
+/// <para>
 /// SQLite in WAL mode with <c>synchronous=FULL</c>: a committed transaction survives a power cut
 /// (SQLite's guarantee, not one we can test — ADR-0018); an uncommitted one never appears.
 /// </para>
 /// </remarks>
 public sealed class SampleBuffer : IDisposable
 {
-    private const int SchemaVersion = 1;
+    // 1: samples, lost windows, the account. 2: each lost window has an id, and sealed and sent flags.
+    private const int SchemaVersion = 2;
 
     private readonly SqliteConnection _db;
     private readonly long _maxPending;
@@ -81,6 +95,11 @@ public sealed class SampleBuffer : IDisposable
 
             using (var create = db.BeginTransaction())
             {
+                if (version == 1)
+                {
+                    UpgradeFromVersion1(db, create);
+                }
+
                 Execute(db, create, """
                     CREATE TABLE IF NOT EXISTS sample (
                         seq          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,7 +120,10 @@ public sealed class SampleBuffer : IDisposable
                         sample_count      INTEGER NOT NULL,
                         from_source_ticks INTEGER NOT NULL,
                         to_source_ticks   INTEGER NOT NULL,
-                        recorded_ticks    INTEGER NOT NULL
+                        recorded_ticks    INTEGER NOT NULL,
+                        loss_id           TEXT    NOT NULL,
+                        sealed            INTEGER NOT NULL DEFAULT 0,
+                        sent              INTEGER NOT NULL DEFAULT 0
                     );
                     CREATE TABLE IF NOT EXISTS account (
                         id           INTEGER PRIMARY KEY CHECK (id = 1),
@@ -111,7 +133,7 @@ public sealed class SampleBuffer : IDisposable
                         cursor       INTEGER NOT NULL
                     );
                     INSERT OR IGNORE INTO account (id, appended, acknowledged, lost, cursor) VALUES (1, 0, 0, 0, 0);
-                    PRAGMA user_version = 1;
+                    PRAGMA user_version = 2;
                     """);
                 create.Commit();
             }
@@ -206,6 +228,23 @@ public sealed class SampleBuffer : IDisposable
         }
     }
 
+    /// <summary>Lost windows not yet carried by an acknowledged message, oldest first.</summary>
+    public IReadOnlyList<LostWindow> UnsentLosses() => ReadLostWindows("WHERE sent = 0");
+
+    /// <summary>
+    /// The lost windows to put in the next message: every one not yet acknowledged, each sealed so
+    /// that no later drop changes what that message said about it. A drop after this starts a new
+    /// window.
+    /// </summary>
+    public IReadOnlyList<LostWindow> TakeLossesToSend()
+    {
+        lock (_gate)
+        {
+            Execute(_db, null, "UPDATE lost_window SET sealed = 1 WHERE sent = 0 AND sealed = 0;");
+            return ReadLostWindows("WHERE sent = 0");
+        }
+    }
+
     /// <summary>
     /// The broker has acknowledged everything up to <paramref name="throughSequence"/>: remove it
     /// and move the cursor, in one transaction (ADR-0017 — removed only once acknowledged).
@@ -216,11 +255,37 @@ public sealed class SampleBuffer : IDisposable
     /// may then have samples inside a window the edge reported lost — an overstated gap, which is
     /// the safe direction to be wrong in; the reverse would hide one.
     /// </remarks>
-    public void Acknowledge(long throughSequence)
+    public void Acknowledge(long throughSequence) => Acknowledge(throughSequence, []);
+
+    /// <summary>
+    /// The broker has acknowledged a message: the samples in it up to
+    /// <paramref name="throughSequence"/> (none, if null) and the loss reports
+    /// <paramref name="lossIds"/>. One transaction, so a report is never marked sent without the
+    /// samples that travelled with it, or the reverse.
+    /// </summary>
+    public void Acknowledge(long? throughSequence, IReadOnlyCollection<Guid> lossIds)
     {
         lock (_gate)
         {
             using var transaction = _db.BeginTransaction();
+
+            using (var sent = _db.CreateCommand())
+            {
+                sent.Transaction = transaction;
+                sent.CommandText = "UPDATE lost_window SET sent = 1 WHERE loss_id = $loss";
+                var loss = sent.Parameters.Add("$loss", SqliteType.Text);
+                foreach (var lossId in lossIds)
+                {
+                    loss.Value = lossId.ToString();
+                    sent.ExecuteNonQuery();
+                }
+            }
+
+            if (throughSequence is null)
+            {
+                transaction.Commit();
+                return;
+            }
 
             using var delete = _db.CreateCommand();
             delete.Transaction = transaction;
@@ -267,14 +332,16 @@ public sealed class SampleBuffer : IDisposable
     }
 
     /// <summary>Every window of samples dropped because the buffer was full.</summary>
-    public IReadOnlyList<LostWindow> LostWindows()
+    public IReadOnlyList<LostWindow> LostWindows() => ReadLostWindows("");
+
+    private IReadOnlyList<LostWindow> ReadLostWindows(string where)
     {
         lock (_gate)
         {
             using var read = _db.CreateCommand();
-            read.CommandText = """
-                SELECT from_seq, to_seq, sample_count, from_source_ticks, to_source_ticks, recorded_ticks
-                FROM lost_window ORDER BY id
+            read.CommandText = $"""
+                SELECT from_seq, to_seq, sample_count, from_source_ticks, to_source_ticks, recorded_ticks, loss_id, sealed, sent
+                FROM lost_window {where} ORDER BY id
                 """;
             var windows = new List<LostWindow>();
             using var reader = read.ExecuteReader();
@@ -286,7 +353,10 @@ public sealed class SampleBuffer : IDisposable
                     reader.GetInt64(2),
                     new DateTimeOffset(reader.GetInt64(3), TimeSpan.Zero),
                     new DateTimeOffset(reader.GetInt64(4), TimeSpan.Zero),
-                    new DateTimeOffset(reader.GetInt64(5), TimeSpan.Zero)));
+                    new DateTimeOffset(reader.GetInt64(5), TimeSpan.Zero),
+                    Guid.Parse(reader.GetString(6)),
+                    Sealed: reader.GetInt64(7) != 0,
+                    Sent: reader.GetInt64(8) != 0));
             }
 
             return windows;
@@ -341,12 +411,35 @@ public sealed class SampleBuffer : IDisposable
         Execute(_db, transaction, $"UPDATE account SET lost = lost + {count}, cursor = max(cursor, {toSeq}) WHERE id = 1;");
         BetweenDropSteps?.Invoke("cursor moved");
 
-        // 3. Record what was lost: which samples, and the span of source time they covered.
+        // 3. Record what was lost: which samples, and the span of source time they covered —
+        //    as more of the last window, if it is still open and this drop continues it.
+        using var extend = _db.CreateCommand();
+        extend.Transaction = transaction;
+        extend.CommandText = """
+            UPDATE lost_window
+            SET to_seq = $to, sample_count = sample_count + $count,
+                from_source_ticks = min(from_source_ticks, $fromTicks),
+                to_source_ticks = max(to_source_ticks, $toTicks),
+                recorded_ticks = $recorded
+            WHERE id = (SELECT max(id) FROM lost_window)
+              AND sealed = 0 AND sent = 0 AND to_seq = $from - 1
+            """;
+        extend.Parameters.AddWithValue("$from", fromSeq);
+        extend.Parameters.AddWithValue("$to", toSeq);
+        extend.Parameters.AddWithValue("$count", count);
+        extend.Parameters.AddWithValue("$fromTicks", fromTicks);
+        extend.Parameters.AddWithValue("$toTicks", toTicks);
+        extend.Parameters.AddWithValue("$recorded", _clock.GetUtcNow().UtcTicks);
+        if (extend.ExecuteNonQuery() == 1)
+        {
+            return;
+        }
+
         using var record = _db.CreateCommand();
         record.Transaction = transaction;
         record.CommandText = """
-            INSERT INTO lost_window (from_seq, to_seq, sample_count, from_source_ticks, to_source_ticks, recorded_ticks)
-            VALUES ($from, $to, $count, $fromTicks, $toTicks, $recorded)
+            INSERT INTO lost_window (from_seq, to_seq, sample_count, from_source_ticks, to_source_ticks, recorded_ticks, loss_id)
+            VALUES ($from, $to, $count, $fromTicks, $toTicks, $recorded, $lossId)
             """;
         record.Parameters.AddWithValue("$from", fromSeq);
         record.Parameters.AddWithValue("$to", toSeq);
@@ -354,7 +447,44 @@ public sealed class SampleBuffer : IDisposable
         record.Parameters.AddWithValue("$fromTicks", fromTicks);
         record.Parameters.AddWithValue("$toTicks", toTicks);
         record.Parameters.AddWithValue("$recorded", _clock.GetUtcNow().UtcTicks);
+        record.Parameters.AddWithValue("$lossId", Guid.NewGuid().ToString());
         record.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// A buffer written by the step-3 agent: its lost windows gain an id and a sent flag. None of
+    /// them was ever reported — that agent did not send losses — so all start unsent, and the
+    /// cloud hears about them on the first acknowledged message.
+    /// </summary>
+    private static void UpgradeFromVersion1(SqliteConnection db, SqliteTransaction transaction)
+    {
+        Execute(db, transaction, "ALTER TABLE lost_window ADD COLUMN loss_id TEXT;");
+        Execute(db, transaction, "ALTER TABLE lost_window ADD COLUMN sealed INTEGER NOT NULL DEFAULT 0;");
+        Execute(db, transaction, "ALTER TABLE lost_window ADD COLUMN sent INTEGER NOT NULL DEFAULT 0;");
+
+        var ids = new List<long>();
+        using (var read = db.CreateCommand())
+        {
+            read.Transaction = transaction;
+            read.CommandText = "SELECT id FROM lost_window WHERE loss_id IS NULL";
+            using var reader = read.ExecuteReader();
+            while (reader.Read())
+            {
+                ids.Add(reader.GetInt64(0));
+            }
+        }
+
+        using var assign = db.CreateCommand();
+        assign.Transaction = transaction;
+        assign.CommandText = "UPDATE lost_window SET loss_id = $lossId WHERE id = $id";
+        var lossId = assign.Parameters.Add("$lossId", SqliteType.Text);
+        var id = assign.Parameters.Add("$id", SqliteType.Integer);
+        foreach (var row in ids)
+        {
+            lossId.Value = Guid.NewGuid().ToString();
+            id.Value = row;
+            assign.ExecuteNonQuery();
+        }
     }
 
     private static TagReading ReadSample(SqliteDataReader reader)
@@ -398,13 +528,19 @@ public sealed class SampleBuffer : IDisposable
 public sealed record BufferedSample(long Sequence, TagReading Reading);
 
 /// <summary>Samples dropped because the buffer was full: which, and the source time they spanned (ADR-0017).</summary>
+/// <param name="LossId">The id the cloud records this loss under, once however often it is sent.</param>
+/// <param name="Sealed">Taken into a message: no later drop extends it.</param>
+/// <param name="Sent">Whether a message carrying it has been acknowledged.</param>
 public sealed record LostWindow(
     long FromSequence,
     long ToSequence,
     long Count,
     DateTimeOffset FromSourceUtc,
     DateTimeOffset ToSourceUtc,
-    DateTimeOffset RecordedAtUtc);
+    DateTimeOffset RecordedAtUtc,
+    Guid LossId,
+    bool Sealed,
+    bool Sent);
 
 /// <summary>The buffer's accounting.</summary>
 /// <param name="LostInRecordedWindows">The sum of every recorded lost window — must equal <paramref name="Lost"/>.</param>

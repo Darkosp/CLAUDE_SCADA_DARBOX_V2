@@ -32,6 +32,17 @@ public interface IHistorian
     /// </remarks>
     Task WriteAsync(IReadOnlyList<HistorianSample> samples, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Appends samples that may have been delivered before: a sample whose (tag, source
+    /// timestamp) is already stored this way is not stored again (ADR-0017).
+    /// </summary>
+    /// <remarks>
+    /// For pushed samples, which travel an at-least-once link. The first delivery is the one
+    /// kept; a later one with the same key is dropped, not merged, and not treated as an error.
+    /// </remarks>
+    /// <returns>How many of <paramref name="samples"/> were stored — the rest were already there.</returns>
+    Task<int> WriteOnceAsync(IReadOnlyList<HistorianSample> samples, CancellationToken cancellationToken);
+
     /// <summary>Reads one tag's samples over a time range, ordered by source timestamp.</summary>
     Task<IReadOnlyList<HistorianSample>> ReadAsync(
         Guid tagId,

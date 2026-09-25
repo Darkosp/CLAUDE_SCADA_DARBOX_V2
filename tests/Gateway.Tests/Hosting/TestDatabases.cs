@@ -102,3 +102,15 @@ public sealed class RequiresDatabaseFactAttribute : FactAttribute
         }
     }
 }
+
+/// <summary>A theory that reports as skipped, rather than passing, when no database is reachable.</summary>
+public sealed class RequiresDatabaseTheoryAttribute : TheoryAttribute
+{
+    public RequiresDatabaseTheoryAttribute()
+    {
+        if (!ScratchDatabase.IsAvailable)
+        {
+            Skip = "No PostgreSQL/TimescaleDB reachable — start it with 'docker compose up -d'.";
+        }
+    }
+}

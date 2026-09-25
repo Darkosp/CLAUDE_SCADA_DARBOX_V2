@@ -37,23 +37,29 @@ public sealed class MqttPushingDriver : IPushingDeviceDriver
 
         async Task OnMessageAsync(MqttApplicationMessageReceivedEventArgs message)
         {
+            var topic = message.ApplicationMessage.Topic;
             var result = SamplePayload.Read(message.ApplicationMessage.ConvertPayloadToString(), byId);
-            Report(message.ApplicationMessage.Topic, result);
+            Report(topic, result);
 
-            if (result.Accepted.Count == 0)
+            if (result.Refusal is not null)
             {
                 return;
             }
 
-            try
+            // Three independent things; one failing does not keep the others from being tried.
+            if (result.SentAtUtc is { } sentAt)
             {
-                await sink.AcceptAsync(result.Accepted, cancellationToken).ConfigureAwait(false);
+                await HandOverAsync(topic, "the sender's clock", () => sink.ReportSourceClockAsync(sentAt, cancellationToken)).ConfigureAwait(false);
             }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+
+            foreach (var loss in result.Lost)
             {
-                // Core reports its own failures (a historian that is down still leaves readers and
-                // alarms told, ADR-0013); here it is only said where the samples came from.
-                _logger.LogError(exception, "Samples from {Topic} could not all be recorded.", message.ApplicationMessage.Topic);
+                await HandOverAsync(topic, $"loss report {loss.LossId}", () => sink.ReportLossAsync(loss, cancellationToken)).ConfigureAwait(false);
+            }
+
+            if (result.Accepted.Count > 0)
+            {
+                await HandOverAsync(topic, "samples", () => sink.AcceptAsync(result.Accepted, cancellationToken)).ConfigureAwait(false);
             }
         }
 
@@ -123,6 +129,20 @@ public sealed class MqttPushingDriver : IPushingDeviceDriver
         }
 
         _client.Dispose();
+    }
+
+    private async Task HandOverAsync(string topic, string what, Func<Task> handOver)
+    {
+        try
+        {
+            await handOver().ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Core reports its own failures (a historian that is down still leaves readers and
+            // alarms told, ADR-0013); here it is only said where it came from.
+            _logger.LogError(exception, "{What} from {Topic} could not be recorded.", what, topic);
+        }
     }
 
     private void Report(string topic, SamplePayloadResult result)

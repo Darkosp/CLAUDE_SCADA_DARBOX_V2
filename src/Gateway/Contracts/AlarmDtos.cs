@@ -71,7 +71,13 @@ public sealed record SaveAlarmDefinitionRequest(double? HighLimit, double? LowLi
 /// </param>
 /// <param name="GapFromUtc">
 /// On <c>EvaluationStarted</c>, how far back the Gateway is known to have been alive;
-/// on <c>JournalGap</c>, the start of the window whose transitions went unrecorded.
+/// on <c>JournalGap</c>, the start of the window whose transitions went unrecorded;
+/// on <c>SamplesLost</c>, the source time of the oldest sample the source dropped.
+/// </param>
+/// <param name="DeviceId">The device a <c>SamplesLost</c> or <c>SourceClockSkew</c> is about.</param>
+/// <param name="LostSamples">On <c>SamplesLost</c>, how many samples the source dropped.</param>
+/// <param name="ClockSkewSeconds">
+/// On <c>SourceClockSkew</c>, the source's clock minus the Gateway's: positive when it runs ahead.
 /// </param>
 public sealed record AlarmEventDto(
     string Type,
@@ -92,7 +98,10 @@ public sealed record AlarmEventDto(
     string? Reason,
     DateTimeOffset? GapFromUtc,
     DateTimeOffset? GapUntilUtc,
-    int? UnrecordedTransitions)
+    int? UnrecordedTransitions,
+    Guid? DeviceId,
+    long? LostSamples,
+    double? ClockSkewSeconds)
 {
     public static AlarmEventDto From(AlarmEvent journalEvent) => new(
         journalEvent.Type.ToString(),
@@ -113,5 +122,8 @@ public sealed record AlarmEventDto(
         journalEvent.Reason,
         journalEvent.GapFromUtc,
         journalEvent.GapUntilUtc,
-        journalEvent.UnrecordedTransitions);
+        journalEvent.UnrecordedTransitions,
+        journalEvent.DeviceId,
+        journalEvent.LostSamples,
+        journalEvent.ClockSkewSeconds);
 }

@@ -28,6 +28,8 @@ import {
   scanIntervalToSend,
   describeReason,
   formatGapWindow,
+  describeSourceEvent,
+  isEngineEvent,
   formatMeasurement,
   NameField,
   SingleFlight,
@@ -997,11 +999,16 @@ export class App implements OnInit {
   }
 
   /**
-   * Whether an entry is the engine speaking rather than an alarm: it names no occurrence.
-   * Those rows carry no Site, and are shown to every reader on purpose (ADR-0013).
+   * Whether an entry is the engine speaking rather than an alarm or a source. Those rows
+   * carry no Site, and are shown to every reader on purpose (ADR-0013).
    */
   protected isEngineEvent(entry: AlarmEvent): boolean {
-    return entry.occurrenceId === null;
+    return isEngineEvent(entry);
+  }
+
+  /** A source's loss or clock skew in words (ADR-0017). */
+  protected sourceNote(entry: AlarmEvent): string | null {
+    return describeSourceEvent(entry);
   }
 
   /** Two decimals, so the journal never shows a double's arithmetic to an operator. */

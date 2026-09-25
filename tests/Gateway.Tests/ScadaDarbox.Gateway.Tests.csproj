@@ -22,6 +22,18 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Gateway\ScadaDarbox.Gateway.csproj" />
+    <!-- The real edge buffer and uplink, driven against this Gateway end to end (ADR-0017). -->
+    <ProjectReference Include="..\..\src\EdgeAgent\ScadaDarbox.EdgeAgent.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The edge agent is an application with an appsettings.json of its own, and referencing it
+      copies that file here too, where it overwrote the Gateway's — which StartupCheckTests caught.
+      A project's own item wins over a transitive one with the same target path, so the Gateway's
+      configuration is named here explicitly.
+    -->
+    <None Include="..\..\src\Gateway\appsettings.json" Link="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

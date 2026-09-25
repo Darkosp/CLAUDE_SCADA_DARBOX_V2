@@ -32,6 +32,19 @@ public enum AlarmEventType
     /// be recorded as it began, because recording is what was failing.
     /// </summary>
     JournalGap,
+
+    /// <summary>
+    /// A pushing source reports samples it had to drop — its buffer filled during an outage
+    /// (ADR-0017). Belongs to the source's device and Site, not to an alarm; carries how many,
+    /// the window of source time they covered, and the source's own id for the loss.
+    /// </summary>
+    SamplesLost,
+
+    /// <summary>
+    /// A pushing source's clock disagrees with the Gateway's beyond the configured tolerance
+    /// (ADR-0017). Recorded, never corrected: the samples keep the times the source gave them.
+    /// </summary>
+    SourceClockSkew,
 }
 
 /// <summary>
@@ -95,6 +108,24 @@ public sealed record AlarmEvent
 
     /// <summary>On a <see cref="AlarmEventType.JournalGap"/>, how many transitions went unrecorded.</summary>
     public int? UnrecordedTransitions { get; init; }
+
+    /// <summary>The device a source event is about; null on every other event.</summary>
+    public Guid? DeviceId { get; init; }
+
+    /// <summary>On a <see cref="AlarmEventType.SamplesLost"/>, how many samples the source dropped.</summary>
+    public long? LostSamples { get; init; }
+
+    /// <summary>
+    /// On a <see cref="AlarmEventType.SamplesLost"/>, the id the source gave the loss: the same
+    /// report delivered twice is one entry.
+    /// </summary>
+    public Guid? LossId { get; init; }
+
+    /// <summary>
+    /// On a <see cref="AlarmEventType.SourceClockSkew"/>, the source's clock minus the Gateway's,
+    /// in seconds: positive when the source runs ahead.
+    /// </summary>
+    public double? ClockSkewSeconds { get; init; }
 }
 
 /// <summary>
@@ -115,6 +146,15 @@ public interface IAlarmJournal
     /// </summary>
     /// <exception cref="Exception">The events were not recorded.</exception>
     Task AppendAsync(IReadOnlyList<AlarmEvent> events, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Appends a <see cref="AlarmEventType.SamplesLost"/> unless one with the same
+    /// <see cref="AlarmEvent.LossId"/> is already recorded. A source reports a loss until the
+    /// report is acknowledged, so the same report can arrive more than once (ADR-0017).
+    /// </summary>
+    /// <returns>True if this call recorded it; false if it already was.</returns>
+    /// <exception cref="Exception">The event was not recorded.</exception>
+    Task<bool> AppendLossOnceAsync(AlarmEvent loss, CancellationToken cancellationToken);
 
     /// <summary>Every event of every occurrence not yet retired, oldest first.</summary>
     Task<IReadOnlyList<AlarmEvent>> ReadOpenAsync(CancellationToken cancellationToken);
