@@ -74,6 +74,21 @@ clustered broker can replace it later without touching the payload.
   exists to prevent. MQTT 5 carries the reason code. A mutation proved it:
   under 3.1.1 a refused batch left 0 pending and 20 "acknowledged".
 
+  *Added while implementing (2026-09-25):* "acknowledged" has to mean
+  **stored**, and two things were quietly making it mean "received". The
+  Gateway subscribed without a persistent session, so a batch published while
+  it was down — a restart, an upgrade, a broker restart — was acknowledged to
+  the edge by the broker and delivered to nobody; and the Gateway acknowledged
+  a batch even when writing it had failed, for instance with the database
+  unreachable. Either one turns a buffered outage into a silent hole, which
+  defeats the buffer entirely. So: **the Gateway connects with a persistent
+  MQTT 5 session under a fixed client id and `clean start = false`, and it
+  acknowledges a batch only after that batch is durably stored.** The broker
+  holds messages while the Gateway is away; the edge keeps its copy until the
+  cloud has really got it. Mosquitto's queue limits have to be set with that in
+  mind — the default silently discards beyond a modest depth, which would
+  reintroduce the same hole one level down.
+
 **4. The buffer is bounded, drops oldest first, and says so.**
 
 The buffer is on disk and survives an edge restart — an outage that includes a
