@@ -45,12 +45,14 @@ public sealed class CloudComposeFileTests
     {
         var services = Render("cloud", Cloud).GetProperty("services");
 
+        // Every file mounted from the host, not only those that look like certificates: a directory
+        // mounted whole would hand over every key in it.
         Assert.Equal(
-            ["/srv/scada/certs/broker.crt", "/srv/scada/certs/broker.key", "/srv/scada/certs/ca.crt"],
-            CertificateSources(services.GetProperty("broker")));
+            ["/srv/scada/certs/broker.crt", "/srv/scada/certs/broker.key", "/srv/scada/certs/ca.crt", "deploy/cloud/mosquitto"],
+            BindSources(services.GetProperty("broker")));
         Assert.Equal(
             ["/srv/scada/certs/ca.crt", "/srv/scada/certs/scada-gateway.crt", "/srv/scada/certs/scada-gateway.key"],
-            CertificateSources(services.GetProperty("gateway")));
+            BindSources(services.GetProperty("gateway")));
 
         // The CA's key signs every identity in the system; no service holds it.
         Assert.DoesNotContain("ca.key", services.GetRawText(), StringComparison.Ordinal);
@@ -92,6 +94,16 @@ public sealed class CloudComposeFileTests
             edge.GetProperty("volumes").EnumerateArray(),
             volume => volume.GetProperty("type").GetString() == "volume" && volume.GetProperty("target").GetString() == "/data");
     }
+
+    private static List<string> BindSources(JsonElement service) =>
+        service.GetProperty("volumes").EnumerateArray()
+            .Where(volume => volume.GetProperty("type").GetString() == "bind")
+            .Select(volume => volume.GetProperty("source").GetString()!.Replace('\\', '/'))
+            .Select(source => source.Contains("/srv/", StringComparison.Ordinal)
+                ? source[source.IndexOf("/srv/", StringComparison.Ordinal)..]
+                : source[source.IndexOf("deploy/", StringComparison.Ordinal)..])
+            .Order(StringComparer.Ordinal)
+            .ToList();
 
     private static List<string> CertificateSources(JsonElement service) =>
         service.GetProperty("volumes").EnumerateArray()

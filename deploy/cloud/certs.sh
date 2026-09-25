@@ -19,6 +19,7 @@ set -eu
 # Git Bash on Windows rewrites '/CN=…' into a Windows path unless told not to; file paths it must
 # still convert, so only arguments beginning /CN are excluded. Ignored everywhere else.
 export MSYS2_ARG_CONV_EXCL='/CN'
+unset MSYS_NO_PATHCONV
 
 dir="${CERT_DIR:-$(dirname "$0")/certs}"
 days_ca="${CA_DAYS:-3650}"
