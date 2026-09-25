@@ -1,0 +1,10 @@
+# Who may do what, by the name in the client's certificate (ADR-0017).
+
+# The Gateway reads every edge's samples, and writes nothing.
+user scada-gateway
+topic read scada/edge/+/samples
+
+# Every edge writes its own samples topic, and nothing else: %u is the name in its certificate,
+# which is its Edge:Id. An edge that publishes under another edge's name is refused here, and the
+# refusal is written to the audit file.
+pattern write scada/edge/%u/samples

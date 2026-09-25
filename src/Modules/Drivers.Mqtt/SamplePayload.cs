@@ -48,6 +48,24 @@ public static class SamplePayload
 {
     public const int Version = 2;
 
+    /// <summary>
+    /// The MQTT 5 message expiry every sender sets: ten years, so in practice nothing expires.
+    /// It is set for what the broker does with it: an MQTT 5 broker forwards a message with its
+    /// expiry reduced by the time it held it. The difference is how long the message waited —
+    /// measured by the broker's clock alone, so neither the sender's nor the receiver's is trusted
+    /// for it.
+    /// </summary>
+    public const uint MessageExpirySeconds = 315_360_000;
+
+    /// <summary>
+    /// How long a message waited in the broker, from the expiry it arrived with; zero when it
+    /// carries none, or one this format did not set.
+    /// </summary>
+    public static TimeSpan WaitedInBroker(uint? remainingExpirySeconds) =>
+        remainingExpirySeconds is { } remaining and > 0 and <= MessageExpirySeconds
+            ? TimeSpan.FromSeconds(MessageExpirySeconds - remaining)
+            : TimeSpan.Zero;
+
     /// <summary>Reads one message for the given tags.</summary>
     /// <param name="tags">The tags the receiving device has, by id; samples for any other tag are not accepted.</param>
     public static SamplePayloadResult Read(string json, IReadOnlyDictionary<Guid, DriverTag> tags)

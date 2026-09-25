@@ -1,0 +1,2 @@
+# Read inside Linux containers and by sh: line endings must stay LF on every checkout.
+* text eol=lf

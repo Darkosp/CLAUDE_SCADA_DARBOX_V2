@@ -69,6 +69,78 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task What_is_published_while_the_Gateway_is_away_is_delivered_when_it_is_back()
+    {
+        // ADR-0017: the broker acknowledges to the edge, so the edge has let go. With no
+        // persistent session this Gateway would come back to nothing.
+        var device = Guid.NewGuid();
+        var sink = new RecordingSink();
+        var measuredAt = DateTimeOffset.UtcNow.AddMinutes(-2);
+
+        // Subscribed once, then gone — a restart, an upgrade.
+        await (await StartAsync(sink, device)).DisposeAsync();
+
+        await PublishAsync(Samples([new TagReading(Pressure, new TagValue.Numeric(7.5), measuredAt, Quality.Good)]));
+
+        // Back, under the same device and so the same client id.
+        _subscribed = NewSignal();
+        await using var back = await StartAsync(sink, device);
+
+        var sample = Assert.Single(await sink.WaitForAsync(1));
+        Assert.Equal((new TagValue.Numeric(7.5) as TagValue, measuredAt), (sample.Value, sample.SourceTimestampUtc));
+    }
+
+    [Fact]
+    public async Task A_message_that_could_not_be_stored_is_not_acknowledged_and_arrives_again()
+    {
+        // The database unreachable: the sink throws. The message must not be acknowledged — the
+        // broker would drop it — but delivered again until it is stored.
+        var sink = new RecordingSink { FailNext = 2 };
+        var measuredAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+
+        await using var run = await StartAsync(sink);
+        await PublishAsync(Samples([new TagReading(Pressure, new TagValue.Numeric(3.25), measuredAt, Quality.Good)]));
+
+        var sample = Assert.Single(await sink.WaitForAsync(1, TimeSpan.FromSeconds(30)));
+        Assert.Equal(measuredAt, sample.SourceTimestampUtc);
+        Assert.Equal(3, sink.Attempts);
+    }
+
+    [Fact]
+    public async Task A_message_that_can_never_be_stored_is_acknowledged_rather_than_delivered_forever()
+    {
+        // The control for the test above: refusing to acknowledge is for what could be stored
+        // later. An unreadable message never can, and must not block everything behind it.
+        var sink = new RecordingSink();
+
+        await using var run = await StartAsync(sink);
+        await PublishAsync("this is not a message");
+        await PublishAsync(Samples([new TagReading(Pressure, new TagValue.Numeric(1.5), DateTimeOffset.UtcNow, Quality.Good)]));
+
+        Assert.Single(await sink.WaitForAsync(1));
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        Assert.Equal(1, sink.Attempts);
+    }
+
+    [Fact]
+    public async Task The_senders_clock_is_carried_forward_by_the_time_the_broker_held_the_message()
+    {
+        // An MQTT 5 broker hands a message on with its expiry counted down by the time it held it.
+        // Here the countdown is written directly: ten minutes gone. Without the correction a
+        // backlog delivered after the Gateway was away would read as a sender ten minutes behind.
+        var sink = new RecordingSink();
+        var sentAt = new DateTimeOffset(2026, 9, 25, 8, 0, 0, TimeSpan.Zero);
+
+        await using var run = await StartAsync(sink);
+        await PublishAsync(
+            SamplePayload.Write([new TagReading(Pressure, new TagValue.Numeric(1), sentAt, Quality.Good)], [], sentAt),
+            expiry: SamplePayload.MessageExpirySeconds - 600);
+
+        await sink.WaitForAsync(1);
+        Assert.Equal(sentAt.AddMinutes(10), Assert.Single(sink.Clocks));
+    }
+
+    [Fact]
     public async Task A_batch_is_handed_over_in_one_call()
     {
         var sink = new RecordingSink();
@@ -147,9 +219,9 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
         await secondRun;
     }
 
-    private IPushingDeviceDriver Create() => new MqttPushingDriverFactory().Create(new Device
+    private IPushingDeviceDriver Create(Guid? deviceId = null) => new MqttPushingDriverFactory().Create(new Device
     {
-        Id = Guid.NewGuid(),
+        Id = deviceId ?? Guid.NewGuid(),
         SiteId = Guid.NewGuid(),
         Name = "Edge",
         DriverKey = "mqtt",
@@ -162,9 +234,9 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
     });
 
     /// <summary>Runs a driver until disposed, having waited for its subscription to reach the broker.</summary>
-    private async Task<RunningDriver> StartAsync(RecordingSink sink)
+    private async Task<RunningDriver> StartAsync(RecordingSink sink, Guid? deviceId = null)
     {
-        var driver = Create();
+        var driver = Create(deviceId);
         var stop = new CancellationTokenSource();
         var run = driver.RunAsync(Tags, sink, stop.Token);
         await _subscribed.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -178,6 +250,7 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
             .WithDefaultEndpoint()
             .WithDefaultEndpointBoundIPAddress(IPAddress.Loopback)
             .WithDefaultEndpointPort(_port)
+            .WithPersistentSessions(true)
             .Build();
 
         var broker = factory.CreateMqttServer(options);
@@ -191,14 +264,18 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
         return broker;
     }
 
-    private async Task PublishAsync(string payload)
+    private async Task PublishAsync(string payload, uint expiry = SamplePayload.MessageExpirySeconds)
     {
         using var publisher = new MqttClientFactory().CreateMqttClient();
-        await publisher.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _port).Build());
+        await publisher.ConnectAsync(new MqttClientOptionsBuilder()
+            .WithTcpServer("127.0.0.1", _port)
+            .WithProtocolVersion(MQTTnet.Formatter.MqttProtocolVersion.V500)
+            .Build());
         await publisher.PublishAsync(new MqttApplicationMessageBuilder()
             .WithTopic(Topic)
             .WithPayload(payload)
             .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .WithMessageExpiryInterval(expiry)
             .Build());
         await publisher.DisconnectAsync();
     }
@@ -225,8 +302,21 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
 
         public ConcurrentQueue<DateTimeOffset> Clocks { get; } = new();
 
+        /// <summary>How many hand-overs to fail, as a database that is down would.</summary>
+        public int FailNext { get; set; }
+
+        /// <summary>Every hand-over of samples, failed or not.</summary>
+        public int Attempts { get; private set; }
+
         public Task AcceptAsync(IReadOnlyList<TagReading> samples, CancellationToken cancellationToken)
         {
+            Attempts++;
+            if (FailNext > 0)
+            {
+                FailNext--;
+                throw new InvalidOperationException("The historian is unavailable.");
+            }
+
             Calls.Enqueue(samples);
             return Task.CompletedTask;
         }
@@ -243,9 +333,9 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
             return Task.CompletedTask;
         }
 
-        public async Task<List<TagReading>> WaitForAsync(int count)
+        public async Task<List<TagReading>> WaitForAsync(int count, TimeSpan? timeout = null)
         {
-            var deadline = DateTime.UtcNow.AddSeconds(10);
+            var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(10));
             while (Samples.Count < count)
             {
                 if (DateTime.UtcNow > deadline)

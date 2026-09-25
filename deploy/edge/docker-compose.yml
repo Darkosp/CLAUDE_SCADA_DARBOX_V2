@@ -1,0 +1,38 @@
+# One edge agent (Phase 7, ADR-0017, ADR-0018), at a plant: reads its devices, keeps what it read in
+# a buffer on disk, and sends it to the cloud broker whenever the link allows. The guide is
+# deploy/cloud/README.md.
+#
+#   docker compose -f deploy/edge/docker-compose.yml --env-file deploy/edge/.env up -d
+
+name: scada-darbox-edge
+
+services:
+  edge:
+    image: scada-darbox/edge-agent:${SCADA_IMAGE_TAG:?set SCADA_IMAGE_TAG to the commit deploy/build-images.sh built}
+    environment:
+      # The id is the name in this edge's certificate: the broker lets it publish under that name
+      # only. Set once, here, so the two cannot disagree.
+      Edge__Id: ${SCADA_EDGE_ID:?set SCADA_EDGE_ID to this edge's name, as in its certificate}
+      Edge__Broker__Host: ${SCADA_BROKER_HOST:?set SCADA_BROKER_HOST to the broker's DNS name, as in its certificate}
+      Edge__Broker__Port: ${SCADA_BROKER_PORT:-8883}
+      Edge__Broker__CaFile: /app/certs/ca.crt
+      Edge__Broker__CertFile: /app/certs/edge.crt
+      Edge__Broker__KeyFile: /app/certs/edge.key
+      Edge__Buffer__Path: /data/buffer.db
+      DOTNET_ENVIRONMENT: Production
+    volumes:
+      # The devices and their tags, with the cloud Gateway's tag ids (edge.example.json).
+      - ${SCADA_EDGE_CONFIG:?set SCADA_EDGE_CONFIG to this edge's device configuration file}:/app/appsettings.Production.json:ro
+      - ${SCADA_EDGE_CERT_DIR:?set SCADA_EDGE_CERT_DIR to the directory with ca.crt and this edge's certificate}/ca.crt:/app/certs/ca.crt:ro
+      - ${SCADA_EDGE_CERT_DIR:?set SCADA_EDGE_CERT_DIR}/${SCADA_EDGE_ID:?set SCADA_EDGE_ID}.crt:/app/certs/edge.crt:ro
+      - ${SCADA_EDGE_CERT_DIR:?set SCADA_EDGE_CERT_DIR}/${SCADA_EDGE_ID:?set SCADA_EDGE_ID}.key:/app/certs/edge.key:ro
+      # The buffer: an outage's measurements are here until the broker has them. A volume, so it
+      # survives the container; lose it and you lose them.
+      - edge-buffer:/data
+      # The OPC UA client certificate: kept, or every server that trusted it refuses the next one.
+      - edge-pki:/app/pki
+    restart: unless-stopped
+
+volumes:
+  edge-buffer:
+  edge-pki:

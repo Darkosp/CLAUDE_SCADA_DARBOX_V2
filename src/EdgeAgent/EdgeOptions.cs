@@ -1,4 +1,5 @@
 using ScadaDarbox.Core.Model;
+using ScadaDarbox.Modules.Drivers.Mqtt;
 
 namespace ScadaDarbox.EdgeAgent;
 
@@ -39,6 +40,12 @@ public sealed class EdgeOptions
             problems.Add("Edge:Broker:Host is required.");
         }
 
+        if (Broker.UsesTls)
+        {
+            // All three or none: half a TLS configuration must not quietly fall back to plain TCP.
+            problems.AddRange(Broker.TlsFiles.Problems().Select(problem => $"Edge:Broker: {problem}."));
+        }
+
         if (string.IsNullOrWhiteSpace(Buffer.Path))
         {
             problems.Add("Edge:Buffer:Path is required.");
@@ -77,6 +84,21 @@ public sealed class BrokerOptions
     public int Port { get; set; } = 1883;
 
     public string TopicPrefix { get; set; } = "scada/edge";
+
+    /// <summary>
+    /// Mutual TLS (ADR-0017): the CA that signed the broker's certificate, and this edge's own
+    /// certificate and key, PEM. The certificate's name is this edge's Id: the broker's ACL lets it
+    /// publish under that name only. Plain TCP when none is set.
+    /// </summary>
+    public string CaFile { get; set; } = string.Empty;
+
+    public string CertFile { get; set; } = string.Empty;
+
+    public string KeyFile { get; set; } = string.Empty;
+
+    internal bool UsesTls => !string.IsNullOrWhiteSpace(CaFile) || !string.IsNullOrWhiteSpace(CertFile) || !string.IsNullOrWhiteSpace(KeyFile);
+
+    internal MqttTlsFiles TlsFiles => new(CaFile, CertFile, KeyFile);
 }
 
 public sealed class BufferOptions

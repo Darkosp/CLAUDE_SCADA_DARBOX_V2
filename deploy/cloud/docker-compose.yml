@@ -1,0 +1,89 @@
+# The cloud topology (Phase 7, ADR-0017): database, migrator, Gateway, and the broker the edges
+# publish to. The edges themselves run deploy/edge/docker-compose.yml, one per plant.
+#
+#   deploy/build-images.sh                                  # scada-darbox/*:<commit>, from a commit
+#   docker compose -f deploy/cloud/docker-compose.yml --env-file deploy/cloud/.env up -d --wait
+#
+# deploy/cloud/README.md is the guide; deploy/cloud/.env.example lists every variable. Secrets have
+# no defaults, as on premises: a missing one stops Compose before anything starts, naming it.
+
+name: scada-darbox-cloud
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:2.17.2-pg17
+    environment:
+      POSTGRES_DB: scada
+      # The privileged role. Only the migrator is given its password (ADR-0011, ADR-0012).
+      POSTGRES_USER: scada
+      POSTGRES_PASSWORD: ${SCADA_DB_ADMIN_PASSWORD:?set SCADA_DB_ADMIN_PASSWORD, the privileged database password}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scada -d scada"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  migrator:
+    image: scada-darbox/migrator:${SCADA_IMAGE_TAG:?set SCADA_IMAGE_TAG to the commit deploy/build-images.sh built}
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      SCADA_MIGRATOR_CONNECTION: Host=timescaledb;Port=5432;Database=scada;Username=scada;Password=${SCADA_DB_ADMIN_PASSWORD:?set SCADA_DB_ADMIN_PASSWORD, the privileged database password}
+      SCADA_APP_DB_PASSWORD: ${SCADA_APP_DB_PASSWORD:?set SCADA_APP_DB_PASSWORD, the application role's database password}
+    restart: "no"
+
+  broker:
+    # Pinned, like the database: the configuration below was measured against this version.
+    image: eclipse-mosquitto:2.1.2-alpine
+    # broker.sh runs Mosquitto as the main process and writes refusals to the audit volume.
+    command: ["sh", "/mosquitto/config/broker.sh"]
+    ports:
+      # The edges' listener only. 8884, the Gateway's, is reachable inside this stack and nowhere else.
+      - "${SCADA_BROKER_PORT:-8883}:8883"
+    volumes:
+      - ./mosquitto:/mosquitto/config:ro
+      # The broker's own certificate and the CA's — never the CA's key, which stays off this host.
+      - ${SCADA_CERT_DIR:?set SCADA_CERT_DIR to the directory holding ca.crt, broker.* and scada-gateway.*}/ca.crt:/mosquitto/certs/ca.crt:ro
+      - ${SCADA_CERT_DIR:?set SCADA_CERT_DIR}/broker.crt:/mosquitto/certs/broker.crt:ro
+      - ${SCADA_CERT_DIR:?set SCADA_CERT_DIR}/broker.key:/mosquitto/certs/broker.key:ro
+      # What the broker holds for the Gateway (ADR-0017): lose this volume and you lose it.
+      - broker-data:/mosquitto/data
+      # Every refused publish and every connection, with the certificate behind it.
+      - broker-audit:/mosquitto/audit
+    restart: unless-stopped
+
+  gateway:
+    image: scada-darbox/gateway:${SCADA_IMAGE_TAG:?set SCADA_IMAGE_TAG to the commit deploy/build-images.sh built}
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      broker:
+        condition: service_started
+    environment:
+      ConnectionStrings__ScadaDb: Host=timescaledb;Port=5432;Database=scada;Username=scada_app
+      SCADA_APP_DB_PASSWORD: ${SCADA_APP_DB_PASSWORD:?set SCADA_APP_DB_PASSWORD, the application role's database password}
+      SCADA_INITIAL_ADMIN_USERNAME: ${SCADA_INITIAL_ADMIN_USERNAME:-}
+      SCADA_INITIAL_ADMIN_PASSWORD: ${SCADA_INITIAL_ADMIN_PASSWORD:-}
+      DataProtection__KeysDirectory: /app/keys
+    ports:
+      - "${SCADA_HTTP_PORT:-8080}:8080"
+    volumes:
+      - gateway-pki:/app/pki
+      - gateway-keys:/app/keys
+      # The Gateway's MQTT identity and the CA it checks the broker against. An MQTT device in the
+      # Gateway is configured with host 'broker', port 8884, tls true and these three paths.
+      - ${SCADA_CERT_DIR:?set SCADA_CERT_DIR}/ca.crt:/app/mqtt/ca.crt:ro
+      - ${SCADA_CERT_DIR:?set SCADA_CERT_DIR}/scada-gateway.crt:/app/mqtt/scada-gateway.crt:ro
+      - ${SCADA_CERT_DIR:?set SCADA_CERT_DIR}/scada-gateway.key:/app/mqtt/scada-gateway.key:ro
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  broker-data:
+  broker-audit:
+  gateway-pki:
+  gateway-keys:
