@@ -723,17 +723,18 @@ mistyped address and an unplugged device look identical on screen — Bad,
 with no reason anywhere. That is the silence this project keeps refusing
 elsewhere.
 
-**Status (2026-09-26): steps 1–5 merged to `main`; the gate is not yet
-walked.** Merged: the pushing contract (PR #20), `Drivers.Mqtt` (PR #21),
-the edge agent (PR #23), cloud ingestion (PR #24), and TLS with a
-certificate per edge plus the cloud Compose guide (PR #25). Still open:
-**step 6**, the hand walk with the link cut for real — the gate itself —
-and `linux-arm64`, which step 3 left unverified and which must be built and
-run before edge hardware is chosen.
+**Status (2026-09-26): steps 1–5 merged to `main`, and the logging step
+with them; the gate is not yet walked.** Merged: the pushing contract
+(PR #20), `Drivers.Mqtt` (PR #21), the edge agent (PR #23), cloud ingestion
+(PR #24), TLS with a certificate per edge plus the cloud Compose guide
+(PR #25), and the driver logging described below (this repository's PR #1).
+Still open: **step 6**, the hand walk with the link cut for real — the gate
+itself — and `linux-arm64`, which step 3 left unverified and which must be
+built and run before edge hardware is chosen.
 
-The small step beside them is written and in review on
-`phase-7/driver-logging`: both drivers take an optional `ILogger` and name
-the reason a tag has no value — a malformed address in the parser's own
+The small step beside them is merged — this repository's PR #1. Both drivers
+take an optional `ILogger` and name the reason a tag has no value — a
+malformed address in the parser's own
 words, a failed request with the exception's message, a node the server
 does not have in the server's status, a value whose kind the tag cannot
 carry, and a tag that reads Good again, so the end of a fault is dated as

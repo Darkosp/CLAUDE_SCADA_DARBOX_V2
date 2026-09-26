@@ -16,6 +16,16 @@ the documents it points to, before doing anything else in this repo.
    its scope, and its test gate
 
 ## Current status
+**How to read a PR number here.** This repository
+(`Darkosp/DEEP_SCADA_DARBOX`) was created on 2026-09-26, with the project's
+history pushed into it, so the merge commits in that history carry the
+predecessor repository's numbers — #1 to #25 — and the notes below use them.
+This repository's own PRs start again at #1, which makes a bare number
+ambiguous. Two are marked *(this repository)* where they appear: its #1, the
+driver logging, and its #2, the test-fixture guard. `gh pr list` shows what
+exists here.
+
+
 
 **Phase 0 and Phase 1 are both complete and merged to `main`.** Phase 1
 (core skeleton) shipped Core, Persistence.TimescaleDb, the Modbus TCP
@@ -145,15 +155,15 @@ and a bounded on-disk buffer that records the window it lost) and ADR-0018
 (that buffer is SQLite, amending ADR-0006) — and steps 1–5 of the plan are
 merged to `main`: the pushing contract (PR #20), `Drivers.Mqtt` (PR #21),
 the edge agent (PR #23), cloud ingestion (PR #24), and TLS with per-edge
-certificates plus the cloud Compose guide (PR #25). Open: **step 6, the
-hand walk with the link cut for real** — the phase gate itself — and
-`linux-arm64`, which step 3 left unverified and which has to be built and
-run before edge hardware is chosen. Beside the steps, both drivers now name
-the reason a tag has no value (ADR-0003's silence): in review on
-`phase-7/driver-logging`. That work found a Modbus read with **no
-timeout** — a device that accepts the connection and then stops answering
-held its scan loop while the tags already read kept their values, silence
-that looks like a live plant; the request is bounded at five seconds now.
+certificates plus the cloud Compose guide (PR #25), and the logging step
+beside them (this repository's PR #1). Open: **step 6, the hand walk with
+the link cut for real** — the phase gate itself — and `linux-arm64`, which
+step 3 left unverified and which has to be built and run before edge
+hardware is chosen. Both drivers now name the reason a tag has no value
+(ADR-0003's silence). That work found a Modbus read with **no timeout** — a
+device that accepts the connection and then stops answering held its scan
+loop while the tags already read kept their values, silence that looks like
+a live plant; the request is bounded at five seconds now.
 
 ## When Phase 1 (or any phase) begins
 
@@ -213,10 +223,10 @@ that looks like a live plant; the request is bounded at five seconds now.
   reason a skipped test proves nothing: bring the database up before drawing
   any conclusion from a run.
 - **A suite that prints "Passed!" can still leave the run failed.** With no
-  database reachable, `dotnet test` on the solution exits 1 while all seven
-  projects print `Passed!`. The cause is `TestDatabase`, the class fixture
+  database reachable, `dotnet test` on the solution exited 1 while all seven
+  projects printed `Passed!`. The cause was `TestDatabase`, the class fixture
   eleven test classes take: every test in each of them skips, so
-  `InitializeAsync` never runs — and xUnit disposes the fixture anyway, where
+  `InitializeAsync` never runs — and xUnit disposed the fixture anyway, where
   `DisposeAsync` dereferenced the `ApplicationDataSource` it never created.
   Measured on 2026-09-26 while verifying the driver-logging step, on the one
   project: `Failed: 0, Passed: 4, Skipped: 57` with exit 1, beside eleven
@@ -226,7 +236,10 @@ that looks like a live plant; the request is bounded at five seconds now.
   and the count of eleven is what was measured. VSTest counts no failure and
   still exits 1, so read the exit code and each project's "Test run" block,
   not the "Passed!" line. The guard, and a test that builds the fixture and
-  disposes it uninitialized, are in PR #2 (open as this is written).
+  disposes it uninitialized, are merged in this repository's PR #2. With it,
+  on `main` at 4bbbae5 with no database reachable, all seven projects exit 0 —
+  194 passed, 133 skipped (those need TimescaleDB) — and the client's `npm
+  test` runs 47 over the pieces testable without a browser.
 
 ## Solution layout
 
