@@ -79,6 +79,16 @@ public sealed class TestDatabase : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        // xUnit disposes a class fixture even when every test in the class skipped, so on a
+        // machine with no database reachable this runs with both data sources still null:
+        // the skip path never reached InitializeAsync. Nothing was created, so nothing is
+        // owed — and returning here keeps a skipped, otherwise green run from being reported
+        // as a failed one, once per class that takes this fixture.
+        if (DataSource is null)
+        {
+            return;
+        }
+
         await ApplicationDataSource.DisposeAsync();
         await DataSource.DisposeAsync();
 
