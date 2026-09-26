@@ -125,8 +125,8 @@ script is fine. `bash deploy/cloud/certs.sh` was not: one of the script's own
 `${2:?…}` messages contained an apostrophe (`give the broker's DNS names…`), which
 `bash` reads as an opening quotation mark, so it stopped with `unexpected EOF while
 looking for matching '` before running a line. The walk met both, in that order.
-This repository's PR #3 removes the apostrophe and sets the bit, after which either
-form works; see [The result](#the-result).
+This repository's PR #3, merged after the walk, removes the apostrophe and sets the
+bit, after which either form works; see [The result](#the-result).
 
 `plant-7` is this walk's edge id; the name in the certificate is the identity the
 broker checks, so it and `SCADA_EDGE_ID` must be the same string. `expiry` prints
@@ -579,7 +579,8 @@ plainly: what the phase claims held up.
    is how every earlier walk ran it. But the file's mode in the repository is
    `100644`, so on Linux or in WSL the documented `deploy/cloud/certs.sh ca` fails
    with `Permission denied`. Step 3 records the working form for the commit as it
-   was, and this repository's PR #3 removes the apostrophe and sets the bit.
+   was, and this repository's PR #3, merged after the walk, removes the apostrophe
+   and sets the bit.
 2. **The application's log carries no timestamps.** Step 8 asks for the first
    `Cannot reach the broker` line's *timestamp*; nothing in the container's output
    has one until `docker logs -t` adds it. The step says so now.
@@ -624,8 +625,6 @@ plainly: what the phase claims held up.
 - **A second outage with the bound left at 1,000,000**, which is the run in which
   `samples` is the scan rate times the outage's length rather than the bound, and
   in which nothing is staged as lost.
-
-
 
 ## What to report
 

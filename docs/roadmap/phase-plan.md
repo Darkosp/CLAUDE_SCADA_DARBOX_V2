@@ -736,7 +736,10 @@ database reachable, is 311 passed and 17 skipped across seven projects, none
 failed. Merged: the pushing contract
 (PR #20), `Drivers.Mqtt` (PR #21), the edge agent (PR #23), cloud ingestion
 (PR #24), TLS with a certificate per edge plus the cloud Compose guide
-(PR #25), and the driver logging described below (this repository's PR #1).
+(PR #25), and the driver logging described below (this repository's PR #1). The
+walk's one defect outside the procedure — `deploy/cloud/certs.sh` could not be run
+with `bash`, and had no executable bit — is fixed in this repository's PR #3,
+merged after the walk.
 Still open: **`linux-arm64`**, which step 3 left unverified and which must be
 built and run before edge hardware is chosen — and with it the walk on plant
 hardware, because this walk's outage was a Docker network disconnect on one

@@ -163,7 +163,10 @@ stack's network; the readings measured inside the outage stored after the
 reconnect with their own timestamps; the 190 readings a lowered bound dropped
 reported as one entry with its count and both ends; an outage nothing was
 measured in adding no row; and the suite, with a database reachable, at 311
-passed and 17 skipped across seven projects. Open: `linux-arm64`, which
+passed and 17 skipped across seven projects — and the one defect the walk found
+outside the procedure, `deploy/cloud/certs.sh` unparseable under `bash` and
+missing its executable bit, is fixed in this repository's PR #3, merged after the
+walk. Open: `linux-arm64`, which
 step 3 left unverified and which has to be built and run before edge
 hardware is chosen — and with it a walk on plant hardware, since this one's
 outage was a Docker network disconnect and not a link between two. Both drivers
