@@ -212,6 +212,17 @@ that looks like a live plant; the request is bounded at five seconds now.
   broken. This has already cost this project one false conclusion. For the same
   reason a skipped test proves nothing: bring the database up before drawing
   any conclusion from a run.
+- **A suite that prints "Passed!" can still leave the run failed.** With no
+  database reachable, `dotnet test` on the solution exits 1 while all seven
+  projects print `Passed!`. The cause is one class: `SessionStorageTests` takes
+  `IClassFixture<TestDatabase>`, every test in it skips, so `InitializeAsync`
+  never runs — and xUnit disposes the fixture anyway, where `DisposeAsync`
+  dereferences the `ApplicationDataSource` it never created:
+  `[Test Class Cleanup Failure (…SessionStorageTests)] System.NullReferenceException`.
+  VSTest counts no failures and still exits 1. Found on 2026-09-26 while
+  verifying the driver-logging step; the guard at the top of `DisposeAsync` is
+  still owed. Until it is there, read the exit code and each project's "Test
+  run" block, not the "Passed!" line.
 
 ## Solution layout
 
