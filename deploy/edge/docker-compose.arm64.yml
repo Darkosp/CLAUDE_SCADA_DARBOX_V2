@@ -1,0 +1,12 @@
+# Running the arm64 image on a machine that is not arm64: the emulated check of the publish and of
+# the image, not a plant. Side by side with the plain file, which stays the one command an edge
+# machine runs — there, the image is the machine's own architecture and nothing here applies:
+#
+#   docker compose -f deploy/edge/docker-compose.yml -f deploy/edge/docker-compose.arm64.yml \
+#     --env-file deploy/edge/.env up -d
+#
+# It needs the arm64 image (deploy/build-images.sh <commit> arm64 → tag with the `-arm64` suffix,
+# which is what SCADA_IMAGE_TAG must carry here) and binfmt (QEMU) on this host.
+services:
+  edge:
+    platform: linux/arm64
