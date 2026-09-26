@@ -136,10 +136,24 @@ appeared in the wrong place for a whole round trip because the browser
 still held the pre-upgrade client while the server was new. `index.html`
 is served `no-cache` now, but the habit is the real protection.
 
-**Next: Phase 7 (cloud topology).** It is not packaging: the push-capable
-driver contract Phase 4 deferred, the broker (ADR-0006 names only the
-MQTTnet library), store-and-forward semantics, and edge identity all need
-ADRs before any code. `phase-plan.md` lists them.
+**Phase 7 (cloud topology) is in progress.** Its ADRs are decided —
+ADR-0016 (a driver declares itself polled or pushing, and silence past a
+declared staleness limit reads as Bad), ADR-0017 (the link: the edge
+acquires and buffers but does not evaluate alarms, the payload is ours
+rather than Sparkplug B, Mosquitto over TLS with a certificate per edge,
+and a bounded on-disk buffer that records the window it lost) and ADR-0018
+(that buffer is SQLite, amending ADR-0006) — and steps 1–5 of the plan are
+merged to `main`: the pushing contract (PR #20), `Drivers.Mqtt` (PR #21),
+the edge agent (PR #23), cloud ingestion (PR #24), and TLS with per-edge
+certificates plus the cloud Compose guide (PR #25). Open: **step 6, the
+hand walk with the link cut for real** — the phase gate itself — and
+`linux-arm64`, which step 3 left unverified and which has to be built and
+run before edge hardware is chosen. Beside the steps, both drivers now name
+the reason a tag has no value (ADR-0003's silence): in review on
+`phase-7/driver-logging`. That work found a Modbus read with **no
+timeout** — a device that accepts the connection and then stops answering
+held its scan loop while the tags already read kept their values, silence
+that looks like a live plant; the request is bounded at five seconds now.
 
 ## When Phase 1 (or any phase) begins
 

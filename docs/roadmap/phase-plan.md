@@ -723,6 +723,29 @@ mistyped address and an unplugged device look identical on screen — Bad,
 with no reason anywhere. That is the silence this project keeps refusing
 elsewhere.
 
+**Status (2026-09-26): steps 1–5 merged to `main`; the gate is not yet
+walked.** Merged: the pushing contract (PR #20), `Drivers.Mqtt` (PR #21),
+the edge agent (PR #23), cloud ingestion (PR #24), and TLS with a
+certificate per edge plus the cloud Compose guide (PR #25). Still open:
+**step 6**, the hand walk with the link cut for real — the gate itself —
+and `linux-arm64`, which step 3 left unverified and which must be built and
+run before edge hardware is chosen.
+
+The small step beside them is written and in review on
+`phase-7/driver-logging`: both drivers take an optional `ILogger` and name
+the reason a tag has no value — a malformed address in the parser's own
+words, a failed request with the exception's message, a node the server
+does not have in the server's status, a value whose kind the tag cannot
+carry, and a tag that reads Good again, so the end of a fault is dated as
+well as its start. A standing fault is named once rather than once per
+scan, and a healthy scan writes nothing, so the reasons are not lost among
+lines saying nothing happened. The logging tests were the whole point of
+the step and they earned it: they found a defect — **a Modbus read had no
+timeout**, so a device that accepts the connection and then stops answering
+held its scan loop forever while the tags already read kept the values they
+had, which is silence that looks exactly like a live plant. The request is
+bounded at five seconds now.
+
 **Test gate:** with the edge agent disconnected from the network for a
 period and then reconnected, the history contains the samples from the
 outage with their original timestamps, and nothing is invented for the

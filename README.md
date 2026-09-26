@@ -4,9 +4,14 @@ A modular, web-based SCADA platform, built on .NET and Angular.
 
 ## Status
 
-**Phase 0 — Concept and architecture.** No application code yet by design.
-This repository is a fresh start: the concept, architecture and every binding
-decision are being defined here, from scratch, before implementation begins.
+**Phase 7 — Cloud topology, in progress.** The platform exists and runs:
+Core, the Gateway and its browser client, PostgreSQL/TimescaleDB, the
+on-premises and cloud Compose topologies, and Modbus, OPC UA and MQTT
+drivers. Phases 0–6.5 are complete and merged to `main`, and so are Phase
+7's first five steps — the pushing contract, the MQTT driver, the edge
+agent, cloud ingestion, and the broker over TLS. What Phase 7 still owes is
+its hand walk, with the link cut for real. `CLAUDE.md` carries the current
+state; `docs/roadmap/phase-plan.md` holds the plan and each phase's status.
 
 Prior work in sibling repositories/documents on this machine (e.g. `NewScada`,
 `SCADA-BRIEFING.md`, the booster-pump specification) is **not** a foundation
@@ -36,12 +41,15 @@ to.
 
 ```
 docs/
-  briefings/         Session hand-off notes and planning summaries
   architecture/       Architecture overview and decisions
     decisions/        Architecture Decision Records (ADRs)
   roadmap/            Phased delivery plan
-src/                  Application source (from the implementation phase)
-tests/                Automated tests (from the implementation phase)
+deploy/               Compose topologies and operator guides
+  edge/               The edge machine: agent, drivers, local buffer
+  cloud/              The cloud: Gateway, database, broker and its TLS material
+src/                  Application source — Core, Gateway, EdgeAgent, client, modules
+tests/                Automated tests, one project per unit under test
+tools/                Modbus and OPC UA simulators, used by tests and by hand
 ```
 
 ## Licence
