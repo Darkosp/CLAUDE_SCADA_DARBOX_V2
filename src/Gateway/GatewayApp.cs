@@ -182,8 +182,14 @@ public static class GatewayApp
 
         // Compile-time composition of driver modules (ADR-0002): each is referenced as a
         // project and registered here by hand. Nothing is scanned for or loaded dynamically.
-        services.AddSingleton<IDeviceDriverFactory, ModbusTcpDriverFactory>();
-        services.AddSingleton<IDeviceDriverFactory, OpcUaDriverFactory>();
+        // Each is given the host's logger factory, so a driver can say why a tag has no value
+        // — the reason a Bad reading cannot carry on its own.
+        services.AddSingleton<IDeviceDriverFactory>(provider => new ModbusTcpDriverFactory(
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<ILoggerFactory>()));
+        services.AddSingleton<IDeviceDriverFactory>(provider => new OpcUaDriverFactory(
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<ILoggerFactory>()));
         services.AddSingleton<IPushingDeviceDriverFactory>(provider =>
             new MqttPushingDriverFactory(provider.GetRequiredService<ILoggerFactory>()));
         services.AddSingleton<TagWriter>();

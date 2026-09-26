@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Model;
 
@@ -10,8 +12,17 @@ namespace ScadaDarbox.Modules.Drivers.OpcUa;
 public sealed class OpcUaDriverFactory : IDeviceDriverFactory
 {
     private readonly TimeProvider _timeProvider;
+    private readonly ILoggerFactory _loggerFactory;
 
-    public OpcUaDriverFactory(TimeProvider timeProvider) => _timeProvider = timeProvider;
+    /// <remarks>
+    /// The logger factory is optional, as it is for the MQTT module: a composition that keeps
+    /// no log passes nothing rather than being given one it did not ask for.
+    /// </remarks>
+    public OpcUaDriverFactory(TimeProvider timeProvider, ILoggerFactory? loggerFactory = null)
+    {
+        _timeProvider = timeProvider;
+        _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+    }
 
     public string DriverKey => "opc-ua";
 
@@ -31,6 +42,10 @@ public sealed class OpcUaDriverFactory : IDeviceDriverFactory
             && bool.TryParse(raw, out var parsed)
             && parsed;
 
-        return new OpcUaDriver(endpointUrl, acceptUntrusted, _timeProvider);
+        return new OpcUaDriver(
+            endpointUrl,
+            acceptUntrusted,
+            _timeProvider,
+            _loggerFactory.CreateLogger<OpcUaDriver>());
     }
 }

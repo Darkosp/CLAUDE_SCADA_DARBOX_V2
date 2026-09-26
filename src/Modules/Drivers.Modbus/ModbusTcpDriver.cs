@@ -1,4 +1,6 @@
 using System.Net.Sockets;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NModbus;
 using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Model;
@@ -9,22 +11,63 @@ namespace ScadaDarbox.Modules.Drivers.Modbus;
 /// Reads and writes tags over Modbus TCP. A module: it depends only on core's public
 /// contracts and is composed at compile time, never discovered by reflection (ADR-0002).
 /// </summary>
+/// <remarks>
+/// An unreachable device, a mistyped address and a value the protocol cannot carry all end
+/// as the same reading with no value, which is what ADR-0003 asks for — and all three are
+/// written to the log with their own reason, so that the same reading is not all anyone can
+/// see of them.
+/// </remarks>
 public sealed class ModbusTcpDriver : IDeviceDriver
 {
     private readonly string _host;
     private readonly int _port;
     private readonly byte _unitId;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
+
+    /// <summary>The reason each tag last read Bad, so a standing fault is named once.</summary>
+    /// <remarks>
+    /// A fault that repeats every scan is one condition, not an event per second: writing it
+    /// again each time buries the line that says what is actually wrong — the same reasoning
+    /// the alarm journal uses for a flapping value. The entry is dropped when the tag reads
+    /// again, so a fault that returns is named again, and a reason that changes is a new
+    /// message rather than one swallowed by the first.
+    /// <para>
+    /// No lock: a device's tags are read by that device's own scan loop, one at a time, and
+    /// nothing else touches this. Writes do not.
+    /// </para>
+    /// </remarks>
+    private readonly Dictionary<Guid, string> _badReasons = [];
+
+    /// <summary>How long a request waits for the device before it is given up on.</summary>
+    /// <remarks>
+    /// A socket read with no timeout waits forever, and that is the default: a device that
+    /// accepts the connection and then stops answering — a wedged gateway, a firewall that
+    /// takes the connection and drops what follows — used to leave the read hanging, so the
+    /// scan loop never reached the next tag and the tags already read kept the values they
+    /// had. Silence that looks like a live plant is the reading ADR-0003 refuses. Bounding
+    /// the request is what turns it into a Bad reading with the runtime's own words beside it.
+    /// </remarks>
+    private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(5);
 
     private TcpClient? _tcpClient;
     private IModbusMaster? _master;
 
-    public ModbusTcpDriver(string host, int port, byte unitId, TimeProvider timeProvider)
+    public ModbusTcpDriver(
+        string host,
+        int port,
+        byte unitId,
+        TimeProvider timeProvider,
+        ILogger<ModbusTcpDriver>? logger = null)
     {
         _host = host;
         _port = port;
         _unitId = unitId;
         _timeProvider = timeProvider;
+
+        // Optional so a composition that deliberately keeps no log — a unit test, a tool —
+        // needs no argument, and the same way the MQTT module takes its logger.
+        _logger = logger ?? NullLogger<ModbusTcpDriver>.Instance;
     }
 
     public async Task ConnectAsync(CancellationToken cancellationToken)
@@ -36,6 +79,11 @@ public sealed class ModbusTcpDriver : IDeviceDriver
 
         _tcpClient = client;
         _master = new ModbusFactory().CreateMaster(client);
+
+        // Bounded so a device that stops answering reads Bad instead of holding the scan loop
+        // (see ResponseTimeout). The transport carries the setting to the socket underneath.
+        _master.Transport.ReadTimeout = (int)ResponseTimeout.TotalMilliseconds;
+        _master.Transport.WriteTimeout = (int)ResponseTimeout.TotalMilliseconds;
     }
 
     /// <remarks>
@@ -85,17 +133,19 @@ public sealed class ModbusTcpDriver : IDeviceDriver
 
     private async Task<TagReading> ReadOneAsync(DriverTag tag, CancellationToken cancellationToken)
     {
-        if (!ModbusAddress.TryParse(tag.SourceAddress, out var address, out _))
+        if (!ModbusAddress.TryParse(tag.SourceAddress, out var address, out var error))
         {
             // A misconfigured address is a permanent fault, not a transient one, but it is
             // still reported as a value with Bad quality rather than thrown: one broken tag
-            // must not stop the rest of the device from being scanned.
-            return Bad(tag);
+            // must not stop the rest of the device from being scanned. The parser's own words
+            // go to the log with it — otherwise a mistyped address and a device that will not
+            // answer read identically from the outside.
+            return Bad(tag, error);
         }
 
         if (_master is null)
         {
-            return Bad(tag);
+            return Bad(tag, "the connection has not succeeded yet");
         }
 
         try
@@ -123,15 +173,17 @@ public sealed class ModbusTcpDriver : IDeviceDriver
                 value = new TagValue.Numeric(registers[0] * address.Scale);
             }
 
-            return new TagReading(tag.TagId, value, _timeProvider.GetUtcNow(), Quality.Good);
+            var reading = new TagReading(tag.TagId, value, _timeProvider.GetUtcNow(), Quality.Good);
+            ReportRecovery(tag);
+            return reading;
         }
         catch (Exception exception) when (exception is SlaveException or IOException or SocketException
                                               or TimeoutException or InvalidOperationException)
         {
             // The device answered with an error, or the link is down. Either way there is no
             // value: reporting Bad is what lets the rest of the system tell this apart from a
-            // genuine zero (ADR-0003).
-            return Bad(tag);
+            // genuine zero (ADR-0003). Which of the two it was goes to the log with it.
+            return Bad(tag, exception);
         }
     }
 
@@ -140,7 +192,54 @@ public sealed class ModbusTcpDriver : IDeviceDriver
     /// placeholder is indistinguishable from a real reading of the same shape, which is
     /// precisely the confusion ADR-0003 exists to prevent.
     /// </remarks>
-    private TagReading Bad(DriverTag tag) => new(tag.TagId, null, _timeProvider.GetUtcNow(), Quality.Bad);
+    private TagReading Bad(DriverTag tag, string reason)
+    {
+        ReportFault(tag, reason);
+        return new(tag.TagId, null, _timeProvider.GetUtcNow(), Quality.Bad);
+    }
+
+    /// <summary>The same reading, for a failure the runtime described itself.</summary>
+    private TagReading Bad(DriverTag tag, Exception exception)
+    {
+        // The exception is carried as well as its message: the message is the reason an
+        // operator reads, and the stack is what is needed when it is not self-explanatory.
+        ReportFault(tag, exception.Message, exception);
+        return new(tag.TagId, null, _timeProvider.GetUtcNow(), Quality.Bad);
+    }
+
+    private void ReportFault(DriverTag tag, string reason, Exception? exception = null)
+    {
+        if (_badReasons.TryGetValue(tag.TagId, out var previous) && previous == reason)
+        {
+            // Already said, and nothing about it has changed.
+            return;
+        }
+
+        _badReasons[tag.TagId] = reason;
+
+        _logger.LogWarning(
+            exception,
+            "Tag {TagId} (address '{SourceAddress}') reads Bad on {Host}:{Port}: {Reason}",
+            tag.TagId,
+            tag.SourceAddress,
+            _host,
+            _port,
+            reason);
+    }
+
+    private void ReportRecovery(DriverTag tag)
+    {
+        // Only for a tag that had a fault to report: an ordinary Good reading is not news.
+        if (_badReasons.Remove(tag.TagId))
+        {
+            _logger.LogInformation(
+                "Tag {TagId} (address '{SourceAddress}') on {Host}:{Port} reads Good again.",
+                tag.TagId,
+                tag.SourceAddress,
+                _host,
+                _port);
+        }
+    }
 
     public async ValueTask DisposeAsync() => await DisposeConnectionAsync().ConfigureAwait(false);
 

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Model;
 
@@ -11,8 +13,17 @@ namespace ScadaDarbox.Modules.Drivers.Modbus;
 public sealed class ModbusTcpDriverFactory : IDeviceDriverFactory
 {
     private readonly TimeProvider _timeProvider;
+    private readonly ILoggerFactory _loggerFactory;
 
-    public ModbusTcpDriverFactory(TimeProvider timeProvider) => _timeProvider = timeProvider;
+    /// <remarks>
+    /// The logger factory is optional, as it is for the MQTT module: a composition that keeps
+    /// no log passes nothing rather than being given one it did not ask for.
+    /// </remarks>
+    public ModbusTcpDriverFactory(TimeProvider timeProvider, ILoggerFactory? loggerFactory = null)
+    {
+        _timeProvider = timeProvider;
+        _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+    }
 
     /// <summary>The default Modbus TCP port, used when a device does not specify one.</summary>
     public const int DefaultPort = 502;
@@ -37,6 +48,11 @@ public sealed class ModbusTcpDriverFactory : IDeviceDriverFactory
             ? parsedUnitId
             : (byte)1;
 
-        return new ModbusTcpDriver(host, port, unitId, _timeProvider);
+        return new ModbusTcpDriver(
+            host,
+            port,
+            unitId,
+            _timeProvider,
+            _loggerFactory.CreateLogger<ModbusTcpDriver>());
     }
 }
