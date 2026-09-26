@@ -745,9 +745,10 @@ merged after the walk.
 **`linux-arm64`** is built and run under emulation since 2026-09-27: the image is
 arm64, the agent ran under QEMU, and its two tags' readings reached the cloud
 database — [`phase-7-manual-gate.md`](phase-7-manual-gate.md#since-the-walk-linux-arm64)
-has the numbers, and what they do not prove. Still open: **a real arm64 machine**,
-and the walk on plant hardware with it, because this walk's outage was a Docker
-network disconnect on one machine and not a link between two.
+has the numbers, and what they do not prove. Merged as this repository's PR #4.
+Still open: **a real arm64 machine**, and the walk on plant hardware with it,
+because this walk's outage was a Docker network disconnect on one machine and not
+a link between two.
 
 The small step beside them is merged — this repository's PR #1. Both drivers
 take an optional `ILogger` and name the reason a tag has no value — a

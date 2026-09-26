@@ -696,6 +696,9 @@ strongest check available without a Raspberry Pi and it is not a substitute for 
 a plant run on a real aarch64 machine — and a link between two hosts — remain owed,
 as the list above says.
 
+**Merged as this repository's PR #4** on 2026-09-27, the image build and this
+record together.
+
 ## What to report
 
 Anything that looks wrong or merely confusing, even where the behaviour is

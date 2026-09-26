@@ -169,9 +169,10 @@ missing its executable bit, is fixed in this repository's PR #3, merged after th
 walk. `linux-arm64`, which step 3
 left unverified, is built and run under emulation since 2026-09-27 — the image
 is arm64, the agent ran under QEMU and its readings reached the cloud database,
-with the numbers in that record's own section — and what is still open is a real
-arm64 board and with it a walk on plant hardware, since this one's
-outage was a Docker network disconnect and not a link between two. Both drivers
+with the numbers in that record's own section; that work is this repository's
+PR #4, merged — and what is still open is a real arm64 board and with it a walk
+on plant hardware, since this one's outage was a Docker network disconnect and
+not a link between two. Both drivers
 now name the reason a tag has no value
 (ADR-0003's silence). That work found a Modbus read with **no timeout** — a
 device that accepts the connection and then stops answering held its scan
