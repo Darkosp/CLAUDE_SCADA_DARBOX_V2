@@ -10,8 +10,13 @@ on-premises and cloud Compose topologies, and Modbus, OPC UA and MQTT
 drivers. Phases 0–6.5 are complete and merged to `main`, and so are Phase
 7's first five steps — the pushing contract, the MQTT driver, the edge
 agent, cloud ingestion, and the broker over TLS — and the driver logging
-beside them. What Phase 7 still owes is its hand walk, with the link cut for
-real. `CLAUDE.md` carries the current
+beside them. Its hand walk, with the link cut for real, is **walked and
+recorded**: [the Phase 7 gate record](docs/roadmap/phase-7-manual-gate.md) has
+the numbers — the history holding the readings measured during the outage with
+the edge's own timestamps, the readings a lowered buffer bound dropped reported
+as one journal entry, and an outage nothing was measured in adding no row. What
+Phase 7 still owes is `linux-arm64`, and with it a walk on plant hardware.
+`CLAUDE.md` carries the current
 state; `docs/roadmap/phase-plan.md` holds the plan and each phase's status.
 
 Prior work in sibling repositories/documents on this machine (e.g. `NewScada`,

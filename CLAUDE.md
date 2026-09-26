@@ -156,10 +156,18 @@ and a bounded on-disk buffer that records the window it lost) and ADR-0018
 merged to `main`: the pushing contract (PR #20), `Drivers.Mqtt` (PR #21),
 the edge agent (PR #23), cloud ingestion (PR #24), and TLS with per-edge
 certificates plus the cloud Compose guide (PR #25), and the logging step
-beside them (this repository's PR #1). Open: **step 6, the hand walk with
-the link cut for real** — the phase gate itself — and `linux-arm64`, which
+beside them (this repository's PR #1). **The gate itself is walked** — one
+machine, with the link cut for real, recorded in
+`docs/roadmap/phase-7-manual-gate.md`: 2 min 5 s with the edge off the cloud
+stack's network; the readings measured inside the outage stored after the
+reconnect with their own timestamps; the 190 readings a lowered bound dropped
+reported as one entry with its count and both ends; an outage nothing was
+measured in adding no row; and the suite, with a database reachable, at 311
+passed and 17 skipped across seven projects. Open: `linux-arm64`, which
 step 3 left unverified and which has to be built and run before edge
-hardware is chosen. Both drivers now name the reason a tag has no value
+hardware is chosen — and with it a walk on plant hardware, since this one's
+outage was a Docker network disconnect and not a link between two. Both drivers
+now name the reason a tag has no value
 (ADR-0003's silence). That work found a Modbus read with **no timeout** — a
 device that accepts the connection and then stops answering held its scan
 loop while the tags already read kept their values, silence that looks like

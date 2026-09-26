@@ -724,13 +724,23 @@ with no reason anywhere. That is the silence this project keeps refusing
 elsewhere.
 
 **Status (2026-09-26): steps 1–5 merged to `main`, and the logging step
-with them; the gate is not yet walked.** Merged: the pushing contract
+with them; the gate itself is walked**, on one machine, and
+[`phase-7-manual-gate.md`](phase-7-manual-gate.md) records what it measured: a
+2 min 5 s outage with the edge disconnected from the cloud stack's own network;
+28 and 29 readings for two tags measured **inside** the outage with the edge's own
+timestamps and stored **after** the reconnect, all within one instant;
+`rows` equal to `distinct_times`; an outage in which nothing was measured adding
+no row at all; and the 190 readings a deliberately lowered bound dropped reported
+as one `SamplesLost` entry with its count and both ends. The suite, with a
+database reachable, is 311 passed and 17 skipped across seven projects, none
+failed. Merged: the pushing contract
 (PR #20), `Drivers.Mqtt` (PR #21), the edge agent (PR #23), cloud ingestion
 (PR #24), TLS with a certificate per edge plus the cloud Compose guide
 (PR #25), and the driver logging described below (this repository's PR #1).
-Still open: **step 6**, the hand walk with the link cut for real — the gate
-itself — and `linux-arm64`, which step 3 left unverified and which must be
-built and run before edge hardware is chosen.
+Still open: **`linux-arm64`**, which step 3 left unverified and which must be
+built and run before edge hardware is chosen — and with it the walk on plant
+hardware, because this walk's outage was a Docker network disconnect on one
+machine and not a link between two.
 
 The small step beside them is merged — this repository's PR #1. Both drivers
 take an optional `ILogger` and name the reason a tag has no value — a

@@ -1,17 +1,21 @@
 # Walking the Phase 7 gate by hand
 
-**Not yet walked.** Nothing below has been run. This is the procedure, written
-from the code, the Compose files and the two deployment guides, so that the walk
-has something to follow and something to be compared against afterwards. The
-result slot at the end is empty on purpose. When the walk happens, what was
-measured replaces this paragraph — the way `phase-5.5-manual-gate.md` and
-`phase-6-manual-gate.md` record walks that had been.
+**Walked on 2026-09-26, on one machine**, with the link cut for real: the edge
+was disconnected from the cloud stack's own Docker network for 2 min 5 s, its
+buffer filled to a deliberately lowered bound of 60 readings, the history holds
+readings measured inside the outage with the edge's own timestamps, an outage in
+which nothing was measured added no row at all, and the readings the bound forced
+out are one journal entry naming how many and from when to when.
+
+The procedure below is what was followed. Where the walk found it wrong, the step
+says so and [The result](#the-result) names it in the list of what the walk found;
+the numbers are there too. The step headings, the commands and the claims are
+otherwise as they were written.
 
 **Read again against the code on 2026-09-26, and corrected where it disagreed
 with it** — the `git archive` note, the edge's missing `--env-file`, what the
 Gateway's log can show before a device exists, where the buffer's bound is
-really set, and the two names step 6 has to note. Still nothing below has been
-run.
+really set, and the two names step 6 has to note.
 
 Phase 7's test gate is in [the phase plan](phase-plan.md):
 
@@ -113,6 +117,17 @@ deploy/cloud/certs.sh client plant-7
 deploy/cloud/certs.sh expiry
 ```
 
+**How it is called matters, on the commit that was walked.** As committed then,
+`certs.sh` has no executable bit, so on Linux or in WSL — where there is no Git
+Bash to run a file that lacks `+x` — the line above is `sh deploy/cloud/certs.sh
+<args>`: `sh` is the interpreter the file's own first line names, and under it the
+script is fine. `bash deploy/cloud/certs.sh` was not: one of the script's own
+`${2:?…}` messages contained an apostrophe (`give the broker's DNS names…`), which
+`bash` reads as an opening quotation mark, so it stopped with `unexpected EOF while
+looking for matching '` before running a line. The walk met both, in that order.
+This repository's PR #3 removes the apostrophe and sets the bit, after which either
+form works; see [The result](#the-result).
+
 `plant-7` is this walk's edge id; the name in the certificate is the identity the
 broker checks, so it and `SCADA_EDGE_ID` must be the same string. `expiry` prints
 every date: record the earliest, because a certificate that expires mid-walk
@@ -197,7 +212,13 @@ things:
 - If the edge was disconnected, the edge's own log is where it shows:
   `Cannot reach the broker at <host>:<port> (<reason>); <N> sample(s) wait in the
   buffer.`, repeating, with `N` growing by the scan rate. **Write down the first
-  line's timestamp and `N`.** The container name comes from step 6.
+  line's timestamp and `N`.** The container name comes from step 6. Two things
+  about that first line are easy to misread: the application's output carries no
+  timestamp of its own, so add `-t` to `docker logs`, and the line arrives tens of
+  seconds after the cut — the walk's came 25 s late and already read `49`, because
+  readings keep buffering while the publisher is still finding out that its socket
+  is gone. A walker who checks a few seconds after cutting, sees nothing and
+  concludes the cut did not happen is reading a log that has not caught up.
 - If the broker was stopped, the broker's own log goes quiet and the Gateway's
   MQTT device stays subscribed — it is not the Gateway's link. The edge says the
   same thing it would say if its cable were pulled, because from the edge's side
@@ -238,7 +259,11 @@ cannot show:
   bound lowered while the buffer already holds more than it drops the oldest
   readings then and there, recording a lost window of its own; do it before step
   7, with the buffer nearly empty, and the loss the walk stages is the one it
-  meant to stage. See step 13.
+  meant to stage. See step 13. **And it decides what steps 11 and 12 can count**:
+  at 60 with two readings a second, the retained window is the last 30 s of the
+  outage, so `samples` comes out near the bound rather than near the scan rate
+  times the outage's length — and the outage has to run past the bound before
+  anything is staged as lost at all.
 
 ## 10. Reconnect, and watch it drain
 
@@ -269,7 +294,10 @@ docker compose -f deploy/cloud/docker-compose.yml --env-file deploy/cloud/.env e
 
 - `samples` is about the scan rate times the outage's length — neither zero nor
   more than the wait could have produced. Write both numbers down: this is the
-  one place where a count is the evidence.
+  one place where a count is the evidence. **Unless the bound was lowered, per
+  step 9** — then it is the bound that decides, and the walk's two tags came out
+  at 28 and 29 rather than the ~125 a 2 min 5 s outage at 1 Hz could have
+  produced.
 - `first_measured` and `last_measured` are **inside the outage**, on the edge's
   clock. A first measurement equal to the reconnect time is the failure this gate
   exists to catch: readings re-dated to when the link came back would look
@@ -286,9 +314,12 @@ docker compose -f deploy/cloud/docker-compose.yml --env-file deploy/cloud/.env e
 
 - `rows` equals `distinct_times`: the link is at-least-once, and the unique index
   is what makes a re-delivery a no-op.
-- `before_the_cut` equals the `rows` written down in step 7. That is "nothing is
-  invented for the period the link was down" in its strong form: the outage added
-  rows inside its own window and touched no reading from before it.
+- `before_the_cut` is **at least** the `rows` written down in step 7, and equal to
+  it only if that baseline was taken at the instant of the cut. Saying "at least"
+  weakens nothing that matters: the outage added rows inside its own window and
+  changed no reading from before it. The walk's two numbers were 160 and 148 —
+  twelve readings whose `source_time` is before the cut were published in the 13 s
+  between the baseline and the cut, and arrived after it.
 
 **Worth recording, not a defect:** whether `ingested_at` ever goes backwards as
 `source_time` rises (`lag` over `source_time`). A batch leaves the edge oldest
@@ -307,7 +338,12 @@ docker compose -f deploy/edge/docker-compose.yml --env-file deploy/edge/.env sto
 ```
 
 Wait a few minutes — long enough to be unmistakable — and write down both times,
-UTC. Then start it again and wait for it to catch up.
+UTC. **Record the last reading measured before the stop and the first one after,
+not the times the commands ran.** `docker compose stop` lets the container shut
+down gracefully and the restart's first readings land a second after the command,
+so a window taken between command times can catch readings on either side of it:
+the walk's first attempt counted 16 readings that were all measured *after* the
+edge came back. Then start it again and wait for it to catch up.
 
 ```bash
 docker compose -f deploy/edge/docker-compose.yml --env-file deploy/edge/.env start edge
@@ -345,6 +381,40 @@ path was not exercised; 1,000,000 pending samples at this scan rate is about
 eleven and a half days" is an honest result. A gate summary that does not say
 whether this ran is the kind of report that gets a phase closed on half a walk.
 
+## Appendix: the whole walk on one machine
+
+Step 0 allows this machine to host both ends, and the walk above did. What that
+changes, so the next one does not have to work it out again — none of it is a
+substitute for two hosts and a real link:
+
+- **The edge reaches the broker over the cloud stack's own Docker network.** After
+  the edge stack is up, join it —
+  `docker network connect scada-darbox-cloud_default scada-darbox-edge-edge-1` —
+  and set `SCADA_BROKER_HOST=broker`. That name is already in the broker's
+  certificate from step 3, so nothing is reissued and no `extra_hosts` entry is
+  needed. The published 8883 and `host.docker.internal` are the other route, and
+  that one needs the certificate to carry its name as well.
+- **The simulators are reached the same way, and started on their own**: `docker
+  compose -f deploy/docker-compose.yml --env-file deploy/.env up -d modbus-sim
+  opcua-sim`, then `docker network connect scada-darbox_default
+  scada-darbox-edge-edge-1`. They publish nothing, so a network is the only way to
+  them, and starting the whole on-premises stack instead would put a second
+  Gateway on the same 8080 and a second database behind a volume of its own for
+  nothing.
+- **The outage is the network disconnect.** It is the literal reading of the gate,
+  it leaves the cloud side untouched, and on one machine it is the only form that
+  does not need the publish path reasoned about first.
+- **One clock, not two.** Every timestamp in such a walk comes from one machine's
+  clock, so the record should say that rather than imply that the skew half of
+  step 1's check ran.
+- **The C# suite asks the host about Docker.** Tests that run `docker compose
+  version` or `docker version` skip when the CLI is not on the host running
+  `dotnet test`: with Docker inside WSL and the suite in Windows, 17 of them skip.
+- **The database the suite is pointed at is the walker's choice, and `localhost`
+  is not always it.** `SCADA_TEST_DB_HOST` has to name the address the database
+  answers on — here WSL's — because a PostgreSQL that already owns
+  `localhost:5432` on the Windows side answers first and is not that server.
+
 ## What to record
 
 Every number below is one the walk produced. None of it is in the repository, and
@@ -369,14 +439,196 @@ document that did not match what you saw.
 
 ## The result
 
-*Empty. The walk has not been run.* When it is, what was measured replaces this
-section, and the status note in [the phase plan](phase-plan.md) says the gate was
-walked — with the numbers, not with a verdict.
+Walked on 2026-09-26, by one person, on one machine. Every number below is one the
+walk produced; the two ends of it — the cut and the reconnect — are times that
+were written down as they happened, from the clock of the host the edge ran on.
+
+### The setup
+
+| | |
+|---|---|
+| the commit | `23232df` (`23232df0ecfec33a256da24a2dc0a663e4f191cf`), `main == origin/main`, nothing uncommitted |
+| the images | all five, built from that commit by `deploy/build-images.sh`, tagged `23232df` |
+| the hosts | one: Windows 11 Home 10.0.26200 for the browser and the C# suite, and Ubuntu 26.04.1 in WSL2 (kernel 6.18.33.2, `linux-x64`) for Docker 29.1.3 and Compose 2.40.3, holding all three stacks |
+| the edge | id `plant-7`, certificate signed by the walk's own CA, `SCADA_BROKER_HOST=broker`, joined to the cloud stack's network and to the simulators' |
+| the device | `Edge plant-7` (`338cf425-8f8e-465f-af46-2a9bbc148e0f`), driver `mqtt`, Site `Bitola`, host `broker`, port `8884`, topic `scada/edge/plant-7/samples`, `tls true`, the Gateway's three certificate paths |
+| the tags | `Discharge Pressure` (`ccfd90b3-f8aa-4e7f-8269-a74df739a224`, `holding:0`) and `OPC Pressure` (`f95b4476-d3b7-49d7-a749-ebe51cddd292`, `ns=2;s=Pump1.Pressure`) |
+| the cadence | the edge's own `ScanIntervalMs` 1000 on each of its two devices: 1 reading a second per tag, 2 in all. The Gateway's device is pushing, so it has no scan interval |
+| the bound | `MaxPendingSamples` **60**, down from 1,000,000, written into the file `SCADA_EDGE_CONFIG` names before step 7 |
+| certificates | the three leaves expire **2028-12-29 19:50:33 GMT**, the earliest; the CA 2036-09-23 |
+| what fed the edge | the two simulators from the on-premises stack, started on their own in `scada-darbox_default` |
+| the clock | one, reading `19:57:17Z` when the baseline was taken |
+| step 5 | the device and its two tags were created through the API the browser itself calls (`POST /api/sites/{id}/devices`, `POST /api/devices/{id}/tags`); the browser was not used at that step |
+
+Steps 1 and 2 were followed as written, from a clean tree; step 3 needed the
+calling form the step now records.
+
+### The link outage
+
+The form was the edge's own network — the literal reading of the gate, with the
+cloud side untouched:
+
+```bash
+docker network disconnect scada-darbox-cloud_default scada-darbox-edge-edge-1
+```
+
+| | |
+|---|---|
+| cut | **`2026-09-26T19:57:37Z`** |
+| back | **`2026-09-26T19:59:42Z`** — 2 min 5 s later |
+| the first `Cannot reach the broker` line | `19:58:02.094Z`, **25 s after the cut**, already reading `49 sample(s) wait in the buffer` |
+| `N` at the bound | 60 from `19:58:06Z` onwards and never higher: the bound held and 190 readings were dropped behind it |
+| the edge restarted inside the outage | stopped `19:59:07Z`, started `19:59:08Z`; its first warning after the restart read **60**, not 0 — the buffer is the file, not the process |
+| the drain | `19:59:43.124Z`, 2 s after the reconnect: `Connected to the broker at broker:8883; sending on scada/edge/plant-7/samples.` |
+
+The warnings stop at that line, and nothing announces the buffer draining: the
+history is where the drain shows, as a burst.
+
+### What the history said
+
+Step 7's baseline, taken at `19:57:24Z`, with the readings still arriving:
+`rows` **148** for each tag; `newest_measured` `19:57:24.390Z` and
+`19:57:24.874Z`; `newest_stored` `19:57:24.586Z` and `19:57:25.191Z`.
+
+Step 11, over `source_time >= 19:57:37Z AND < 19:59:42Z`:
+
+| | Discharge Pressure | OPC Pressure |
+|---|---|---|
+| `samples` | 28 | 29 |
+| `first_measured` | `19:59:13.848Z` | `19:59:12.983Z` |
+| `last_measured` | `19:59:41.042Z` | `19:59:41.205Z` |
+| `first_stored` | `19:59:43.146Z` | `19:59:43.146Z` |
+| `last_stored` | `19:59:43.146Z` | `19:59:43.146Z` |
+| `rows` / `distinct_times` | 209 / 209 | 211 / 211 |
+| `before_the_cut` | 160 | 160 |
+| `ingested_at` going backwards as `source_time` rises | 0 | 0 |
+
+Against the gate: every retained reading was **measured inside the outage** — the
+first 28 s in, the last a second before the link came back — and **stored after
+it**, all of them in the same instant, which is the drain arriving as one burst.
+`rows` equals `distinct_times`, so a re-delivery was a no-op although the link is
+at-least-once.
+
+**The lost window** (step 13) was one row, in `alarm_event` under
+`event_type = 'SamplesLost'` — not in `audit_log`, and not one row per attempt:
+
+| | |
+|---|---|
+| `lost_samples` | **190** |
+| `gap_from` | `2026-09-26T19:57:37.467Z` |
+| `gap_until` | `2026-09-26T19:59:12.843Z` |
+| `recorded_at` | `2026-09-26T19:59:43.140Z` |
+| `loss_id` | `3d4a6c41-01ad-4543-ab81-03d37a6d8603` |
+| what it names | the device, Site `Bitola`, `tag_path` `Bitola/Edge plant-7` |
+
+Count and span are both there, and the ends close on the numbers above: the loss
+starts at the cut and stops where the retained readings start (`19:59:12.843` is
+the OPC tag's `first_measured`, a millisecond away), and 250 readings were due in
+the 125 s at 2 a second — 60 kept, 190 reported lost, which is the bound exactly.
+57 of those 60 fall inside the window above; the rest were measured in the second
+the link came back, which the window excludes by its own definition.
+
+**Step 12**, the outage in which nothing was measured, with the link up: the last
+reading before the edge was stopped is `20:00:14.231Z` and the first after it was
+started again is `20:03:16.463Z`. Readings with `source_time` in `[20:00:45Z,
+20:03:15Z)` — inside that window with minutes to spare: **0**. The `Bad` a tag
+goes to when its device falls silent was checked one 80-second stop later, in the
+data the browser shows: both of the edge's tags reported `quality: Bad` with
+their last `sourceTimestampUtc` unchanged.
+
+### The suite
+
+With the database reachable — `SCADA_TEST_DB_HOST` at the address WSL answers on,
+`SCADA_APP_DB_PASSWORD=scada_app` — all seven projects exit 0:
+
+| project | passed | skipped | total |
+|---|---|---|---|
+| Core.Tests | 100 | 0 | 100 |
+| EdgeAgent.Tests | 15 | 0 | 15 |
+| Persistence.Tests | 62 | 0 | 62 |
+| Drivers.Mqtt.Tests | 26 | 0 | 26 |
+| Drivers.OpcUa.Tests | 13 | 0 | 13 |
+| Drivers.Modbus.Tests | 27 | 0 | 27 |
+| Gateway.Tests | 68 | 17 | 85 |
+| **all seven** | **311** | **17** | **328** |
+
+Of the 133 a machine with no database skips, the 116 that needed only a database
+now run. The 17 that remain ask the *host* for Docker — `docker compose version`,
+`docker version` — and skip without it, which is a different fact from a missing
+database and was true of those 17 before and after. A run with a database reports
+more tests in total because a class whose fixture skips reports each of its
+theories as one skipped case rather than as its cases.
+
+The web client's own suite is not part of this walk. It was run on this commit
+earlier in the same session — `npm ci`, then `npm test`, 47 of 47 — and not again
+here.
+
+### What the walk found
+
+Six things. None is a defect in what the gate is about, which is worth saying
+plainly: what the phase claims held up.
+
+1. **`certs.sh` cannot be run with `bash`, and is committed without an executable
+   bit.** `bash deploy/cloud/certs.sh ca` stops with `unexpected EOF while looking
+   for matching '` before running a line, because an apostrophe in the script's own
+   `${2:?give the broker's DNS names…}` reads as a quotation mark to `bash`. `sh`,
+   the interpreter its first line names, is unaffected, and so is Git Bash, which
+   is how every earlier walk ran it. But the file's mode in the repository is
+   `100644`, so on Linux or in WSL the documented `deploy/cloud/certs.sh ca` fails
+   with `Permission denied`. Step 3 records the working form for the commit as it
+   was, and this repository's PR #3 removes the apostrophe and sets the bit.
+2. **The application's log carries no timestamps.** Step 8 asks for the first
+   `Cannot reach the broker` line's *timestamp*; nothing in the container's output
+   has one until `docker logs -t` adds it. The step says so now.
+3. **That first line is not early, and its `N` is not small.** It arrived 25 s
+   after the cut, already reading 49, and `N` steps with each failed attempt
+   rather than once a second. A walker who checks a few seconds after cutting,
+   sees nothing and concludes the cut did not happen is reading a log that has not
+   caught up.
+4. **Step 11's `before_the_cut` equals step 7's `rows` only if that baseline was
+   taken at the instant of the cut.** Here 160 against 148: twelve readings whose
+   `source_time` is before the cut were published in the 13 s between the baseline
+   and the cut, and stored after it. The step says "at least", with the reason.
+5. **Step 11's `samples` is the bound's number, not the outage's, once step 9's
+   bound has been lowered** — 28 and 29 rather than the ~125 the outage's length
+   and the scan rate give. The two steps depend on each other and neither said so.
+6. **Two smaller ones in the same family.** Step 5 asks for the tag's scan
+   interval, and an edge's device has none: it is pushing, and the cadence is the
+   *edge's* `ScanIntervalMs`, which is the number worth writing down. And step 12's
+   "write down both times" means the times the readings stop and start, not the
+   times the commands ran — the walk's first attempt at that window caught 16
+   readings measured *after* the edge came back, which reads as a defect and is not
+   one.
+
+### What was not measured
+
+- **A link between two hosts.** Everything ran on one machine: no cable, no
+  uplink, no second kernel. The disconnect is the form step 0 allows, and the only
+  form that cannot show what a switch, a firewall or a NAT does to a session — nor
+  fail the way a real link fails.
+- **Two clocks.** Both ends read one machine's clock, so no `SourceClockSkew`
+  entry could appear and none did: the clock-disagreement half of step 1's check
+  was not walked. It is covered by tests.
+- **The browser.** Step 5's device and tags were created through the API the
+  browser itself calls, and step 9's `Bad` was read from `/api/tags` rather than
+  off the screen. Those are the values the screen shows; that the screen shows
+  them is not something this walk checked.
+- **`linux-arm64`**, and so any walk on plant hardware. `build-images.sh` builds
+  from the commit, but the Dockerfile pins `linux-x64` and only
+  `linux-x64.pubxml` exists, so edge hardware is a piece of work before it is a
+  walk.
+- **The web client's suite on the walk's day**, per the note above.
+- **A second outage with the bound left at 1,000,000**, which is the run in which
+  `samples` is the scan rate times the outage's length rather than the bound, and
+  in which nothing is staged as lost.
+
+
 
 ## What to report
 
 Anything that looks wrong or merely confusing, even where the behaviour is
 technically correct. Phase 5.5's hand walk found ten defects a green suite had
-passed, and Phase 6's found four; a walk that reports nothing unusual is worth a
-second look before it is believed.
+passed, Phase 6's found four, and this one found six — all six in this document
+rather than in the feature, which is the shape a first walk of a feature that has
+only ever been tested tends to take.
 
