@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Opc.Ua;
 using Opc.Ua.Client;
 using Opc.Ua.Configuration;
@@ -14,13 +16,16 @@ namespace ScadaDarbox.Modules.Drivers.OpcUa;
 /// Unlike Modbus, OPC UA carries a real device-side source timestamp and a status code
 /// on every value. Both are used as they arrive rather than substituted — the source
 /// timestamp is exactly what ADR-0003 asks for, and the status code is the model
-/// ADR-0003's own quality scale was taken from.
+/// ADR-0003's own quality scale was taken from. The status code, the parser's own words and
+/// the connection's state are each written to the log as the reason for a Bad reading:
+/// a mistyped address and a device that is not answering look identical otherwise.
 /// </remarks>
 public sealed class OpcUaDriver : IDeviceDriver
 {
     private readonly string _endpointUrl;
     private readonly bool _acceptUntrustedCertificates;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
 
     /// <summary>
     /// The stack asks every current entry point for a telemetry context. Built once and
@@ -29,16 +34,41 @@ public sealed class OpcUaDriver : IDeviceDriver
     /// </summary>
     private static readonly ITelemetryContext Telemetry = DefaultTelemetry.Create(_ => { });
 
+    /// <summary>
+    /// The one words for "there is no session to ask", used at both places that need it so
+    /// that a fault repeating every scan compares equal to itself and is named once.
+    /// </summary>
+    private const string NotConnected = "the session is not connected";
+
+    /// <summary>The reason each tag last read Bad, so a standing fault is named once.</summary>
+    /// <remarks>
+    /// A fault that repeats every scan is one condition, not an event per second: writing it
+    /// again each time buries the line that says what is actually wrong — the same reasoning
+    /// the alarm journal uses for a flapping value. The entry is dropped when the tag reads
+    /// again, so a fault that returns is named again, and a reason that changes is a new
+    /// message rather than one swallowed by the first.
+    /// <para>
+    /// No lock: a device's tags are read by that device's own scan loop, one at a time, and
+    /// nothing else touches this. Writes do not.
+    /// </para>
+    /// </remarks>
+    private readonly Dictionary<Guid, string> _badReasons = [];
+
     private ISession? _session;
 
     public OpcUaDriver(
         string endpointUrl,
         bool acceptUntrustedCertificates,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ILogger<OpcUaDriver>? logger = null)
     {
         _endpointUrl = endpointUrl;
         _acceptUntrustedCertificates = acceptUntrustedCertificates;
         _timeProvider = timeProvider;
+
+        // Optional so a composition that deliberately keeps no log — a unit test, a tool —
+        // needs no argument, and the same way the MQTT module takes its logger.
+        _logger = logger ?? NullLogger<OpcUaDriver>.Instance;
     }
 
     public async Task ConnectAsync(CancellationToken cancellationToken)
@@ -80,7 +110,7 @@ public sealed class OpcUaDriver : IDeviceDriver
 
         foreach (var tag in tags)
         {
-            if (OpcUaAddress.TryParse(tag.SourceAddress, out var nodeId, out _))
+            if (OpcUaAddress.TryParse(tag.SourceAddress, out var nodeId, out var error))
             {
                 readable.Add((tag, nodeId));
             }
@@ -88,13 +118,16 @@ public sealed class OpcUaDriver : IDeviceDriver
             {
                 // A misconfigured address is a permanent fault, but it is still reported as
                 // Bad rather than thrown: one broken tag must not stop the device's scan.
-                readings.Add(Bad(tag));
+                // The parser keeps its own words for the reason, which is the thing that was
+                // being discarded here — a mistyped address and an unplugged device are not
+                // the same fault, and there was nothing anywhere to tell them apart.
+                readings.Add(Bad(tag, error));
             }
         }
 
         if (readable.Count == 0 || _session is not { Connected: true } session)
         {
-            readings.AddRange(readable.Select(entry => Bad(entry.Tag)));
+            readings.AddRange(readable.Select(entry => Bad(entry.Tag, NotConnected)));
             return readings;
         }
 
@@ -126,7 +159,9 @@ public sealed class OpcUaDriver : IDeviceDriver
         {
             // The session is gone or the server refused. There is no value for any of
             // them, and a fabricated one would be indistinguishable from a real reading.
-            readings.AddRange(readable.Select(entry => Bad(entry.Tag)));
+            // What the stack said happened is the reason, and it is the difference between
+            // this and every other way a tag can read Bad.
+            readings.AddRange(readable.Select(entry => Bad(entry.Tag, exception)));
         }
 
         return readings;
@@ -165,7 +200,10 @@ public sealed class OpcUaDriver : IDeviceDriver
     {
         if (StatusCode.IsBad(value.StatusCode))
         {
-            return Bad(tag);
+            // The server's own status is the reason, and it is the one worth having: it is
+            // what separates a node id the server does not know from a server that is not
+            // answering at all.
+            return Bad(tag, $"the server answered {value.StatusCode}");
         }
 
         var converted = Convert(tag.ValueKind, value.Value);
@@ -173,8 +211,11 @@ public sealed class OpcUaDriver : IDeviceDriver
         if (converted is null)
         {
             // The server answered, but with something this tag cannot hold — a text value
-            // on a numeric tag, say. That is a configuration mismatch, not a reading.
-            return Bad(tag);
+            // on a numeric tag, say. That is a configuration mismatch, not a reading, and
+            // naming the shape that arrived is what makes it visible as one.
+            return Bad(tag, value.Value is null
+                ? "the server answered with no value at all"
+                : $"the server answered with a {value.Value.GetType().Name}, which a {tag.ValueKind} tag cannot hold");
         }
 
         // SourceTimestamp is when the device captured the value, which is precisely what
@@ -186,7 +227,9 @@ public sealed class OpcUaDriver : IDeviceDriver
 
         var quality = StatusCode.IsUncertain(value.StatusCode) ? Quality.Uncertain : Quality.Good;
 
-        return new TagReading(tag.TagId, converted, sourceTimestamp, quality);
+        var reading = new TagReading(tag.TagId, converted, sourceTimestamp, quality);
+        ReportRecovery(tag);
+        return reading;
     }
 
     private static TagValue? Convert(TagValueKind kind, object? raw) => raw switch
@@ -211,7 +254,52 @@ public sealed class OpcUaDriver : IDeviceDriver
     };
 
     /// <remarks>No value is supplied — not a zero, not a false (ADR-0003).</remarks>
-    private TagReading Bad(DriverTag tag) => new(tag.TagId, null, _timeProvider.GetUtcNow(), Quality.Bad);
+    private TagReading Bad(DriverTag tag, string reason)
+    {
+        ReportFault(tag, reason);
+        return new(tag.TagId, null, _timeProvider.GetUtcNow(), Quality.Bad);
+    }
+
+    /// <summary>The same reading, for a failure the stack described itself.</summary>
+    private TagReading Bad(DriverTag tag, Exception exception)
+    {
+        // The exception is carried as well as its message: the message is the reason an
+        // operator reads, and the stack is what is needed when it is not self-explanatory.
+        ReportFault(tag, exception.Message, exception);
+        return new(tag.TagId, null, _timeProvider.GetUtcNow(), Quality.Bad);
+    }
+
+    private void ReportFault(DriverTag tag, string reason, Exception? exception = null)
+    {
+        if (_badReasons.TryGetValue(tag.TagId, out var previous) && previous == reason)
+        {
+            // Already said, and nothing about it has changed.
+            return;
+        }
+
+        _badReasons[tag.TagId] = reason;
+
+        _logger.LogWarning(
+            exception,
+            "Tag {TagId} (node '{SourceAddress}') reads Bad at {EndpointUrl}: {Reason}",
+            tag.TagId,
+            tag.SourceAddress,
+            _endpointUrl,
+            reason);
+    }
+
+    private void ReportRecovery(DriverTag tag)
+    {
+        // Only for a tag that had a fault to report: an ordinary Good reading is not news.
+        if (_badReasons.Remove(tag.TagId))
+        {
+            _logger.LogInformation(
+                "Tag {TagId} (node '{SourceAddress}') at {EndpointUrl} reads Good again.",
+                tag.TagId,
+                tag.SourceAddress,
+                _endpointUrl);
+        }
+    }
 
     private async Task<ApplicationConfiguration> BuildConfigurationAsync()
     {

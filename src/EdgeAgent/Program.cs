@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.EdgeAgent;
@@ -30,10 +31,16 @@ if (options.Problems() is { Count: > 0 } problems)
     return 2;
 }
 
-// The same driver modules as the Gateway, composed at compile time (ADR-0002).
+// The same driver modules as the Gateway, composed at compile time (ADR-0002). The edge agent
+// logs the same reasons the Gateway does: a mistyped address on a plant node is diagnosable
+// from the edge's own log rather than only from a screen nobody has out there.
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<IDeviceDriverFactory>(provider => new ModbusTcpDriverFactory(provider.GetRequiredService<TimeProvider>()));
-builder.Services.AddSingleton<IDeviceDriverFactory>(provider => new OpcUaDriverFactory(provider.GetRequiredService<TimeProvider>()));
+builder.Services.AddSingleton<IDeviceDriverFactory>(provider => new ModbusTcpDriverFactory(
+    provider.GetRequiredService<TimeProvider>(),
+    provider.GetRequiredService<ILoggerFactory>()));
+builder.Services.AddSingleton<IDeviceDriverFactory>(provider => new OpcUaDriverFactory(
+    provider.GetRequiredService<TimeProvider>(),
+    provider.GetRequiredService<ILoggerFactory>()));
 
 builder.Services.AddSingleton(provider =>
 {

@@ -6,6 +6,9 @@
 
   <ItemGroup>
     <PackageReference Include="NModbus" Version="3.0.83" />
+    <!-- For the same reason as the MQTT module's: a driver says why a tag has no value,
+         and it does so through the host's logging rather than its own console. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
   </ItemGroup>
 
   <PropertyGroup>

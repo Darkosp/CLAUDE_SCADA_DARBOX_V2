@@ -7,6 +7,10 @@
   <ItemGroup>
     <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.156" />
     <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Configuration" Version="1.5.378.156" />
+    <!-- For the same reason as the MQTT module's: a driver says why a tag has no value,
+         and it does so through the host's logging rather than its own console. 10.0.8 is the
+         floor the OPC UA stack itself asks for, so this is not a free choice. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
   </ItemGroup>
 
   <PropertyGroup>
