@@ -757,6 +757,14 @@ period and then reconnected, the history contains the samples from the
 outage with their original timestamps, and nothing is invented for the
 period the link was down.
 
+The walk itself is written out in
+[`phase-7-manual-gate.md`](phase-7-manual-gate.md): what to watch on each
+side, the two ways to cut the link, what has to be true of the numbers
+afterwards, and the two decisions — which machine hosts the edge, and which
+outage is staged — that have to be made before it starts. It says at the top
+that it has not been walked yet, and the section that replaces it is the
+record.
+
 ## Later (not yet scoped)
 
 HMI screen editor and a real component library, the scripting engine
