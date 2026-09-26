@@ -227,6 +227,43 @@ seconds, the tags in the web client show values with the times the edge measured
 The broker lets an edge publish only under the name in its certificate. Nothing is lost in the
 meantime: refused batches stay in the edge's buffer.
 
+### If the edge machine is arm64
+
+Nothing above changes. On the edge machine itself, build with no arguments — there is nothing to
+cross, the images come out arm64, and they carry the plain tag:
+
+```bash
+deploy/build-images.sh
+```
+
+To build the edge's image on an x64 server instead, name the architecture. That builds the edge
+agent alone — the only image an edge machine runs — and tags it `-arm64`, so it cannot quietly
+replace the x64 image under the same tag:
+
+```bash
+deploy/build-images.sh HEAD arm64
+```
+
+Every build here goes through BuildKit, which Docker Desktop has; on a Linux server the plugin is a
+package (`docker-buildx` on Ubuntu, `docker-buildx-plugin` from Docker's own repository), and the
+script says so when it is missing. A cross-build for arm64 also needs binfmt, because the image's own
+architecture check then runs emulated — the SDK does not; it runs here and cross-publishes:
+
+```bash
+docker run --privileged --rm tonistiigi/binfmt --install arm64
+```
+
+The result is `edge-agent:<tag>-arm64`; that is what `SCADA_IMAGE_TAG` has to carry on the side that
+runs it, and the build is slow — the .NET SDK is running emulated. **Running that image on a machine
+that is not arm64 is a check, not a deployment**: it says the publish and the image are right, not
+that the hardware is. Side by side with the plain Compose file, which is what a real edge machine
+uses:
+
+```bash
+docker compose -f deploy/edge/docker-compose.yml -f deploy/edge/docker-compose.arm64.yml \
+  --env-file deploy/edge/.env up -d
+```
+
 ## What is recorded where
 
 **Volumes.** Losing either of the first two loses data:

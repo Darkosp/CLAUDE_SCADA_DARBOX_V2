@@ -15,7 +15,8 @@ recorded**: [the Phase 7 gate record](docs/roadmap/phase-7-manual-gate.md) has
 the numbers — the history holding the readings measured during the outage with
 the edge's own timestamps, the readings a lowered buffer bound dropped reported
 as one journal entry, and an outage nothing was measured in adding no row. What
-Phase 7 still owes is `linux-arm64`, and with it a walk on plant hardware.
+Phase 7 still owes is a walk on plant hardware: `linux-arm64` is built and run
+under emulation, not on a board.
 `CLAUDE.md` carries the current
 state; `docs/roadmap/phase-plan.md` holds the plan and each phase's status.
 

@@ -704,8 +704,10 @@ while the link is down.
    self-contained on the CLR, buffering in SQLite (**ADR-0018**, which
    amends ADR-0006). Native AOT was tried and abandoned: the real OPC UA
    module fails under it before it reaches the network, because that
-   stack builds objects by reflection. Open with it: `linux-arm64` is
-   unverified, and must be built and run before edge hardware is chosen.
+   stack builds objects by reflection. `linux-arm64` was open with it;
+   the image and its publish are arm64 now and have run under emulation
+   ([the record](phase-7-manual-gate.md#since-the-walk-linux-arm64)), and
+   a board is still unverified.
 4. The cloud side: idempotent ingestion per (tag, source timestamp), the
    dropped-window journal entry, the skew journal entry.
 5. TLS, per-edge certificates and broker ACLs; the Gateway's persistent
@@ -740,10 +742,12 @@ failed. Merged: the pushing contract
 walk's one defect outside the procedure — `deploy/cloud/certs.sh` could not be run
 with `bash`, and had no executable bit — is fixed in this repository's PR #3,
 merged after the walk.
-Still open: **`linux-arm64`**, which step 3 left unverified and which must be
-built and run before edge hardware is chosen — and with it the walk on plant
-hardware, because this walk's outage was a Docker network disconnect on one
-machine and not a link between two.
+**`linux-arm64`** is built and run under emulation since 2026-09-27: the image is
+arm64, the agent ran under QEMU, and its two tags' readings reached the cloud
+database — [`phase-7-manual-gate.md`](phase-7-manual-gate.md#since-the-walk-linux-arm64)
+has the numbers, and what they do not prove. Still open: **a real arm64 machine**,
+and the walk on plant hardware with it, because this walk's outage was a Docker
+network disconnect on one machine and not a link between two.
 
 The small step beside them is merged — this repository's PR #1. Both drivers
 take an optional `ILogger` and name the reason a tag has no value — a

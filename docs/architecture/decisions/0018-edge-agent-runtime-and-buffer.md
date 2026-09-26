@@ -70,8 +70,13 @@ Both entries join ADR-0006's table. Mosquitto is already there from ADR-0017.
   killed process; we cannot test a real power cut, and we now do not have to
   claim we have.
 - One more native dependency to carry per platform (`e_sqlite3`).
-  **Open: linux-arm64 is unverified.** If edge hardware is a Raspberry Pi or
-  similar, that must be built and run before the hardware is chosen, not after.
+  **linux-arm64 was open here and is not any more.** On 2026-09-27 both
+  `e_sqlite3` and the agent were published for arm64, the image was built for it,
+  and the agent was run under emulation with its readings reaching the cloud
+  database ([the record](../../roadmap/phase-7-manual-gate.md#since-the-walk-linux-arm64)).
+  A board is still unverified: if edge hardware is a Raspberry Pi or similar, run
+  the image on it before the hardware is chosen — the image exists now, which is
+  what this entry said was owed.
 - If a future edge target genuinely cannot run the CLR, this decision is what
   gets revisited — with a new ADR, and with the OPC UA question answered first.
 

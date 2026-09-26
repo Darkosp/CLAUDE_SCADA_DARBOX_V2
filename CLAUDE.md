@@ -166,9 +166,11 @@ measured in adding no row; and the suite, with a database reachable, at 311
 passed and 17 skipped across seven projects — and the one defect the walk found
 outside the procedure, `deploy/cloud/certs.sh` unparseable under `bash` and
 missing its executable bit, is fixed in this repository's PR #3, merged after the
-walk. Open: `linux-arm64`, which
-step 3 left unverified and which has to be built and run before edge
-hardware is chosen — and with it a walk on plant hardware, since this one's
+walk. `linux-arm64`, which step 3
+left unverified, is built and run under emulation since 2026-09-27 — the image
+is arm64, the agent ran under QEMU and its readings reached the cloud database,
+with the numbers in that record's own section — and what is still open is a real
+arm64 board and with it a walk on plant hardware, since this one's
 outage was a Docker network disconnect and not a link between two. Both drivers
 now name the reason a tag has no value
 (ADR-0003's silence). That work found a Modbus read with **no timeout** — a

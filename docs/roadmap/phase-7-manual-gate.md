@@ -41,9 +41,11 @@ say when the walk is over.
 
 **Which machine hosts the edge.** This one, or the plant's own hardware. A
 Raspberry Pi makes the walk truer to the deployment — the edge is what runs at a
-plant — but it needs an image built for `linux-arm64`, which step 3 of the phase
-left unverified. If the answer is a Pi, **build and run that image first**; a walk
-on hardware whose image has never run would be measuring the wrong thing.
+plant — and it needs an image built for `linux-arm64`, which step 3 of the phase
+left unverified; that image exists now, and has run under emulation and only under
+emulation ([Since the walk](#since-the-walk-linux-arm64)). If the answer is a Pi,
+**build and run that image on the Pi first**; a walk on hardware whose image has
+never run there would be measuring the wrong thing.
 
 On one machine the edge reaches the broker the way any other host does — through
 the cloud stack's published 8883, not through a shared Docker network — so
@@ -617,14 +619,82 @@ plainly: what the phase claims held up.
   browser itself calls, and step 9's `Bad` was read from `/api/tags` rather than
   off the screen. Those are the values the screen shows; that the screen shows
   them is not something this walk checked.
-- **`linux-arm64`**, and so any walk on plant hardware. `build-images.sh` builds
-  from the commit, but the Dockerfile pins `linux-x64` and only
-  `linux-x64.pubxml` exists, so edge hardware is a piece of work before it is a
-  walk.
+- **A real arm64 machine**, and so any walk on plant hardware. When this walk ran,
+  `build-images.sh` built from the commit but the Dockerfile pinned `linux-x64` and
+  only `linux-x64.pubxml` existed, so edge hardware was a piece of work before it
+  was a walk. It has been built since, and run under emulation on this machine,
+  which says the publish and the image are arm64 and says nothing about a board —
+  [Since the walk](#since-the-walk-linux-arm64).
 - **The web client's suite on the walk's day**, per the note above.
 - **A second outage with the bound left at 1,000,000**, which is the run in which
   `samples` is the scan rate times the outage's length rather than the bound, and
   in which nothing is staged as lost.
+
+### Since the walk: `linux-arm64`
+
+**2026-09-27, on the same one machine.** The walk left this open, and why it was
+open is that the Dockerfile and the publish profile together could only build x64:
+`PublishProfile=linux-x64` was written into the `RUN`, and no arm64 profile existed
+for a build to name.
+
+What changed is that the image now builds for the platform it is *for*, not for the
+one it is built on. `ARG TARGETARCH`, which BuildKit sets from `--platform`, picks
+between two publish profiles whose names are the RIDs — so the RID cannot be
+forgotten, a build on the edge machine itself needs no flag, and an architecture
+with neither profile is refused rather than guessed at. `deploy/build-images.sh`
+takes an arch argument: `arm64` builds the edge agent alone (the only image an edge
+machine runs) and tags it `-arm64`, so an arm64 image cannot quietly replace the x64
+one under the same tag. `deploy/edge/docker-compose.arm64.yml` is the run below, not
+a deployment.
+
+**Built, with numbers.** `deploy/build-images.sh HEAD arm64` on this x64 machine,
+with binfmt registered so the one architecture check in the image can run emulated:
+
+```
+scada-darbox/edge-agent:e5dd394-arm64    Architecture: arm64    345 MB    21 s
+```
+
+The native build is unchanged: same command, five images, `amd64`, 319 MB — the
+same 319 MB as the walk's own `23232df`.
+
+**Run, under emulation.** `docker compose -f deploy/edge/docker-compose.yml -f
+deploy/edge/docker-compose.arm64.yml --env-file deploy/edge/.env up -d`, with
+`SCADA_IMAGE_TAG=<commit>-arm64`, joined to the cloud stack's network — the walk's
+own form, unchanged. What it showed:
+
+- `docker exec … uname -m` → `aarch64`: the userland in the image is arm64, and QEMU
+  is what ran it.
+- The agent's log: `Connected to device Pump skid.`, `Connected to device Discharge
+  PLC.`, and `Connected to the broker at broker:8883; sending on
+  scada/edge/plant-7/samples.`
+- The broker's log: `New client connected from 172.18.0.5:42402 as plant-7 (p5, c1,
+  k15, u'plant-7')`, `negotiated TLSv1.3 cipher TLS_AES_256_GCM_SHA384`, and the
+  disconnect when the stack came down 87 s later.
+- The cloud database, `ingested_at` inside that window: `f95b4476…` (the OPC UA tag,
+  Pump skid) 79 readings from `source_time` 22:43:31.6 to 22:44:50.5, and
+  `ccfd90b3…` (the Modbus tag, Discharge PLC) 89 readings from 22:43:21.3 to
+  22:44:50.3 — stored 0.7 and 0.4 s after they were measured, so they carry the
+  edge's clock and not the store's. Two other tags have rows in the same window
+  whose `source_time` equals `ingested_at` to the microsecond: those are the cloud
+  Gateway polling its own devices, and they are exactly the rows this claim has to
+  exclude rather than count.
+
+**What the work found, inside the image's own build.** The last stage compares the
+architecture it is in with the profile the SDK stage published. Those two are
+decided in different places — the platform and `TARGETARCH` — so they can disagree
+with nothing looking wrong, and on the first attempt they did: `ARG
+TARGETARCH=amd64` *with a default* wins over the `TARGETARCH` BuildKit supplies, so
+a `--platform linux/arm64` build published `linux-x64`, and the image said so —
+`this image is linux-arm64, but the binary in it was published for linux-x64` —
+rather than shipping an `-arm64` tag on an x64 binary. Both platform arguments are
+declared without defaults now, and every build goes through BuildKit, whose absence
+`build-images.sh` reports in a sentence instead of leaving Docker to fail on an
+empty platform.
+
+**Still not measured: a board.** This is QEMU on x64 answering for arm64. It is the
+strongest check available without a Raspberry Pi and it is not a substitute for one:
+a plant run on a real aarch64 machine — and a link between two hosts — remain owed,
+as the list above says.
 
 ## What to report
 
