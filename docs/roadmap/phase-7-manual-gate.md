@@ -460,8 +460,11 @@ were written down as they happened, from the clock of the host the edge ran on.
 | the clock | one, reading `19:57:17Z` when the baseline was taken |
 | step 5 | the device and its two tags were created through the API the browser itself calls (`POST /api/sites/{id}/devices`, `POST /api/devices/{id}/tags`); the browser was not used at that step |
 
-Steps 1 and 2 were followed as written, from a clean tree; step 3 needed the
-calling form the step now records.
+Step 1's port check and its clock notes were done as written, and so was step 2 —
+except that the build ran from the WSL side (`bash deploy/build-images.sh`, where
+the checkout is LF), so Git Bash's `MSYS_NO_PATHCONV` trap never came up. Step 3
+needed the calling form it now records, and step 5 was done through the API rather
+than the browser; both are in the table above.
 
 ### The link outage
 
