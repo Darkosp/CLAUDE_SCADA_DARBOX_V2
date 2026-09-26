@@ -7,6 +7,12 @@ result slot at the end is empty on purpose. When the walk happens, what was
 measured replaces this paragraph — the way `phase-5.5-manual-gate.md` and
 `phase-6-manual-gate.md` record walks that had been.
 
+**Read again against the code on 2026-09-26, and corrected where it disagreed
+with it** — the `git archive` note, the edge's missing `--env-file`, what the
+Gateway's log can show before a device exists, where the buffer's bound is
+really set, and the two names step 6 has to note. Still nothing below has been
+run.
+
 Phase 7's test gate is in [the phase plan](phase-plan.md):
 
 > **Test gate:** with the edge agent disconnected from the network for a
@@ -14,11 +20,12 @@ Phase 7's test gate is in [the phase plan](phase-plan.md):
 > outage with their original timestamps, and nothing is invented for the
 > period the link was down.
 
-The tests and the scripted checks in steps 3 and 4 cover the parts a script can
-see: the buffer's account balances, a batch is stored once however often it
-arrives, a lost window is reported once, an edge's clock disagreement is
-journalled. This is the half that needs two hosts and a link that is really
-down: **an outage with a beginning and an end that somebody wrote down**.
+The tests and the scripted checks in steps 3 and 4 of the phase plan cover the
+parts a script can see: the buffer's account balances, a batch is stored once
+however often it arrives, a lost window is reported once, an edge's clock
+disagreement is journalled. This is the half that needs two hosts and a link that
+is really down: **an outage with a beginning and an end that somebody wrote
+down**.
 
 Installing either side is in [`deploy/cloud/README.md`](../../deploy/cloud/README.md);
 backups and going back after a failed upgrade are in
@@ -33,6 +40,14 @@ Raspberry Pi makes the walk truer to the deployment — the edge is what runs at
 plant — but it needs an image built for `linux-arm64`, which step 3 of the phase
 left unverified. If the answer is a Pi, **build and run that image first**; a walk
 on hardware whose image has never run would be measuring the wrong thing.
+
+On one machine the edge reaches the broker the way any other host does — through
+the cloud stack's published 8883, not through a shared Docker network — so
+`SCADA_BROKER_HOST` has to resolve **inside the edge container** to an address the
+cloud server answers on, and that name must be one the broker's certificate
+carries (step 3). Docker Desktop resolves `host.docker.internal` for exactly this;
+on Linux the edge stack needs an `extra_hosts` entry for it. Write down what was
+done: this is a trap to check before starting, not a measured fact.
 
 **What the outage is.** Cutting the edge's own network is the literal reading of
 the gate, and it leaves the cloud side untouched:
@@ -56,9 +71,10 @@ the log lines differ.
 
 ## 1. Before you start
 
-- Docker on both machines. The image build runs `git archive` of `HEAD`, so an
-  uncommitted tree is refused rather than built — commit first, or the walk
-  measures something nobody has.
+- Docker on both machines. The image build takes `git archive` of the commit,
+  so uncommitted edits are simply not in the images — `deploy/build-images.sh`
+  says so on stderr and builds anyway. Commit first: the walk runs the commit
+  the images are named for, and a fix left uncommitted cannot be in them.
 - The port check from the Phase 6 walk still applies, and it was not a formality:
   something else listening on the Gateway's port is invisible to Docker and
   answers a browser first. Use `http://127.0.0.1:<port>` and never `localhost`.
@@ -112,8 +128,9 @@ docker compose -f deploy/cloud/docker-compose.yml --env-file deploy/cloud/.env p
 
 **What must be true:** `migrator` is **Exited (0)**; `timescaledb`, `broker` and
 `gateway` are running. The broker's log ends with `mosquitto version 2.1.2
-running` after opening both listeners. The Gateway's log shows the subscription
-for the device added in the next step, and no `Error:`.
+running` after opening both listeners, and the Gateway's log has no `Error:`.
+Nothing is subscribed to anything yet: the device that subscribes is added in the
+next step, and its subscription line is checked there.
 
 Sign in at `http://127.0.0.1:8080` (or the port in `deploy/cloud/.env`) — over the
 IPv4 address, for the reason in step 1.
@@ -142,16 +159,19 @@ docker compose -f deploy/edge/docker-compose.yml --env-file deploy/edge/.env up 
 docker compose -f deploy/edge/docker-compose.yml --env-file deploy/edge/.env logs -f edge
 ```
 
-**What must be true:** one `Connected to device <name>.` per device, then
+**What must be true:** one `Connected to device <name>.` per device, and
 `Connected to the broker at <host>:<port>; sending on scada/edge/plant-7/samples.`
-Within seconds the tag in the web client shows a value whose time is the edge's
-own — a time in the past by the link's latency, not the moment the Gateway stored
-it. That gap is the whole point of the phase, and step 11 measures the grown-up
-version of it.
+— not "then": acquisition and the uplink are two hosted services starting
+together, so the order of those two lines is not fixed. Within seconds the tag in
+the web client shows a value whose time is the edge's own — a time in the past by
+the link's latency, not the moment the Gateway stored it. That gap is the whole
+point of the phase, and step 11 measures the grown-up version of it.
 
-Note the container name too — `docker compose -f deploy/edge/docker-compose.yml ps`
-prints it, `scada-darbox-edge-edge-1` unless something named it otherwise. Step 8
-needs it.
+Note the container's name and its network too — `docker compose -f
+deploy/edge/docker-compose.yml --env-file deploy/edge/.env ps` prints the
+container, `scada-darbox-edge-edge-1` unless something named it otherwise, and the
+edge stack's own network, `scada-darbox-edge_default`: the stack declares none, so
+Compose makes one for it. Steps 8 and 10 need both names.
 
 ## 7. Before cutting: the baseline
 
@@ -200,17 +220,25 @@ cannot show:
 
 - **Restart the edge inside the outage.** Its buffer is a file on the
   `edge-buffer` volume, not memory: `docker compose -f
-  deploy/edge/docker-compose.yml restart edge`, then read the first warning line
-  again after it comes back. **`N` continues from where it was** — record both
-  numbers. An edge that started counting from zero here has lost the readings it
-  was holding.
+  deploy/edge/docker-compose.yml --env-file deploy/edge/.env restart edge`, then
+  read the first warning line again after it comes back. **`N` continues from
+  where it was** — record both numbers. An edge that started counting from zero
+  here has lost the readings it was holding.
 - **If the lost-window path is to be exercised, it had to be decided before
   step 7.** The default `Edge:Buffer:MaxPendingSamples` is **1,000,000**, which
-  at one reading a second is about eleven and a half days of outage. Lower it in
-  `deploy/edge/.env` (`Edge__Buffer__MaxPendingSamples`, one minute at 1 Hz is
-  `60`) and the container has to be re-created to pick it up — which loses the
-  buffer's *pending* count only if it is done mid-outage, so do it before step 7.
-  See step 13.
+  at one reading a second is about eleven and a half days of outage. It is set in
+  the edge's own configuration file — the copy of `edge.example.json` that
+  `SCADA_EDGE_CONFIG` names, which Compose mounts as `appsettings.Production.json`
+  — and **not** in `deploy/edge/.env`: that file only feeds Compose's
+  substitutions, and the edge stack's `environment:` block forwards no such
+  setting, so a line added there would change nothing. Put `"MaxPendingSamples":
+  60` in that file (one minute at 1 Hz) and restart the edge, which re-reads it:
+  `docker compose -f deploy/edge/docker-compose.yml --env-file deploy/edge/.env
+  restart edge`. The bound is not applied at startup but on the next append, so a
+  bound lowered while the buffer already holds more than it drops the oldest
+  readings then and there, recording a lost window of its own; do it before step
+  7, with the buffer nearly empty, and the loss the walk stages is the one it
+  meant to stage. See step 13.
 
 ## 10. Reconnect, and watch it drain
 
@@ -275,14 +303,14 @@ The gate has two clauses, and step 11 only proves the first. For the second,
 with the link **up** and the cloud side untouched, stop the edge itself:
 
 ```bash
-docker compose -f deploy/edge/docker-compose.yml stop edge
+docker compose -f deploy/edge/docker-compose.yml --env-file deploy/edge/.env stop edge
 ```
 
 Wait a few minutes — long enough to be unmistakable — and write down both times,
 UTC. Then start it again and wait for it to catch up.
 
 ```bash
-docker compose -f deploy/edge/docker-compose.yml start edge
+docker compose -f deploy/edge/docker-compose.yml --env-file deploy/edge/.env start edge
 ```
 
 Run step 11's first query again with this window's times.
