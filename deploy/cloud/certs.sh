@@ -62,7 +62,7 @@ case "${1:-}" in
     echo "$dir/ca.crt  (expires $(openssl x509 -in "$dir/ca.crt" -noout -enddate | cut -d= -f2))"
     ;;
   broker)
-    need_ca; host="${2:?give the broker's DNS names: the one edges connect to, then 'broker'}"
+    need_ca; host="${2:?give the broker DNS names: the one edges connect to, then 'broker'}"
     shift
     names=""
     for name in "$@"; do names="${names:+$names,}DNS:$name"; done
