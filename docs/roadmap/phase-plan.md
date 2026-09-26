@@ -746,6 +746,12 @@ held its scan loop forever while the tags already read kept the values they
 had, which is silence that looks exactly like a live plant. The request is
 bounded at five seconds now.
 
+Open with it: whether that five-second bound belongs to the driver at all, or
+belongs to the device. It ships as a driver constant; a per-device setting
+would follow ADR-0016's pattern, where a tag declares its own staleness limit
+rather than the module choosing one for it. Undecided, and left to the design
+conversation rather than settled inside the step that found the defect.
+
 **Test gate:** with the edge agent disconnected from the network for a
 period and then reconnected, the history contains the samples from the
 outage with their original timestamps, and nothing is invented for the
