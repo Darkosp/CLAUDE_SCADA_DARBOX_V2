@@ -908,7 +908,9 @@ were `346` bar and `3.4318248339629553` bar, with a `sourceTimestampUtc` a fract
 second before the moment each was stored.
 
 **3, the journal in words and in local time.** The `SamplesLost` row — the walk's own loss,
-still the newest entry a day later — reads `2026-09-26 21:59:43` under Recorded,
+still the newest entry a day later, until the rebuild described below journalled its own stop
+and start above it ([below](#since-the-walk-the-re-read-and-what-the-rebuild-took)) — reads
+`2026-09-26 21:59:43` under Recorded,
 `SamplesLost` under Event, `Bitola/Edge plant-7` under Tag and, in Note, `190 samples
 dropped at the source21:57:37 – 21:59:12`. The words are the ones this step asks for: a
 count and a window in times a person reads, not column names and not microseconds. The ends
@@ -937,12 +939,14 @@ driver, but three rows to delete by hand every time a pushing device is created.
   above is where an eye catches it: `at the source21:57:37`. Every row with two parts had it
   — a reason beside a source note, an engine gap beside a count of unrecorded transitions.
   `.tag` now carries the separation it was relying on (`margin-right: 0.4rem`), which
-  separates every pair at once — merged as this repository's PR #5, and **not yet re-read
-  on screen**: there is no client image to rebuild — the client is compiled into the
-  Gateway's (`src/Gateway/Dockerfile`, `npx ng build` → `wwwroot`, served on 8080) — so
-  until that image carries the commit with the rule, the running client is the old bundle.
-  It was found by a person reading a screen: the client's 47 tests passed before it and
-  after it, and a missing space is not a thing they can see.
+  separates every pair at once — merged as this repository's PR #5. There is no client image
+  to rebuild: the client is compiled into the Gateway's (`src/Gateway/Dockerfile`,
+  `npx ng build` → `wwwroot`, served on 8080), so the rule reaches a browser only when that
+  image does. It has been built, and the Note was read again
+  [below](#since-the-walk-the-re-read-and-what-the-rebuild-took): it now reads
+  `190 samples dropped at the source 21:57:37 – 21:59:12`, with the space after `source` in
+  place. It was found by a person reading a screen: the client's 47 tests passed before it
+  and after it, and a missing space is not a thing they can see.
 - **The procedure promised a reason no screen can show.** Step 5 said the reading "carries
   its reason where the value is". It does not, and the code is explicit that it cannot: a Bad
   reading draws `—` (`tag.ts`), `TagSnapshot` carries no reason for a screen to draw, and a
@@ -964,9 +968,118 @@ match what you saw.
 own closing line: a link between two hosts, two clocks, and a board.
 
 **Merged as this repository's PR #5** on 2026-09-27 — the client fix alone, since this
-record had already gone to `main` on its own; the merge puts the rule on `main`, and
-the re-read in the finding above waits only on the Gateway image being rebuilt from it,
-which compiles the client into its `wwwroot`.
+record had already gone to `main` on its own; the merge puts the rule on `main`, and the
+Gateway image has since been rebuilt from a commit that carries it, which compiles the client
+into its `wwwroot`. The re-read in the finding above is done; what it took, and what it
+showed, is the section below.
+
+### Since the walk: the re-read, and what the rebuild took
+
+**Run 2026-09-27, on the machine the walk was taken on**, and it is the sentence the finding above
+left open: the rule "reaches a browser only when that image does" — so, the image, the browser, and
+the live path through the same two streams while a fix to the client took the Gateway down.
+
+**The rebuild.** `deploy/build-images.sh cb3fb28` → `scada-darbox/gateway:cb3fb28`, labelled
+`org.opencontainers.image.revision=cb3fb28019cf677e6b6648fe413c86694f5c9665`, built
+`2026-09-27T08:42:36+02:00` from the commit that carries `6be20c9`'s eight lines in
+`src/Web/src/app/app.css`. The rule is in the artefact and not only in the history:
+`.tag[_ngcontent-%COMP%]{margin-right:.4rem}` is in `wwwroot/main-IFUY2FY3.js`, read from inside
+the container and again over `http://127.0.0.1:8080/main-IFUY2FY3.js`, which is the same bytes a
+browser is served. The image that browser had before it, `e5dd394`, nine hours older, carries
+`main-QRTQ7S2T.js` and **no** rule for `.tag` at all (`grep -c` → `0`), which is the whole reason
+the re-read was owed a rebuild rather than a refresh. Compose recreated the broker at
+`06:44:26.900992234Z` and the Gateway at `06:44:28.078797301Z` — UTC both,
+`08:44:26.900992234` and `08:44:28.078797301` by the local clock the readings below are stamped
+in — neither restarting since: a two-second absence, which is what the numbers below turn out to
+be about.
+
+**Why that rebuild ran from Git Bash and not from WSL bash.** The record
+[above](#the-setup) accounts for the first walk's build running from the WSL side: "the checkout
+is LF". Nothing in the repository makes that so, and on this machine it is not. Handed the
+worktree's own `deploy/build-images.sh`, WSL's `bash` stops at **line 27**, which is
+`set -euo pipefail`: the file's lines end CR LF, so what the shell reads is `pipefail` with a
+carriage return after it, and it answers `set: pipefail` and then, at the margin where the
+carriage return leaves the cursor, `: invalid option name` — exit 2, nothing built, no `docker`
+reached. Git Bash, handed the same bytes, runs all five images through and exits 0.
+`git ls-files --eol` states it in as many words — `i/lf w/crlf attr/`, for that script and for
+this document alike — and the same directory read by the other `git` disagrees about
+what is modified: **1** file under Git for Windows (`core.autocrlf=true`, this document),
+**287** under WSL's `git 2.53.0`, which has no such setting and no `.gitattributes` to settle it
+and therefore reads every tracked text file as modified, because the blobs in the index are LF
+and the worktree is not. Step 2's Git Bash instruction is the load-bearing half of that step,
+the WSL line in this record holds only for a checkout made on the other side of that setting,
+and a commit made from the wrong one of the two would rewrite the endings of every file in the
+repository.
+
+**The re-read.** The Note now reads `190 samples dropped at the source 21:57:37 – 21:59:12`, with
+the space where its two parts meet: `describeSourceEvent`'s sentence (`models.ts`) and
+`formatGapWindow`'s window, each its own `<span class="tag">` in that cell (`app.html`), separated
+by the rule the rebuild carried. The row is unmoved in every other column — id 3, `SamplesLost`,
+`190`, the window `21:57:37.467735+02` – `21:59:12.843874+02`, recorded `21:59:43` local, the
+walk's own loss — and it is now the third of five rows rather than the newest, the two above it
+being the rebuild's. It is also this database's **only** two-part row: of the five, one carries
+nothing (the `EvaluationStopped`), one is the first start this database ever saw and carries nothing
+either — the engine had nothing before it to be missing, and `formatGapWindow` draws no window
+without both of its ends — one carries the window `21:53:08 – 21:53:36`, one the window
+`08:44:26 – 08:44:28`, and the walk's loss carries a sentence beside a window. That is why the
+defect was read off this row rather than another, and why only an eye could have found it.
+
+**The live path, through the same two-second hole.** The Gateway's own line is the mechanism:
+`Subscribed to scada/edge/plant-7/samples on broker:8884 (session resumed).` — the session came back
+rather than starting clean, which is ADR-0017's property and the reason the broker runs the SQLite
+store at all. In the store, the largest gap between two consecutive `ingested_at` across the rebuild
+(`08:43:00 – 08:47:00` local) is **2.345 s** on the polled stream and **3.300 s** on the pushed one —
+and the pushed gap is not a reading lost, it is readings *held*: the four readings measured at
+`06:44:26.527`, `06:44:26.606`, `06:44:27.533` and `06:44:27.617` UTC, all inside the Gateway's
+absence, were stored together at `08:44:28.974` local, each carrying the edge's own time beside the
+store's — the second went `08:44:28.850` for the two polled readings, then `08:44:28.974` for
+those four. The engine journalled the same absence from its own side: `EvaluationStopped` recorded
+`08:44:26`, and `EvaluationStarted` recorded `08:44:28` carrying the window it was down for,
+`08:44:26.505833 – 08:44:28.799731` — 2.294 s against the store's 2.345 s, two independent records
+of one outage, agreeing to within a poll interval. Those are the stop and start promised
+[above](#since-the-walk-what-the-screen-says), sitting above the walk's loss without displacing it.
+
+**Both streams are still storing at 2/s**: the quarter-hour around the rebuild and the
+quarter-hour before the count was taken both hold 118–120 readings a minute on each of them, and
+the one short minute among them is the Gateway's absence — **120** pushed against **116** polled,
+four polled readings fewer, for the 2.3 s in which nothing was measured. By `09:40:41` local, the
+newest reading either stream holds, there are **78,062** `Good` readings on the pushed stream
+(oldest `09-26 21:54:58`, the second the edge first connected) and **84,582** on the polled one
+(oldest `09-26 21:51:37`, the database's first reading of all); the other **64** pushed ones are
+Bad, and all 64 fall in one minute of that stream, `09-27 01:12` local, when the edge was cut off
+and nothing was arriving.
+
+**What the polled stream is, since this record never says.** Its tags are the ones the demo
+seeder makes (`Skopje/Pump House`, `DemoConfigurationSeeder`, Modbus `127.0.0.1:5502`) — and
+`127.0.0.1` from inside the Gateway's container is the container, not the simulator, so both of
+them read **Bad** and the rows they store carry no value at all, which is the schema's own rule
+for a Bad reading (`0002_tag_sample_value_kind_nullable.sql`: "A reading whose quality is Bad
+carries no value at all — not a zero, not a false, not an empty string"). The Gateway says why, and
+keeps saying it: `Cannot reach device Pump House; its tags will report Bad quality.`, **3,502**
+times in the log of this run, every one of them with a `SocketException (111): Connection refused`
+beside it — 3,502 of those too — and a frame ending `ModbusTcpDriver.ConnectAsync`. That is the
+line the finding above names as the reason a polled device *can* give, running live; and the
+polled stream is no worse for the rebuild either — it is what it was before it, which is the
+point of counting it.
+
+**`Drop message`, which is not one.** Open the broker's log at the moment of a reconnect and the
+page is nearly all of this — 99 lines in every 100 the broker has written since it restarted
+(6,025 of 6,071 when they were counted):
+
+```text
+Drop message clientid scada-darbox-338cf4258f8e465faf462a9bbc148e0f store_id 1286168181583741 direction 1
+```
+
+It reads like a queue being thrown away and it is a queue being *drained*: the string is in the
+store plugin and not in the broker (`strings /usr/lib/mosquitto_persist_sqlite.so` finds it once,
+`strings /usr/sbin/mosquitto` not at all), and the plugin writes it in the routine that removes a
+message from the client's queue once that client has acknowledged it (mosquitto's
+`plugins/persist-sqlite`, `persist_sqlite__client_msg_remove`) — a line per message handed over,
+then, not per message lost. The first of them, `06:44:29.021601705Z` — UTC, as everything the
+container prints is — is 0.047 s behind the store's own write of the four held readings,
+`08:44:28.974118` on the local clock (`06:44:28.974118Z`: one instant, two clocks). The audit
+file is not where to look and does not claim to be: `refused.log` records connections and
+refusals, ten lines for this run and every one of them a connect.
 
 ## What to report
 
