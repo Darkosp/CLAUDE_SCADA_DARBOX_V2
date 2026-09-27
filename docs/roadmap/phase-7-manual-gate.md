@@ -938,9 +938,11 @@ driver, but three rows to delete by hand every time a pushing device is created.
   — a reason beside a source note, an engine gap beside a count of unrecorded transitions.
   `.tag` now carries the separation it was relying on (`margin-right: 0.4rem`), which
   separates every pair at once — merged as this repository's PR #5, and **not yet re-read
-  on screen**: until the client image is rebuilt from the commit that carries it, the running
-  client is the old bundle. It was found by a person reading a screen: the client's 47
-  tests passed before it and after it, and a missing space is not a thing they can see.
+  on screen**: there is no client image to rebuild — the client is compiled into the
+  Gateway's (`src/Gateway/Dockerfile`, `npx ng build` → `wwwroot`, served on 8080) — so
+  until that image carries the commit with the rule, the running client is the old bundle.
+  It was found by a person reading a screen: the client's 47 tests passed before it and
+  after it, and a missing space is not a thing they can see.
 - **The procedure promised a reason no screen can show.** Step 5 said the reading "carries
   its reason where the value is". It does not, and the code is explicit that it cannot: a Bad
   reading draws `—` (`tag.ts`), `TagSnapshot` carries no reason for a screen to draw, and a
@@ -963,7 +965,8 @@ own closing line: a link between two hosts, two clocks, and a board.
 
 **Merged as this repository's PR #5** on 2026-09-27 — the client fix alone, since this
 record had already gone to `main` on its own; the merge puts the rule on `main`, and
-the re-read in the finding above waits only on the client image being rebuilt from it.
+the re-read in the finding above waits only on the Gateway image being rebuilt from it,
+which compiles the client into its `wwwroot`.
 
 ## What to report
 
