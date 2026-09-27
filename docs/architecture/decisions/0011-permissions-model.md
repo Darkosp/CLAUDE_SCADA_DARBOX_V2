@@ -254,9 +254,18 @@ nothing is lost by the move.
 
 Acknowledging an alarm now writes a permanent `audit_log` entry naming
 the acknowledging user, closing the "who acknowledged" gap Phase 3
-deliberately left open — but only that gap: alarm *state* itself remains
-in-memory only, which stays the separate, already-flagged item to close
-before Phase 6.
+deliberately left open — but only that gap. Alarm *state* was still
+in-memory only when this was written, and it was the separate,
+already-flagged item to close before Phase 6; that item has since been
+closed by [ADR-0013](0013-alarm-journal.md), which makes the live alarm
+list a view derived from an append-only journal, so a standing alarm and
+its acknowledgement survive a Gateway restart. This paragraph said the
+opposite (in the present tense) until 2026-09-27: true when it was
+written on 2026-09-11, false from 2026-09-18 when ADR-0013 closed
+exactly that gap, and left standing for the nine days in between. It is
+corrected rather than merely annotated because a binding document that
+claims a closed gap is still open is one a later session acts on. See the
+amendment rule in [this directory's README](README.md).
 
 Table names avoid the SQL keywords `user` and `role` — `app_user`,
 `user_site_role` — to stay unquoted and unsurprising in every query.

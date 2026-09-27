@@ -187,6 +187,12 @@ a live plant; the request is bounded at five seconds now.
 - Follow ADR-0006 for every technology choice. Adding a dependency outside
   that table needs a new or amended ADR first, not a unilateral substitution
   because something seemed easier.
+- **When a new ADR closes a gap an earlier one recorded as open, amend that
+  earlier sentence in the same pull request** — it is a claim about the present
+  tense, and left alone it sends a later session looking for finished work.
+  The rule and its first instance (ADR-0011 on alarm state, written 2026-09-11,
+  false from ADR-0013 on 2026-09-18, corrected 2026-09-27) are in
+  `docs/architecture/decisions/README.md`.
 - Respect the core/module boundary from ADR-0002: core code never references
   a specific protocol, a domain vocabulary, or an industry regulation.
   Modules are separate projects, composed at compile time — no

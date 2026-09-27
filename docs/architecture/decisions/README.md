@@ -15,6 +15,20 @@ in Phase 1 and everything since ran on it). A superseding ADR may also supersede
 a single clause rather than a whole decision, as ADR-0012 does — say so in its
 header, and mark the clause in the original.
 
+**A later ADR that closes a gap an earlier one recorded as open amends that
+sentence in the same pull request.** The sentence is a claim about the present
+tense, and once the gap is closed it is a false one, inside a document every pull
+request is reviewed against: a later session reads "still in-memory only, to close
+before Phase 6" and goes looking for work that is already done, or worse, distrusts
+the journal it was told does not exist. This is not the in-place revision the
+paragraph above restricts — no decision changes, only a statement that stopped
+being true. The first instance found was [ADR-0011](0011-permissions-model.md),
+whose acknowledgement section said alarm *state* remained in-memory only — true when
+it was written on 2026-09-11, false from 2026-09-18 when
+[ADR-0013](0013-alarm-journal.md) was accepted, and left standing for nine days;
+when opening an ADR, search the earlier ones for the gap it closes and fix what
+they say about it.
+
 | ADR | Decision |
 |---|---|
 | [0001](0001-tag-identity-and-hierarchy.md) | Tags have a stable ID; the hierarchical path is a mutable display label |
