@@ -746,9 +746,23 @@ merged after the walk.
 arm64, the agent ran under QEMU, and its two tags' readings reached the cloud
 database — [`phase-7-manual-gate.md`](phase-7-manual-gate.md#since-the-walk-linux-arm64)
 has the numbers, and what they do not prove. Merged as this repository's PR #4.
-Still open: **a real arm64 machine**, and the walk on plant hardware with it,
-because this walk's outage was a Docker network disconnect on one machine and not
-a link between two.
+**The same day the screen half of the gate was walked** — the four steps that need a
+person, with a browser on the same stack, and then step 5's cut watched from that
+screen rather than from a terminal. It closes the two bullets the terminal walk did
+not reach: the device and its tags created through the API the browser itself calls,
+and the client's own suite, run again at **47 passed, 0 failed**. It also ran **step
+5 a second time with the buffer bound left at its default** — the run
+[What was not measured](phase-7-manual-gate.md#what-was-not-measured) owed — a
+14 min 42 s outage whose **877 readings per tag were all measured inside it** and
+stored 56.9 ms after the reconnect, oldest first, `rows` equal to `distinct_times`,
+and the client's own chart query answering 895 samples per tag at that instant: 18
+live, 877 replayed. It found one defect in the client — a Note whose parts printed as
+one word, fixed in this repository's PR #5 — and one in the procedure, where step 5
+promised a reason no screen can show.
+Still open: **a link between two hosts**, **two clocks**, and **a real arm64
+machine**, because every outage walked so far was a Docker network disconnect on one
+machine: no walk has yet had an edge and a cloud that disagree about the time, or a
+board in the plant.
 
 The small step beside them is merged — this repository's PR #1. Both drivers
 take an optional `ILogger` and name the reason a tag has no value — a

@@ -170,9 +170,17 @@ walk. `linux-arm64`, which step 3
 left unverified, is built and run under emulation since 2026-09-27 — the image
 is arm64, the agent ran under QEMU and its readings reached the cloud database,
 with the numbers in that record's own section; that work is this repository's
-PR #4, merged — and what is still open is a real arm64 board and with it a walk
-on plant hardware, since this one's outage was a Docker network disconnect and
-not a link between two. Both drivers
+PR #4, merged. **The screen half of the gate was walked on 2026-09-27** — the
+four steps that need a person, in a browser, and step 5's cut watched from that
+screen: the device and its tags created through the API the browser itself
+calls, the client's suite run again at 47 passed and 0 failed, and a second
+outage with the buffer bound left at its default, 14 min 42 s, whose 877
+readings per tag were all measured inside it and stored 56.9 ms after the
+reconnect. It found a seventh defect and this one was in the client — a Note
+whose parts printed as one word, fixed in this repository's PR #5. What is
+still open is **a link between two hosts**, **two clocks** and **a real arm64
+board**, since every outage walked so far has been a Docker network disconnect
+on one machine. Both drivers
 now name the reason a tag has no value
 (ADR-0003's silence). That work found a Modbus read with **no timeout** — a
 device that accepts the connection and then stops answering held its scan
