@@ -757,8 +757,8 @@ and the client's own suite, run again at **47 passed, 0 failed**. It also ran **
 stored 56.9 ms after the reconnect, oldest first, `rows` equal to `distinct_times`,
 and the client's own chart query answering 895 samples per tag at that instant: 18
 live, 877 replayed. It found one defect in the client — a Note whose parts printed as
-one word, fixed in this repository's PR #5 — and one in the procedure, where step 5
-promised a reason no screen can show.
+one word, fixed in this repository's PR #5, merged — and one in the procedure, where
+step 5 promised a reason no screen can show.
 Still open: **a link between two hosts**, **two clocks**, and **a real arm64
 machine**, because every outage walked so far was a Docker network disconnect on one
 machine: no walk has yet had an edge and a cloud that disagree about the time, or a

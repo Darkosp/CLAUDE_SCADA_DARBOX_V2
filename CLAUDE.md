@@ -177,8 +177,8 @@ calls, the client's suite run again at 47 passed and 0 failed, and a second
 outage with the buffer bound left at its default, 14 min 42 s, whose 877
 readings per tag were all measured inside it and stored 56.9 ms after the
 reconnect. It found a seventh defect and this one was in the client — a Note
-whose parts printed as one word, fixed in this repository's PR #5. What is
-still open is **a link between two hosts**, **two clocks** and **a real arm64
+whose parts printed as one word, fixed in this repository's PR #5, merged. What
+is still open is **a link between two hosts**, **two clocks** and **a real arm64
 board**, since every outage walked so far has been a Docker network disconnect
 on one machine. Both drivers
 now name the reason a tag has no value
