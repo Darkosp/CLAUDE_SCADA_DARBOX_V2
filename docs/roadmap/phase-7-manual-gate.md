@@ -380,8 +380,9 @@ and the loss's own id is what makes a re-report the same entry.
 
 **If the bound was left at its default, write that down instead** — "the loss
 path was not exercised; 1,000,000 pending samples at this scan rate is about
-eleven and a half days" is an honest result. A gate summary that does not say
-whether this ran is the kind of report that gets a phase closed on half a walk.
+eleven and a half days for one tag at 1 Hz, and five and three-quarter days for the
+two this edge's device carries" is an honest result. A gate summary that does not
+say whether this ran is the kind of report that gets a phase closed on half a walk.
 
 ## Appendix: the whole walk on one machine
 
@@ -618,17 +619,22 @@ plainly: what the phase claims held up.
 - **The browser.** Step 5's device and tags were created through the API the
   browser itself calls, and step 9's `Bad` was read from `/api/tags` rather than
   off the screen. Those are the values the screen shows; that the screen shows
-  them is not something this walk checked.
+  them is not something this walk checked. The screen has since been walked, on
+  2026-09-27, and found one defect in the client
+  ([below](#since-the-walk-what-the-screen-says)).
 - **A real arm64 machine**, and so any walk on plant hardware. When this walk ran,
   `build-images.sh` built from the commit but the Dockerfile pinned `linux-x64` and
   only `linux-x64.pubxml` existed, so edge hardware was a piece of work before it
   was a walk. It has been built since, and run under emulation on this machine,
   which says the publish and the image are arm64 and says nothing about a board —
   [Since the walk](#since-the-walk-linux-arm64).
-- **The web client's suite on the walk's day**, per the note above.
+- **The web client's suite on the walk's day**, per the note above. Run again on
+  2026-09-27 on `main`: 47 passed, 0 failed, 0 skipped
+  ([below](#since-the-walk-what-the-screen-says)).
 - **A second outage with the bound left at 1,000,000**, which is the run in which
   `samples` is the scan rate times the outage's length rather than the bound, and
-  in which nothing is staged as lost.
+  in which nothing is staged as lost. Walked as step 5 of the same procedure
+  ([below](#since-the-walk-what-the-screen-says)).
 
 ### Since the walk: `linux-arm64`
 
@@ -699,11 +705,267 @@ as the list above says.
 **Merged as this repository's PR #4** on 2026-09-27, the image build and this
 record together.
 
+### Since the walk: what the screen says
+
+**Prepared 2026-09-27, and walked the same day** — the steps below, run with a browser open
+rather than a terminal, which is the one thing the walk above could not do for itself. What it
+closes is the third bullet of
+[What was not measured](#what-was-not-measured): the device and its tags were created
+through the API the browser itself calls, and the `Bad` was read from `/api/tags`
+rather than off the screen. With it goes the working rule this repository states
+(`CLAUDE.md`): a phase that has a screen is not done until someone has used the
+screen. It is the only one of the list's open bullets that needs no second machine.
+
+**The client's suite, run again.** 2026-09-27, in `src/Web`: `npm test` — **47 passed,
+0 failed, 0 skipped**. That is the list's fourth bullet, which was "not run on the
+walk's day"; it has been run since, on `main` at the commit this section was added to,
+and the client's own source is unchanged from the walk's. Run once more with the `.tag`
+fix below in place: still **47 passed, 0 failed** — a missing space is not a thing these
+tests can see, which is the whole reason a person found it.
+
+**The state it starts from, and one thing to read correctly.** The walk left 17,478
+pushed readings in the cloud database, across the two tags (`ccfd90b3…` 8,744,
+`f95b4476…` 8,734, both from 19:54:56 on 2026-09-26 to 22:44:50), one `SamplesLost`
+entry and two `EvaluationStarted` engine events, and those were the newest rows until
+this procedure's own run added more. **The last of them are the arm64 run's**, after
+local midnight: the local clock read 2026-09-27 while the edge dated its samples
+2026-09-26, which is the two-clock question in miniature and not a defect. The edge had
+been down since, so its tags were past their staleness limit — the screen would have
+shown that, which is exactly what step 9 asked for and what nobody has looked at.
+**Preparing this procedure brought the edge back up on 2026-09-27**, with a configuration
+file that names no buffer bound, so the bound's default applies — which is step 5's run.
+Its readings are live in the cloud database and on the screen from that moment, and the
+numbers the walk recorded above are still there beside them.
+
+**Checked before the screen, on 2026-09-27**, so that a check failing on the screen is
+the screen's failure and not the environment's: the uplink logged `Connected to the
+broker at broker:8883; sending on scada/edge/plant-7/samples.`; both devices connected
+and their tags read `Good again` — after `Name or service not known` for the two
+simulators, which is the appendix's own two-network note: the edge has to join the
+cloud stack's network for `broker` and the on-premises one for `opcua-sim` and
+`modbus-sim`, and it did not resolve the second pair until it did. 73 readings were
+stored in the cloud database within a minute of the edge starting. `/api/drivers`
+answers with `mqtt` as its one `"pushing": true` entry, which is what step 4 turns on.
+And the two edge tags answer `Good` with numeric values and a `sourceTimestampUtc` about
+a second before `ingested_at` — the edge's clock, not the store's.
+
+**1. Sign in, over the IPv4 address.** `http://127.0.0.1:8080`, with the Admin named in
+`deploy/cloud/.env` (`SCADA_INITIAL_ADMIN_USERNAME` / `SCADA_INITIAL_ADMIN_PASSWORD`).
+Never `localhost`, for step 1's reason. Hard-refresh before judging anything: a browser
+holding the previous client is Phase 6.5's finding.
+
+**2. Browse: the edge's readings are on the screen, and they are not the browser's
+clock.** The edge's two tags hang under `Edge plant-7`. **What must be true:** each
+reading is Good and moving, and the time beside it is the edge's — in the past by the
+link's latency, not the moment the page drew it. A tag that has never received
+anything reads `No data since <time>` instead (ADR-0016's wording); neither form is a
+defect.
+
+**3. Journal: the lost window, in words.** The Journal view, Site-filtered. **What must
+be true:** the `SamplesLost` entry names how many readings were dropped and between
+which two times, in sentences and times a person reads — not column names, not raw
+microseconds. The two `EvaluationStarted` entries belong to no site and must be visible
+to a Site-scoped reader as well, because a Viewer on one Site still has to know the
+system was not watching (ADR-0013).
+
+**4. The device form knows a driver can push.** Browse → New device, and type `mqtt`
+into **Driver**: *before anything is saved*, the scan-interval field disappears and a
+line says "This driver pushes its values when they change, so there is no scan
+interval." Capitals count for nothing — the client trims and lowercases the key, as the
+Gateway does — and a driver key it has not been taught keeps the field, which is the
+same "unknown is polled" rule. Nothing is saved by looking, so this step can be undone
+by leaving the form.
+
+**5. The live path, and the outage, watched rather than queried.** This is also the
+run the list above owes: **a second outage with the bound left at 1,000,000**, in which
+`samples` is the scan rate times the outage's length and nothing is staged as lost. The
+edge is already up with that bound (see above); the walk's own file said 60. With values
+arriving per step 2, cut the link as in step 8 and watch the client **without
+refreshing**:
+
+- values arrive and move, each carrying a time in the past by the link's latency —
+  the push channel, not a poll;
+- after the staleness limit (60 s by default) the reading on screen turns Bad and
+  **gives up its value**: a Bad reading draws `—` where the number was, rather than a
+  stale one carried forward, which is `tag.ts`'s rule and ADR-0016's. Where the
+  *reason* is, this step had wrong: it promised one "where the value is", and no
+  screen can show it — `TagSnapshot` carries no reason (`Core.Tags.TagSnapshot`), the
+  client has nowhere to put one, and a **pushing** device logs nothing at all when it
+  falls silent (`DeviceScannerService.WatchForSilenceAsync` marks the tags and says
+  none). The reason that exists is the edge's own, in the edge's log at step 8
+  ("Cannot reach the broker at broker:8883 (…)"), and for a polled device the
+  Gateway's ("Cannot reach device X; its tags will report Bad quality."). So step 9's
+  sentence is something seen as a quality, its cause something read elsewhere — the
+  second finding below;
+- on reconnect, the tag's last 15 minutes fill with the outage window in a burst, drawn
+  at the times the edge measured rather than at the moment they arrived: the visual
+  form of step 11's "with their original timestamps".
+
+**5, the cut, watched from both ends.** The link was cut at **`2026-09-26T23:42:10Z`** with
+the bound left at its default, which is the run the list above owed: no `Buffer` block is in
+the configuration file this edge was started with, so `EdgeOptions.MaxPendingSamples` applies
+its own `1_000_000` and nothing is staged as lost.
+
+The baseline (step 7), taken while the link was still up, one second before the cut at
+`23:42:09Z`:
+
+| | Discharge Pressure | OPC Pressure |
+|---|---|---|
+| `rows` | 10,520 | 10,509 |
+| `newest_measured` | `23:42:09.434775Z` | `23:42:09.494472Z` |
+| `newest_stored` | `23:42:09.589054Z` | `23:42:09.589054Z` |
+
+The edge's own side of the cut (step 8): its first warning came at **`23:42:47.232Z`**, 37 s
+after the cut — later than the walk's own 25 s — and already read **74** samples waiting,
+which is that delay times the 2 readings a second the two tags together produce. Every line
+after it grew the count by 4: `74`, `78`, `82`, `86` at two-second intervals, and by
+`23:46:44Z` it read **546**, which is 4 min 36 s of outage at that rate. Nothing is being
+dropped, and the default bound is further away than the note in step 13 says: at 2 a second
+it is about five and three-quarter days, not eleven and a half — that estimate was for one
+tag at 1 Hz.
+
+At the staleness limit — 60 s by default, `MqttPushingDriverFactory.DefaultStalenessLimit` —
+the reading turned **Bad and gave up its value**, which is what the corrected bullet above
+says a reader sees. `/api/tags` answered for both tags with `quality: Bad`, a value of kind
+`none` and a `sourceTimestampUtc` frozen at that tag's last real reading
+(`23:42:09.434Z` and `23:42:09.494Z`, the baseline's own numbers, unmoved), and the client
+draws exactly that: `—` where the number was, the unit still beside it, and the word `Bad`
+beside those. No reason, anywhere. No journal row either — the loss path in step 13 needs a
+full buffer, and nothing is lost.
+
+**On the burst, and the numbers step 11 asks for.** The edge's own line says when it came back:
+`23:56:52.292834554Z`, `Connected to the broker at broker:8883; sending on
+scada/edge/plant-7/samples.` The drain has no line of its own, and in the history it has almost
+no duration at all: the readings measured while the link was down arrived in a **56.9 ms**
+window — `23:56:52.302280Z` to `23:56:52.359215Z` — 1,754 of them, all inside one second.
+
+| step 11, per tag | Discharge Pressure (`ccfd90b3…`) | OPC Pressure (`f95b4476…`) |
+|---|---|---|
+| `samples` | 877 | 877 |
+| `first_measured` | `23:42:10.438073Z` | `23:42:10.501512Z` |
+| `last_measured` | `23:56:51.272160Z` | `23:56:51.754426Z` |
+| `first_stored` | `23:56:52.302280Z` | `23:56:52.302280Z` |
+| `last_stored` | `23:56:52.359215Z` | `23:56:52.359215Z` |
+
+Every one of the five is where the step says it must be. `samples` (877) is the scan rate times
+the outage's length — 14 min 42 s at 1 Hz — and nowhere near the `1,000,000` the buffer would
+have had to hold for step 13's loss path to fire; the edge's own count, `1,750` at its last
+warning before the reconnect (`23:56:50.176Z`), is that arithmetic written from the other side,
+and the four readings it measured in the 2.1 s between that line and the reconnect are the
+difference. `first_measured` and `last_measured` are **inside the outage on the edge's clock** —
+the first 0.44 s after the cut, the last between half a second and a second before the link came
+back — so not one reading was re-dated to the moment it arrived, which is the failure this gate
+exists to catch. `first_stored` and `last_stored` are **after the reconnect**: all of it was
+waiting on disk. The oldest reading in the batch waited **14 min 41.9 s** to be stored and the
+last of them 0.6 s, and no replayed row was stored before it was measured — ADR-0017's rule, the
+edge's timestamp carried across untouched and the store's own recorded beside it, read off one row
+rather than inferred from two.
+
+The two checks that say nothing was invented and nothing stored twice, at `00:03Z`: **11,788**
+and **11,776** rows, each equal to its own count of distinct `(tag_id, source_time)` — the link
+is at-least-once and the unique index makes a re-delivery a no-op; `before_the_cut` **10,520** and
+**10,509**, equal to step 7's baseline exactly, because that baseline was taken 0.4 s before the
+cut and no reading measured before it arrived after it; and **zero** inversions of `ingested_at`
+against `source_time` over the whole history since the cut, so the batch left the edge oldest
+first and nothing landed twice out of order.
+
+**On the burst, what the chart had to draw.** The chart asks one query, and it is the client's
+own: `loadHistory()` in `app.ts` takes `from` as `to` less 15 minutes, and `history()` in
+`api.ts` turns it into `GET /api/tags/{id}/history?from=&to=`. Asked at the instant of the
+reconnect it answers with **895 samples per tag** — first measured `23:41:52.363Z`, last
+`23:56:51.272Z`, every one of them `Good` and kind `numeric` — and the store divides them
+**18 and 877**: the 18 stored while the link was still up, the newest of them measured
+`23:42:09.434Z` and `23:42:09.494Z`, which are step 7's `newest_measured` to the microsecond,
+and then the 877 that were measured with nothing to send them. Asked again afterwards it still
+holds the outage: the minute `23:45:00Z – 23:46:00Z` answers with 60 samples per tag, measured
+in that minute and all stored at `23:56:52.302Z`, quality `Good`, so the storage time is now
+and the measured time is then. The biggest step between two consecutive readings in the
+replayed window is 1.0 s, which makes the drawn line unbroken rather than dotted. That is step
+5's third bullet — the last 15 minutes filling with the outage window at the times the edge
+measured, not at the moment they arrived — and the visual form of step 11's "with their
+original timestamps".
+
+And the journal, for the second outage: `/api/alarms/journal` still answers with **three** rows,
+the same three the first walk left — its `SamplesLost` (`190`, `21:57:37 – 21:59:12` local) and
+its two `EvaluationStarted` — because a buffer that never filled stages nothing: the loss path
+belongs to the bound, not to the link. A row that is not there is this run's evidence that
+nothing was invented, in the very place a reader looks for the opposite.
+
+**The screen is not the evidence.** Step 11's query stays the evidence and its numbers
+are still the ones to write down; what this walk adds is whether a person can reach that
+evidence without a terminal. Both, or the phase is closed on half a check.
+
+**What the screen said, 2026-09-27.** The four steps that need a person were answered by
+one, with the browser open on `http://127.0.0.1:8080` — the IPv4 form, never `localhost` —
+and a hard refresh before anything was judged. The fifth step's cut was then run with that
+same screen in front of the walker.
+
+**1 and 2, on the screen.** Signed in as the Admin: the header shows `CONNECTED` and
+`admin · Admin`, the Site picker holds `Bitola`, and the tree holds `Edge plant-7`, marked
+`mqtt`, with `Discharge Pressure` and `OPC Pressure` under it. The readings were live and
+moving, each timed by the edge and not by the browser: the two the database held at the cut
+were `346` bar and `3.4318248339629553` bar, with a `sourceTimestampUtc` a fraction of a
+second before the moment each was stored.
+
+**3, the journal in words and in local time.** The `SamplesLost` row — the walk's own loss,
+still the newest entry a day later — reads `2026-09-26 21:59:43` under Recorded,
+`SamplesLost` under Event, `Bitola/Edge plant-7` under Tag and, in Note, `190 samples
+dropped at the source21:57:37 – 21:59:12`. The words are the ones this step asks for: a
+count and a window in times a person reads, not column names and not microseconds. The ends
+are the loss's own — `21:57:37` is the cut of the walk's own outage and `21:59:12` the last
+reading it lost, both local (+02:00), which is the pair `gap_from` and `gap_until` hold
+above — and the separator between the sentence and the window is missing, which is the first
+finding below. Both `EvaluationStarted` rows are there for a reader scoped to one Site:
+`21:53:36` carrying the window it was down for (`21:53:08 – 21:53:36`) and `21:51:37`
+carrying none, because the first start this database ever saw had nothing before it to be
+missing. That is ADR-0013 read on a screen rather than in a test.
+
+**4, the form knows a driver can push.** Typing `mqtt` into **Driver** took the scan-interval
+field away before anything else was typed, and left in its place: "This driver pushes its
+values when they change, so there is no scan interval." Nothing was saved. Both screens also
+show what the step did not ask about: a new device opens on Modbus's three connection
+settings (`host` `127.0.0.1`, `port` `5502`, `unitId` `1`) for a driver that has no use for
+them — not a defect, because a form cannot know a driver's settings before it knows the
+driver, but three rows to delete by hand every time a pushing device is created.
+
+**What this walk found.** One defect in the client, and one in this document.
+
+- **A Note's parts printed as one word.** The Note column is several parts — "first seen
+  after restart", a retirement reason, a source's own sentence, a gap's window — each its own
+  `<span class="tag">`, and `.tag` had no rule in `app.css` at all. Angular drops the
+  whitespace between two elements, so two parts met with nothing between them, and the loss
+  above is where an eye catches it: `at the source21:57:37`. Every row with two parts had it
+  — a reason beside a source note, an engine gap beside a count of unrecorded transitions.
+  `.tag` now carries the separation it was relying on (`margin-right: 0.4rem`), which
+  separates every pair at once. It was found by a person reading a screen: the client's 47
+  tests passed before it and after it, and a missing space is not a thing they can see.
+- **The procedure promised a reason no screen can show.** Step 5 said the reading "carries
+  its reason where the value is". It does not, and the code is explicit that it cannot: a Bad
+  reading draws `—` (`tag.ts`), `TagSnapshot` carries no reason for a screen to draw, and a
+  **pushing** device that falls silent logs nothing at all. What is seen is a quality, and
+  the cause is read elsewhere — the edge's log at step 8, or the Gateway's for a polled
+  device. The step is corrected above. Whether a screen *should* say why a pushed tag went
+  quiet is a question for a later ADR: today's answer is ADR-0016's and it is deliberate —
+  `GatewayApp.cs` gives a driver a logger "so a driver can say why a tag has no value — the
+  reason a Bad reading cannot carry on its own".
+
+**What to record:** the three answers the browser gave (what the pushed tags showed and
+why, what the journal entry said in words, whether the device form hid the scan
+interval); the five numbers of step 11 and the three of step 7 for the second outage;
+what the screen showed at the cut, at the staleness limit and on the burst; and anything
+that looked wrong or merely confusing, including anything in this section that did not
+match what you saw.
+
+**What this does not close.** The first two bullets of the list and the arm64 section's
+own closing line: a link between two hosts, two clocks, and a board.
+
 ## What to report
 
 Anything that looks wrong or merely confusing, even where the behaviour is
 technically correct. Phase 5.5's hand walk found ten defects a green suite had
 passed, Phase 6's found four, and this one found six — all six in this document
 rather than in the feature, which is the shape a first walk of a feature that has
-only ever been tested tends to take.
+only ever been tested tends to take. The walk that put a screen in front of the
+walker ([below](#since-the-walk-what-the-screen-says)) found a seventh, and that
+one was in the client: a Note whose parts printed as one word.
 
