@@ -21,9 +21,10 @@ the documents it points to, before doing anything else in this repo.
 history pushed into it, so the merge commits in that history carry the
 predecessor repository's numbers — #1 to #25 — and the notes below use them.
 This repository's own PRs start again at #1, which makes a bare number
-ambiguous. Two are marked *(this repository)* where they appear: its #1, the
-driver logging, and its #2, the test-fixture guard. `gh pr list` shows what
-exists here.
+ambiguous. Five are marked *(this repository)* where they appear: its #1, the
+driver logging, its #2, the test-fixture guard, its #3, `certs.sh` under
+`bash`, its #4, `linux-arm64`, and its #5, the Journal Note's spacing.
+`gh pr list` shows what exists here.
 
 
 
@@ -58,9 +59,9 @@ produces an Active alarm, acknowledging it while still out of range
 moves it to Acknowledged, and it either disappears (if acknowledged) or
 becomes Cleared and stays listed (if not) once the value recovers. A
 Device going Bad never clears its alarm — a Bad reading has no value to
-compare (ADR-0003). Alarm state is in-memory only and does not survive a
-Gateway restart; flagged to close before Phase 6 (deployment), not
-blocking Phase 4.
+compare (ADR-0003). Alarm state did not survive a Gateway restart when this
+phase closed, and was flagged then to close before Phase 6 (deployment);
+**that gap is closed** — by the alarm journal in Phase 5.5 below (ADR-0013).
 
 **Phase 4 (additional drivers and UDTs) is complete and merged to
 `main`** (PR #6; see `phase-plan.md`'s Phase 4 status note) — OPC UA runs
@@ -186,6 +187,14 @@ now name the reason a tag has no value
 device that accepts the connection and then stops answering held its scan
 loop while the tags already read kept their values, silence that looks like
 a live plant; the request is bounded at five seconds now.
+
+**What Phase 7 left open is decided, and not built.** How an edge's device
+and tag list reaches it, and how the two sides are kept in agreement, is
+`docs/architecture/decisions/0019-edge-configuration-provisioning.md` — the
+cloud is the source of truth and derives each edge's configuration onto the
+link the edge already holds. It is **Accepted, not yet built**: the
+hand-written `edge.json` stands until those slices land, and until then the
+two lists can still drift.
 
 ## When Phase 1 (or any phase) begins
 

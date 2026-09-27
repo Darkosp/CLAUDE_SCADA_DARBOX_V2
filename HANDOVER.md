@@ -1,6 +1,6 @@
 # Handover — SCADA_DARBOX
 
-Written 2026-09-27, on `main` at `bbbc65b`, worktree clean, in sync with `origin/main`.
+Written 2026-09-27, on `main` at `886d959`, worktree clean, in sync with `origin/main`.
 
 This is a summary for whoever picks the repository up next: what is finished, what the
 repository is made of, what it is built from, what is left, and what will bite you. It is a
@@ -14,8 +14,10 @@ the file it comes from, and every number marked **measured** was produced on thi
 **PR numbers are ambiguous here.** This repository was created on 2026-09-26 with the project's
 earlier history pushed into it, so the merge commits carry the predecessor repository's numbers
 — #1 to #25 — while this repository's own PRs start again at #1. Where a number below is this
-repository's own, it says so; this repository's five are #1 (driver logging), #2 (a test-fixture
-guard), #3 (`certs.sh` under `bash`), #4 (`linux-arm64`) and #5 (the Journal Note's spacing).
+repository's own, it says so; this repository's six are #1 (driver logging), #2 (a test-fixture
+guard), #3 (`certs.sh` under `bash`), #4 (`linux-arm64`), #5 (the Journal Note's spacing) and
+#6 (ADR-0019's edge assignment and the write it refuses — **open**, the first of this
+repository's own PRs whose work is not on `main` yet).
 `CLAUDE.md` carries the same warning.
 
 ## 1. What is finished

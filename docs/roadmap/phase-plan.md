@@ -174,6 +174,16 @@ unresolved once this is meant to run somewhere real — an alarm journal
 needs a decision (what persists, at what granularity, historian table or
 separate) before Phase 6's deployment packaging.
 
+**Closed, 2026-09-22 — by Phase 5.5 below.** The decision this gap asked
+for is [ADR-0013](../architecture/decisions/0013-alarm-journal.md), and it
+shipped: an append-only journal is the source of truth, so a standing alarm
+and its acknowledgement survive a Gateway restart. This paragraph said the
+opposite, in the present tense, until 2026-09-27 — true when Phase 3 closed
+on 2026-09-10, false from 2026-09-18 when ADR-0013 was accepted. Corrected
+rather than left standing, for the reason
+[`decisions/README.md`](../architecture/decisions/README.md) states and
+which ADR-0011's own acknowledgement section had already followed.
+
 **Implementation notes (no new ADR needed):**
 
 - Threshold shape for Phase 3 is a single high/low pair per tag, no
@@ -332,8 +342,12 @@ rather than by a test, and are named here rather than rounded off: that
 a password is never stored or logged in reversible form, that nothing in
 the Gateway calls DbUp's upgrade path, and that the migrator is a no-op
 on a second run — all three now have tests (PR #8) — plus that Compose
-runs the migrator before the Gateway, which cannot be tested until
-Phase 6 builds the Compose files and remains the one outstanding row.
+runs the migrator before the Gateway, which could not be tested until
+Phase 6 built the Compose files. **That last row is closed too, and by a
+test rather than by a walk:**
+`ComposeFileTests.The_gateway_starts_only_after_the_migrator_has_completed`
+reads Compose's own rendering of `deploy/docker-compose.yml` and asserts
+the ordering. No row is outstanding.
 
 Writing those three tests turned up a real defect that no criterion
 asked about: two migrator runs setting the application role's password
