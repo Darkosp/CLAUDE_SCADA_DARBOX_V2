@@ -798,6 +798,15 @@ outage is staged — that have to be made before it starts. It says at the top
 that it has not been walked yet, and the section that replaces it is the
 record.
 
+**One question Phase 7 leaves open, and no phase has scoped.** The edge's
+device and tag list — with the cloud Gateway's own tag ids — is a hand-written
+`edge.json` today, and it must agree by hand with the cloud's MQTT device
+(`src/EdgeAgent/EdgeOptions.cs`). How an edge is configured, and how the two
+lists are kept in agreement, is the obvious next design question if edges are
+deployed in any number. [ADR-0019](../architecture/decisions/0019-edge-configuration-provisioning.md)
+proposes an answer; it is **Proposed**, not yet accepted, so no phase owns it
+yet.
+
 ## Later (not yet scoped)
 
 HMI screen editor and a real component library, the scripting engine
