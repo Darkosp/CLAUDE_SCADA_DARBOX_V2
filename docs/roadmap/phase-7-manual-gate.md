@@ -937,7 +937,9 @@ driver, but three rows to delete by hand every time a pushing device is created.
   above is where an eye catches it: `at the source21:57:37`. Every row with two parts had it
   — a reason beside a source note, an engine gap beside a count of unrecorded transitions.
   `.tag` now carries the separation it was relying on (`margin-right: 0.4rem`), which
-  separates every pair at once. It was found by a person reading a screen: the client's 47
+  separates every pair at once — in this repository's PR #5, and **not yet re-read on
+  screen**: until the client image is rebuilt from the commit that carries it, the running
+  client is the old bundle. It was found by a person reading a screen: the client's 47
   tests passed before it and after it, and a missing space is not a thing they can see.
 - **The procedure promised a reason no screen can show.** Step 5 said the reading "carries
   its reason where the value is". It does not, and the code is explicit that it cannot: a Bad
