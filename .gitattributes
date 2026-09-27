@@ -1,0 +1,21 @@
+# Line endings, for a repository developed on Windows and deployed on Linux.
+#
+# Two things were true before this file existed, and both cost real time.
+#
+# The working tree is CRLF and the committed blobs are LF, so the Windows git
+# and the WSL git in the same working copy disagreed about whether anything had
+# changed: WSL's reported 289 files modified on a clean tree, measured
+# 2026-09-27. `text=auto` normalises the index to LF and normalises the working
+# tree before comparing it, so both gits see the same tree. It rewrites nothing
+# that is already committed.
+* text=auto
+
+# A shell script is read by bash, where a trailing CR is not whitespace but part
+# of the command name: `set -euo pipefail` with a trailing CR parses as an
+# unknown command. deploy/cloud/certs.sh failed exactly this way during the
+# Phase 7 walk (this repository's PR #3), and deploy/build-images.sh needs its
+# CRs stripped before it will run on a fresh checkout. Forcing LF in the working
+# tree stops that depending on the setting of whichever git checked the file
+# out. deploy/cloud/.gitattributes already forces LF for that whole subtree,
+# because it is read inside Linux containers; this rule is the general case.
+*.sh text eol=lf
