@@ -277,9 +277,11 @@ that step 5 needs. What is **still open**, in the order `CLAUDE.md` states it:
    (this repository's PR #4; numbers in the gate record). Nothing has run on plant hardware.
 
 Also worth knowing before touching the link: the edge's device and tag list — including the
-**cloud** tag ids — is copied to the edge by hand today; how it reaches an edge is called out as
-still open in `src/EdgeAgent/EdgeOptions.cs`. That is the obvious next design question if
-edges are to be deployed in any number.
+**cloud** tag ids — is still copied to the edge by hand today. How it reaches an edge is no
+longer open: [ADR-0019](docs/architecture/decisions/0019-edge-configuration-provisioning.md)
+decides that the cloud is the source of truth and derives each edge's configuration onto the
+link the edge already holds. It is **Accepted and not yet built**, so the hand-written file
+stands until those slices land.
 
 ### Deferred, with the phase that must pick it up
 
@@ -417,7 +419,10 @@ screen is not done until someone has used the screen, and Phase 5.5's walk is th
   pipeline is not scoped by any phase.
 - **The edge's device/tag list is copied by hand**, and it must name the *cloud* Gateway's tag
   ids (`src/EdgeAgent/EdgeOptions.cs` says so explicitly). What happens when one side's list is
-  edited and the other is not is a design question that no ADR covers yet.
+  edited and the other is not is answered by
+  [ADR-0019](docs/architecture/decisions/0019-edge-configuration-provisioning.md) — the cloud
+  derives the list and publishes it, so there is only one side to edit — but the answer is
+  **not built yet**, so until it is the two lists can still drift.
 - **A test run without a database is not the same evidence as one with it.** §1 shows the shape:
   133 of 327 .NET tests report as skipped on this machine. Treat any "all green" claim as
   conditional on which of the three prerequisites (database, `docker version`, `docker compose

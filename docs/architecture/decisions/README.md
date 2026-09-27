@@ -49,7 +49,7 @@ they say about it.
 | [0016](0016-push-capable-driver-contract.md) | A driver declares itself polled or pushing; a pushing tag goes Bad on silence rather than holding a cached value |
 | [0017](0017-edge-to-cloud-link.md) | Edge-to-cloud: our own payload over Mosquitto with TLS per edge; the edge buffers on disk, drops oldest and records the loss; alarms stay in the cloud |
 | [0018](0018-edge-agent-runtime-and-buffer.md) | The edge agent runs self-contained on the CLR (Native AOT breaks OPC UA) and buffers in SQLite (amends ADR-0006) |
-| [0019](0019-edge-configuration-provisioning.md) | How an edge is configured: the cloud is the source of truth, delivered over the link it already has *(Proposed)* |
+| [0019](0019-edge-configuration-provisioning.md) | How an edge is configured: the cloud is the source of truth, delivered over the link it already has |
 
 ## Template
 

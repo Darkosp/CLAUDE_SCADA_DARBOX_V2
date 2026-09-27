@@ -1,9 +1,10 @@
 # ADR-0019 — How an edge is configured: the cloud is the source of truth, delivered over the link it already has
 
-**Status:** Proposed
+**Status:** Accepted
 **Complements:** ADR-0001 (the tag's stable id), ADR-0002 (the core/module
-boundary), ADR-0011 (the audit trail), ADR-0016 (a driver declares itself
-polled or pushing), ADR-0017 (the edge-to-cloud link).
+boundary), ADR-0003 (a value that has no honest reading is not invented),
+ADR-0011 (the audit trail), ADR-0016 (a driver declares itself polled or
+pushing), ADR-0017 (the edge-to-cloud link).
 **Date:** 2026-09-27
 
 ## Context
@@ -11,10 +12,12 @@ polled or pushing), ADR-0017 (the edge-to-cloud link).
 Phase 7 built the link: an edge reads a plant, buffers what it read, and
 ships it to the cloud Gateway over MQTT with a certificate per edge
 (ADR-0017). What Phase 7 did not decide is where the edge's list of devices
-and tags comes from. Today it is a hand-written `edge.json`, mounted into the
-edge container read-only, and it must name the **cloud** Gateway's tag ids —
-`src/EdgeAgent/EdgeOptions.cs` says so explicitly, and calls out that how the
-list reaches an edge is still open.
+and tags comes from. At the time this ADR was written it was a hand-written
+`edge.json`, mounted into the edge container read-only, and it had to name the
+**cloud** Gateway's tag ids — `src/EdgeAgent/EdgeOptions.cs` said so
+explicitly, and called out that how the list reaches an edge was still open.
+That is the question this ADR answers. The file is still written by hand
+today, because none of the decision below is built yet.
 
 That leaves two lists a human must keep in agreement:
 
@@ -128,6 +131,14 @@ hand-typed lists become one.
 - The configuration format is a compatibility surface the project now owns,
   exactly as the sample payload is (ADR-0017), and needs a version field from
   the first message.
+- **Writing to a tag whose device is assigned to an edge is not decided here,
+  and is refused until it is.** The link is outbound only, so the Gateway has
+  no route to that device: the write path opens its own connection to the
+  device (`TagWriter`) and would wait out its ten-second deadline before
+  reporting a device error that never happened. A write to such a tag is
+  therefore refused with a named reason and audited, rather than attempted.
+  Routing a write to the edge — over the link, with the result reported back —
+  is a decision of its own and needs an ADR before any code.
 - **Not decided here, and left to implementation:** live reload instead of a
   restart; the exact topic and payload shape; whether an edge may be sent a
   device it cannot reach; and how a device moving from one edge to another is
@@ -147,5 +158,9 @@ hand-typed lists become one.
   the link is down.
 - There is no path in which a human types a tag id into an edge's
   configuration.
+- A write to a tag whose device is assigned to an edge is refused with a named
+  reason and audited, and no connection is opened to a device the Gateway
+  cannot reach (ADR-0003: a refusal must not report a failure that did not
+  happen).
 - No Core type mentions MQTT, Mosquitto or a topic (ADR-0002, ADR-0016,
   ADR-0017).

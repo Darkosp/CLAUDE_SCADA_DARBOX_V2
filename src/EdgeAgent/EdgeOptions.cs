@@ -8,8 +8,9 @@ namespace ScadaDarbox.EdgeAgent;
 /// </summary>
 /// <remarks>
 /// Tag ids are the cloud Gateway's own (ADR-0001): the samples name tags by id, and the Gateway
-/// accepts them only for tags it has under that id. How this list reaches an edge — copied by
-/// hand today — is still open.
+/// accepts them only for tags it has under that id. Where this list comes from is decided —
+/// the cloud derives it and publishes it over the link the edge already holds (ADR-0019) — but
+/// not yet built: the file bound here is still written by hand.
 /// </remarks>
 public sealed class EdgeOptions
 {
