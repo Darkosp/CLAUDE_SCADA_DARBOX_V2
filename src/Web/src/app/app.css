@@ -253,6 +253,14 @@ button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
 
 .summary tr.settled td { color: #8a94a0; }
 
+/* --- journal ------------------------------------------------------------ */
+
+/* A Note is several parts, each its own element, and Angular drops the whitespace between
+   two elements: with no rule of its own the client printed two parts as one word. The
+   Phase 7 walk read this off the screen: "190 samples dropped at the source21:57:37 –
+   21:59:12" — the count and the window meeting as one word. */
+.tag { margin-right: 0.4rem; }
+
 /* --- templates ---------------------------------------------------------- */
 
 .views {
