@@ -12,7 +12,7 @@ public sealed class DeviceRepository : IDeviceRepository
     private const string SelectColumns = """
         SELECT id, site_id, folder_id, name, driver_key,
                connection_settings::text AS connection_settings, scan_interval_ms,
-               template_id
+               template_id, edge_id
         FROM device_active
         """;
 
@@ -54,20 +54,36 @@ public sealed class DeviceRepository : IDeviceRepository
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
+        // A device may be created already assigned to an edge (ADR-0019), and that assignment is
+        // guarded exactly as an edit's is: the Gateway stops polling a device an edge reads, so
+        // assigning one to an edge with no link device — or assigning a device that carries a
+        // link — would leave its tags with no source at all. The guard is part of the statement
+        // for the same reason it is on the update: a concurrent edit of the edge cannot land
+        // behind the check.
+        const string sql = """
+            INSERT INTO device (id, site_id, folder_id, name, driver_key, connection_settings, scan_interval_ms, edge_id)
+            SELECT @Id, @SiteId, @FolderId, @Name, @DriverKey, @ConnectionSettings::jsonb, @ScanIntervalMs, @EdgeId
+            WHERE @EdgeId IS NULL
+               OR (EXISTS (SELECT 1 FROM edge_active
+                           WHERE id = @EdgeId AND link_device_id IS NOT NULL)
+                   AND NOT EXISTS (SELECT 1 FROM edge_active WHERE link_device_id = @Id))
+            """;
+
+        int inserted;
         try
         {
-            await connection.ExecuteAsync(new CommandDefinition(
-                """
-                INSERT INTO device (id, site_id, folder_id, name, driver_key, connection_settings, scan_interval_ms)
-                VALUES (@Id, @SiteId, @FolderId, @Name, @DriverKey, @ConnectionSettings::jsonb, @ScanIntervalMs)
-                """,
-                ToParameters(device),
-                cancellationToken: cancellationToken))
+            inserted = await connection.ExecuteAsync(
+                new CommandDefinition(sql, ToParameters(device), cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
         }
         catch (PostgresException exception) when (UniqueNames.IsNameClash(exception))
         {
             throw await UniqueNames.DeviceTakenAsync(_dataSource, device.Name, device.SiteId, device.FolderId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (inserted == 0)
+        {
+            throw await RefuseAssignmentAsync(device, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -76,23 +92,38 @@ public sealed class DeviceRepository : IDeviceRepository
         // site_id is deliberately not updatable. It is the tenant and security scope
         // (ADR-0004), not a placement field: moving a device between sites would change
         // who can see its history, which is not something an edit form should do.
+        //
+        // edge_id, by contrast, is: assigning a device to an edge or releasing it (ADR-0019)
+        // is an ordinary edit of the device, and the only way the assignment ever changes.
+        //
+        // Two assignments are refused, and refused inside the statement so that a concurrent
+        // edit of the edge cannot land behind the check. Assigning to an edge that has no link
+        // device would leave the device's tags with no source at all — the Gateway stops polling
+        // it (ADR-0019) and nothing carries it. And a device that carries an edge's link *is*
+        // that link: another edge cannot also acquire it.
+        const string sql = """
+            UPDATE device
+            SET folder_id = @FolderId,
+                name = @Name,
+                driver_key = @DriverKey,
+                connection_settings = @ConnectionSettings::jsonb,
+                scan_interval_ms = @ScanIntervalMs,
+                edge_id = @EdgeId
+            WHERE id = @Id
+              AND deleted_at IS NULL
+              AND (@EdgeId IS NULL
+                   OR (EXISTS (SELECT 1 FROM edge_active
+                               WHERE id = @EdgeId AND link_device_id IS NOT NULL)
+                       AND NOT EXISTS (SELECT 1 FROM edge_active WHERE link_device_id = @Id)))
+            """;
+
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         int updated;
         try
         {
-            updated = await connection.ExecuteAsync(new CommandDefinition(
-                """
-                UPDATE device
-                SET folder_id = @FolderId,
-                    name = @Name,
-                    driver_key = @DriverKey,
-                    connection_settings = @ConnectionSettings::jsonb,
-                    scan_interval_ms = @ScanIntervalMs
-                WHERE id = @Id AND deleted_at IS NULL
-                """,
-                ToParameters(device),
-                cancellationToken: cancellationToken))
+            updated = await connection.ExecuteAsync(
+                new CommandDefinition(sql, ToParameters(device), cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
         }
         catch (PostgresException exception) when (UniqueNames.IsNameClash(exception))
@@ -102,8 +133,47 @@ public sealed class DeviceRepository : IDeviceRepository
 
         if (updated == 0)
         {
-            throw new ConfigurationConflictException($"Device {device.Id} no longer exists.");
+            throw await RefuseAssignmentAsync(device, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Why a write was refused, in the operator's words (ADR-0019). Called only once the
+    /// statement has written nothing, so one of these is true.
+    /// </summary>
+    private async Task<ConfigurationConflictException> RefuseAssignmentAsync(
+        Device device, CancellationToken cancellationToken)
+    {
+        if (device.EdgeId is not { } edgeId)
+        {
+            return new ConfigurationConflictException($"Device {device.Id} no longer exists.");
+        }
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var carriesALink = await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT name FROM edge_active WHERE link_device_id = @deviceId",
+            new { deviceId = device.Id },
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        if (carriesALink is not null)
+        {
+            return new ConfigurationConflictException(
+                $"This device carries the link for the edge '{carriesALink}', so it cannot itself be "
+                + "assigned to an edge. Repoint that edge at another device first.");
+        }
+
+        var edge = await connection.QuerySingleOrDefaultAsync<EdgeRow>(new CommandDefinition(
+            "SELECT id, tenant_id, name, link_device_id FROM edge_active WHERE id = @edgeId",
+            new { edgeId },
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return edge is null
+            ? new ConfigurationConflictException($"Edge {edgeId} no longer exists.")
+            : new ConfigurationConflictException(
+                $"The edge '{edge.Name}' has no link device yet, so this device cannot be assigned "
+                + "to it. The Gateway stops polling a device an edge reads, and that edge's link is "
+                + "what carries its tags instead — with no link, nothing would read them.");
     }
 
     public async Task DeleteAsync(Guid deviceId, CancellationToken cancellationToken)
@@ -114,8 +184,20 @@ public sealed class DeviceRepository : IDeviceRepository
         // Device and tags go in one transaction. Half a delete — a device gone while its
         // tags remain, or the reverse — would leave configuration in a state no operator
         // asked for and no screen renders sensibly.
+        //
+        // A device an edge names as its link is not deleted (ADR-0019). More than its own tags
+        // is at stake: the edge keeps naming it, so the assignment guard would still pass for
+        // that edge afterwards and the next device assigned to it would be left with nothing
+        // reading it. The edge is repointed first, explicitly, and the check is part of the
+        // statement so a concurrent assignment cannot land behind it.
         var deleted = await connection.ExecuteAsync(new CommandDefinition(
-            "UPDATE device SET deleted_at = now() WHERE id = @deviceId AND deleted_at IS NULL",
+            """
+            UPDATE device
+            SET deleted_at = now()
+            WHERE id = @deviceId
+              AND deleted_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM edge_active WHERE link_device_id = @deviceId)
+            """,
             new { deviceId },
             transaction,
             cancellationToken: cancellationToken))
@@ -123,7 +205,19 @@ public sealed class DeviceRepository : IDeviceRepository
 
         if (deleted == 0)
         {
-            throw new ConfigurationConflictException($"Device {deviceId} no longer exists.");
+            // Nothing was written: either the device is gone, or it carries an edge's link.
+            var carriesALink = await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
+                "SELECT name FROM edge_active WHERE link_device_id = @deviceId",
+                new { deviceId },
+                transaction,
+                cancellationToken: cancellationToken))
+                .ConfigureAwait(false);
+
+            throw carriesALink is not null
+                ? new ConfigurationConflictException(
+                    $"This device carries the link for the edge '{carriesALink}', so it cannot be "
+                    + "deleted. Repoint that edge at another device first.")
+                : new ConfigurationConflictException($"Device {deviceId} no longer exists.");
         }
 
         // Cascading is right here where it is wrong for a folder: a tag has no placement
@@ -147,5 +241,6 @@ public sealed class DeviceRepository : IDeviceRepository
         device.DriverKey,
         ConnectionSettings = ConnectionSettingsJson.Serialize(device.ConnectionSettings),
         ScanIntervalMs = (int)device.ScanInterval.TotalMilliseconds,
+        device.EdgeId,
     };
 }
