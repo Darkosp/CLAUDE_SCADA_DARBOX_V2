@@ -173,6 +173,69 @@ public sealed class BrokerConfigurationTests : IClassFixture<BrokerFixture>
         Assert.InRange(SamplePayload.WaitedInBroker(message.Expiry), TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(10));
     }
 
+    [RequiresDockerFact]
+    public async Task The_Gateway_publishes_an_edges_configuration_and_that_edge_reads_it()
+    {
+        // The Gateway's own identity, publishing retained to an edge's topic (ADR-0019 §4).
+        using var gateway = await ConnectAsync(_broker.Gateway($"scada-darbox-{_run}-provisioning"));
+        var published = await gateway.PublishAsync(new MqttApplicationMessageBuilder()
+            .WithTopic("scada/edge/edge-a/config")
+            .WithPayload($"{_run}:config")
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .WithRetainFlag()
+            .Build());
+        Assert.True(published.IsSuccess, $"refused: {published.ReasonCode}");
+
+        // The edge asks for it and is given it: retained, so it arrives without the cloud having
+        // to notice that the edge connected.
+        using var edge = await ConnectAsync(_broker.Edge("edge-a"));
+        var received = new ConcurrentQueue<string>();
+        edge.ApplicationMessageReceivedAsync += message =>
+        {
+            received.Enqueue(message.ApplicationMessage.ConvertPayloadToString());
+            return Task.CompletedTask;
+        };
+        await edge.SubscribeAsync(new MqttClientSubscribeOptionsBuilder()
+            .WithTopicFilter("scada/edge/edge-a/config", MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (received.IsEmpty && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+        }
+
+        Assert.Equal($"{_run}:config", received.SingleOrDefault());
+    }
+
+    [RequiresDockerFact]
+    public async Task An_edge_cannot_read_another_edges_configuration()
+    {
+        // A retained configuration for edge-b is sitting on the broker.
+        using var gateway = await ConnectAsync(_broker.Gateway($"scada-darbox-{_run}-provisioning"));
+        Assert.True((await gateway.PublishAsync(new MqttApplicationMessageBuilder()
+            .WithTopic("scada/edge/edge-b/config")
+            .WithPayload($"{_run}:forbidden")
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .WithRetainFlag()
+            .Build())).IsSuccess);
+
+        // edge-a asks for it, and is given nothing: the ACL confines every edge to its own name.
+        using var edge = await ConnectAsync(_broker.Edge("edge-a"));
+        var received = new ConcurrentQueue<string>();
+        edge.ApplicationMessageReceivedAsync += message =>
+        {
+            received.Enqueue(message.ApplicationMessage.ConvertPayloadToString());
+            return Task.CompletedTask;
+        };
+        await edge.SubscribeAsync(new MqttClientSubscribeOptionsBuilder()
+            .WithTopicFilter("scada/edge/edge-b/config", MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        Assert.Empty(received);
+    }
+
     private async Task<GatewaySession> GatewayAsync(string? clientId = null)
     {
         var client = new MqttClientFactory().CreateMqttClient();

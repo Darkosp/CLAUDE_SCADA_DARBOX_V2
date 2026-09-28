@@ -111,6 +111,13 @@ public sealed class TagCatalog
             ? _edgesById.GetValueOrDefault(edgeId)
             : null;
 
+    /// <summary>
+    /// The devices one edge acquires, in configuration order (ADR-0019). The edge's own link
+    /// device is not among them: the link is the Gateway's own device, and it belongs to no edge.
+    /// </summary>
+    public IReadOnlyList<Device> DevicesOfEdge(Guid edgeId) =>
+        _devicesById.Values.Where(device => device.EdgeId == edgeId).ToList();
+
     public Folder? FindFolder(Guid folderId) => _foldersById.GetValueOrDefault(folderId);
 
     /// <summary>Every configured alarm, across all tags.</summary>

@@ -11,6 +11,7 @@ using ScadaDarbox.Core.Tags;
 using ScadaDarbox.Gateway.Configuration;
 using ScadaDarbox.Gateway.Contracts;
 using ScadaDarbox.Gateway.Operations;
+using ScadaDarbox.Gateway.Provisioning;
 using ScadaDarbox.Gateway.RealTime;
 using ScadaDarbox.Gateway.Scanning;
 using ScadaDarbox.Gateway.Security;
@@ -207,6 +208,23 @@ public static class GatewayApp
         services.AddSingleton(new PushedSourceSettings(
             builder.Configuration.GetValue("PushedSources:ClockSkewTolerance", PushedSourceSettings.DefaultClockSkewTolerance)));
         services.AddHostedService<DeviceScannerService>();
+
+        // Where each edge's configuration is published (ADR-0019 §4): the same broker, over the
+        // Gateway's own certificate, on a topic of its own. Nothing is published while it is off,
+        // which is how a deployment is undone without touching the edges.
+        var provisioning = builder.Configuration.GetSection("EdgeProvisioning");
+        services.AddSingleton(new EdgeProvisioningOptions
+        {
+            Enabled = provisioning.GetValue("Enabled", true),
+            Host = provisioning.GetValue("Host", "broker") ?? "broker",
+            Port = provisioning.GetValue("Port", 8884),
+            UsesTls = provisioning.GetValue("UsesTls", true),
+            TopicPrefix = provisioning.GetValue("TopicPrefix", "scada/edge") ?? "scada/edge",
+            CaFile = provisioning.GetValue("CaFile", "/app/mqtt/ca.crt") ?? "/app/mqtt/ca.crt",
+            CertFile = provisioning.GetValue("CertFile", "/app/mqtt/scada-gateway.crt") ?? "/app/mqtt/scada-gateway.crt",
+            KeyFile = provisioning.GetValue("KeyFile", "/app/mqtt/scada-gateway.key") ?? "/app/mqtt/scada-gateway.key",
+        });
+        services.AddHostedService<EdgeConfigurationPublisher>();
     }
 
     private static void RegisterSecurity(

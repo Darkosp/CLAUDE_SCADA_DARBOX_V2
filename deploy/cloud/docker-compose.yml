@@ -69,6 +69,15 @@ services:
       SCADA_INITIAL_ADMIN_USERNAME: ${SCADA_INITIAL_ADMIN_USERNAME:-}
       SCADA_INITIAL_ADMIN_PASSWORD: ${SCADA_INITIAL_ADMIN_PASSWORD:-}
       DataProtection__KeysDirectory: /app/keys
+      # Each edge's configuration is derived here and published to it (ADR-0019). Off in
+      # appsettings.json, where a developer's Gateway has no broker to publish to.
+      EdgeProvisioning__Enabled: "true"
+      EdgeProvisioning__Host: broker
+      EdgeProvisioning__Port: "8884"
+      EdgeProvisioning__UsesTls: "true"
+      # Must be the prefix mosquitto/acl is written against: the Gateway may write a configuration
+      # under any edge's name, and each edge may read only its own.
+      EdgeProvisioning__TopicPrefix: scada/edge
     ports:
       - "${SCADA_HTTP_PORT:-8080}:8080"
     volumes:
