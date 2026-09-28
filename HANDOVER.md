@@ -16,8 +16,8 @@ earlier history pushed into it, so the merge commits carry the predecessor repos
 — #1 to #25 — while this repository's own PRs start again at #1. Where a number below is this
 repository's own, it says so; this repository's six are #1 (driver logging), #2 (a test-fixture
 guard), #3 (`certs.sh` under `bash`), #4 (`linux-arm64`), #5 (the Journal Note's spacing) and
-#6 (ADR-0019's edge assignment and the write it refuses — **open**, the first of this
-repository's own PRs whose work is not on `main` yet).
+#6 (ADR-0019's edge assignment, its API and the screen that assigns them — **merged** as
+`fe829f0`, the first of this repository's own PRs whose work went to `main` through a squash).
 `CLAUDE.md` carries the same warning.
 
 ## 1. What is finished
@@ -59,6 +59,25 @@ entry with its count and both ends. The screen half of the gate was walked on 20
 well: device and tags created through the API the browser itself calls, the client suite re-run,
 and a second outage at the default buffer bound — 14 min 42 s, 877 readings per tag, all
 measured inside it and stored 56.9 ms after the reconnect.
+
+### ADR-0019 — the assignment half: which devices an edge reads (PR #6, merged)
+
+ADR-0019 decided that the cloud authors each edge's configuration and publishes it onto the link
+the edge already holds. The half that has to exist first is merged: `Edge` is an entity of the
+tenant rather than of a Site — its name is the identity in its certificate and the segment the
+broker carries its topics under (ADR-0017), unique deployment-wide (ADR-0015) — a device is
+assigned to one by an ordinary edit of that device, and the Gateway stops polling a device an
+edge reads and refuses a write to it by name (ADR-0003) instead of reporting a device error that
+never happened. `/api/edges` is Admin-only and every write is journalled (ADR-0011); the Edges
+screen and the edge picker on the device form are in the client.
+
+Evidence: 353 .NET tests with a docker daemon up — 346 passed / 7 skipped / 0 failed with it down,
+the 7 being `BrokerConfigurationTests`, which need `docker version` — and 53 client tests; the
+create-path guard and the link rule were watched to fail, one mutation at a time, in PR #6. What
+is **not** built is the provisioning half: the Gateway publishing `{prefix}/{edgeId}/config`
+retained and versioned, one MQTT ingestion source per edge, the EdgeAgent subscribing and holding
+a durable last-accepted configuration, and the deploy ACL widening that lets `scada-gateway` write
+`scada/edge/+/config`. Until those land the hand-written `deploy/edge/edge.example.json` stands.
 
 ### What runs right now on this machine — measured
 
@@ -282,8 +301,10 @@ Also worth knowing before touching the link: the edge's device and tag list — 
 **cloud** tag ids — is still copied to the edge by hand today. How it reaches an edge is no
 longer open: [ADR-0019](docs/architecture/decisions/0019-edge-configuration-provisioning.md)
 decides that the cloud is the source of truth and derives each edge's configuration onto the
-link the edge already holds. It is **Accepted and not yet built**, so the hand-written file
-stands until those slices land.
+link the edge already holds. **The assignment half of it is built and merged** — an edge is an
+entity of the tenant, a device may be assigned to one by an ordinary edit of the device, and the
+Gateway stops polling and refuses to write a device an edge reads (PR #6, `fe829f0`). The
+provisioning half is not built, so the hand-written file stands until those slices land.
 
 ### Deferred, with the phase that must pick it up
 
