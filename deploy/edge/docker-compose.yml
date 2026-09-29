@@ -21,8 +21,8 @@ services:
       Edge__Buffer__Path: /data/buffer.db
       DOTNET_ENVIRONMENT: Production
     volumes:
-      # The devices and their tags, with the cloud Gateway's tag ids (edge.example.json).
-      - ${SCADA_EDGE_CONFIG:?set SCADA_EDGE_CONFIG to this edge's device configuration file}:/app/appsettings.Production.json:ro
+      # No device configuration is mounted: what this edge reads is derived by the cloud and sent
+      # over the link below (ADR-0019). A file here would be a second, hand-typed list of tag ids.
       - ${SCADA_EDGE_CERT_DIR:?set SCADA_EDGE_CERT_DIR to the directory with ca.crt and this edge's certificate}/ca.crt:/app/certs/ca.crt:ro
       - ${SCADA_EDGE_CERT_DIR:?set SCADA_EDGE_CERT_DIR}/${SCADA_EDGE_ID:?set SCADA_EDGE_ID}.crt:/app/certs/edge.crt:ro
       - ${SCADA_EDGE_CERT_DIR:?set SCADA_EDGE_CERT_DIR}/${SCADA_EDGE_ID:?set SCADA_EDGE_ID}.key:/app/certs/edge.key:ro

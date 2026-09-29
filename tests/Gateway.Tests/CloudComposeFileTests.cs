@@ -26,7 +26,6 @@ public sealed class CloudComposeFileTests
         ["SCADA_EDGE_ID"] = "plant-7",
         ["SCADA_BROKER_HOST"] = "mqtt.example.test",
         ["SCADA_EDGE_CERT_DIR"] = "/srv/edge/certs",
-        ["SCADA_EDGE_CONFIG"] = "/srv/edge/edge.json",
     };
 
     [RequiresDockerComposeFact]

@@ -12,6 +12,7 @@ using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Model;
 using ScadaDarbox.EdgeAgent;
 using ScadaDarbox.EdgeAgent.Buffer;
+using ScadaDarbox.EdgeAgent.Configuration;
 using ScadaDarbox.EdgeAgent.Uplink;
 using ScadaDarbox.Gateway.Contracts;
 using ScadaDarbox.Gateway.Tests.Hosting;
@@ -304,6 +305,9 @@ public sealed class EdgeIngestionTests : IClassFixture<GatewayTestHost>, IAsyncL
             Buffer = new BufferOptions { Path = _bufferPath },
         }),
         buffer,
+        // This test is about what the cloud does with what arrives; what the edge reads is
+        // ConfigurationLinkTests' subject (ADR-0019).
+        new EdgeConfigurationConsumer(new EdgeConfigurationSource(), buffer, NullLogger<EdgeConfigurationConsumer>.Instance),
         NullLogger<UplinkService>.Instance,
         clock);
 

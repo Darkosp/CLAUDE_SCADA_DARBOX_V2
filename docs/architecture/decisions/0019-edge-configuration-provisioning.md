@@ -104,6 +104,14 @@ and `AcquisitionService` iterates it). A newer version is applied by restarting
 the acquisition service. Live reload is a later refinement and is not part of
 this decision.
 
+*(Settled while implementing, 2026-09-28.)* Not out of `IOptions<EdgeOptions>`:
+the edge's own options hold its id, its broker and its buffer, and
+`AcquisitionService` iterates the configuration the edge last accepted, kept in
+the buffer beside its samples. The message is `EdgeConfigurationPayload`
+(Drivers.Mqtt, version 1) and the topic is `{TopicPrefix}/{Edge:Id}/config` —
+the name in the edge's certificate, which the broker's ACL confines it to, so
+an edge can read no other edge's configuration and no other edge can read its.
+
 **7. The tag id is never typed by hand.**
 
 The derived configuration carries each tag's own stable id (ADR-0001). The two

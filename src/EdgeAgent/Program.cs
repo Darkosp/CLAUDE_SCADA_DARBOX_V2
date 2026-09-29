@@ -7,12 +7,14 @@ using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.EdgeAgent;
 using ScadaDarbox.EdgeAgent.Acquisition;
 using ScadaDarbox.EdgeAgent.Buffer;
+using ScadaDarbox.EdgeAgent.Configuration;
 using ScadaDarbox.EdgeAgent.Uplink;
 using ScadaDarbox.Modules.Drivers.Modbus;
 using ScadaDarbox.Modules.Drivers.OpcUa;
 
-// The edge agent (Phase 7, ADR-0017, ADR-0018): reads the plant's devices, keeps what it read in a
-// buffer on disk, and sends it to the cloud Gateway's broker whenever the link allows.
+// The edge agent (Phase 7, ADR-0017, ADR-0018, ADR-0019): reads the plant's devices, keeps what it
+// read in a buffer on disk, and sends it to the cloud Gateway's broker whenever the link allows.
+// What it reads is not written here — the cloud derives it and publishes it over that same link.
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.Configure<EdgeOptions>(builder.Configuration.GetSection("Edge"));
@@ -47,6 +49,15 @@ builder.Services.AddSingleton(provider =>
     var edge = provider.GetRequiredService<IOptions<EdgeOptions>>().Value;
     return SampleBuffer.Open(edge.Buffer.Path, edge.Buffer.MaxPendingSamples, provider.GetRequiredService<TimeProvider>());
 });
+
+// What this edge reads: the configuration the cloud derived for it, starting from the last one it
+// accepted, so a restart taken while the link is down changes nothing about what is being read
+// (ADR-0019 §5). Until a configuration has arrived, this edge reads nothing.
+builder.Services.AddSingleton(provider => EdgeConfigurationSource.From(
+    provider.GetRequiredService<SampleBuffer>(),
+    provider.GetRequiredService<ILoggerFactory>().CreateLogger<EdgeConfigurationSource>()));
+
+builder.Services.AddSingleton<EdgeConfigurationConsumer>();
 
 builder.Services.AddHostedService<AcquisitionService>();
 builder.Services.AddHostedService<UplinkService>();

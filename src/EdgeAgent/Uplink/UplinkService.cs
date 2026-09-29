@@ -6,25 +6,34 @@ using MQTTnet.Formatter;
 using MQTTnet.Protocol;
 using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.EdgeAgent.Buffer;
+using ScadaDarbox.EdgeAgent.Configuration;
 using ScadaDarbox.Modules.Drivers.Mqtt;
 
 namespace ScadaDarbox.EdgeAgent.Uplink;
 
 /// <summary>
-/// Sends the buffer to the broker, oldest first, and removes a batch only once the broker has
-/// acknowledged it (ADR-0017). When the broker is unreachable it keeps trying; the buffer keeps
-/// filling meanwhile, and nothing is lost unless it fills past its bound — which is recorded.
+/// The edge's connection to the cloud: it sends the buffer, oldest first, and receives the
+/// configuration this edge is to read (ADR-0017, ADR-0019 §4).
 /// </summary>
 /// <remarks>
 /// <para>
 /// At least once: a batch the broker received but whose acknowledgement was lost is sent again.
 /// The cloud Gateway makes ingestion idempotent per (tag, source timestamp) rather than trusting
-/// that duplicates will not happen (ADR-0017).
+/// that duplicates will not happen (ADR-0017). A batch leaves the buffer only once the broker has
+/// acknowledged it; when the broker is unreachable the service keeps trying, the buffer keeps
+/// filling meanwhile, and nothing is lost unless it fills past its bound — which is recorded.
 /// </para>
 /// <para>
 /// Every message also carries this edge's clock at the moment of sending, and any lost windows
 /// not yet reported. A report is marked sent under the same acknowledgement as the samples it
 /// travelled with; until then it goes out again with the next message.
+/// </para>
+/// <para>
+/// Sending and receiving share one client deliberately. The cloud's broker takes a client's identity
+/// from its certificate and forces the client id to it (ADR-0017), so a second connection from this
+/// edge would displace this one and the edge would spend its life being disconnected by itself.
+/// The configuration topic is subscribed to on connecting, and its message is retained, so the
+/// configuration in force arrives again after every reconnect (ADR-0019 §5).
 /// </para>
 /// </remarks>
 public sealed class UplinkService : BackgroundService
@@ -36,13 +45,20 @@ public sealed class UplinkService : BackgroundService
 
     private readonly EdgeOptions _options;
     private readonly SampleBuffer _buffer;
+    private readonly EdgeConfigurationConsumer _configuration;
     private readonly ILogger<UplinkService> _logger;
     private readonly TimeProvider _clock;
 
-    public UplinkService(IOptions<EdgeOptions> options, SampleBuffer buffer, ILogger<UplinkService> logger, TimeProvider? clock = null)
+    public UplinkService(
+        IOptions<EdgeOptions> options,
+        SampleBuffer buffer,
+        EdgeConfigurationConsumer configuration,
+        ILogger<UplinkService> logger,
+        TimeProvider? clock = null)
     {
         _options = options.Value;
         _buffer = buffer;
+        _configuration = configuration;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
     }
@@ -65,6 +81,24 @@ public sealed class UplinkService : BackgroundService
 
         var connection = builder.Build();
 
+        // This edge's configuration, as the cloud publishes it (ADR-0019 §4). Handled on the
+        // client's own thread and applied before the next message is read: it is a few kilobytes of
+        // JSON and one row in SQLite, and a queue between the two would only be somewhere for an
+        // accepted configuration to wait.
+        client.ApplicationMessageReceivedAsync += message =>
+        {
+            var topic = message.ApplicationMessage.Topic;
+
+            if (topic != _options.ConfigurationTopic)
+            {
+                _logger.LogWarning("Ignoring a message on {Topic}, which is not this edge's topic.", topic);
+                return Task.CompletedTask;
+            }
+
+            _configuration.Accept(message.ApplicationMessage.ConvertPayloadToString());
+            return Task.CompletedTask;
+        };
+
         try
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -74,11 +108,19 @@ public sealed class UplinkService : BackgroundService
                     try
                     {
                         await client.ConnectAsync(connection, stoppingToken).ConfigureAwait(false);
+
+                        await client.SubscribeAsync(
+                            new MqttClientSubscribeOptionsBuilder()
+                                .WithTopicFilter(_options.ConfigurationTopic, MqttQualityOfServiceLevel.AtLeastOnce)
+                                .Build(),
+                            stoppingToken).ConfigureAwait(false);
+
                         _logger.LogInformation(
-                            "Connected to the broker at {Host}:{Port}; sending on {Topic}.",
+                            "Connected to the broker at {Host}:{Port}; sending on {SamplesTopic} and reading {ConfigurationTopic}.",
                             _options.Broker.Host,
                             _options.Broker.Port,
-                            _options.SamplesTopic);
+                            _options.SamplesTopic,
+                            _options.ConfigurationTopic);
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException)
                     {

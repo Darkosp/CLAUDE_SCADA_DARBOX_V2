@@ -80,8 +80,9 @@ deploy/
     certs.sh                makes the CA and a certificate per edge
     mosquitto/              mosquitto.conf, per-edge ACL, auditing of refusals
     README.md               the cloud guide, including what Git Bash needs
-  edge/                     one plant: Compose files for x64 and arm64, .env.example,
-                            edge.example.json (the devices and tags an edge reads)
+  edge/                     one plant: Compose files for x64 and arm64, .env.example.
+                            No device file: what an edge reads is derived by the cloud
+                            and published on the edge's own topic (ADR-0019)
 docs/
   architecture/phase-0-architecture.md      components, topologies, data flow, stack
   architecture/decisions/                   ADR-0001…0018 plus the index
@@ -169,9 +170,10 @@ delivers it again.
 `SCADA_INITIAL_ADMIN_PASSWORD`. The Migrator takes `SCADA_MIGRATOR_CONNECTION` and
 `SCADA_APP_DB_PASSWORD`; it is the only component given the privileged credential (ADR-0012).
 The edge takes `Edge__Id`, `Edge__Broker__Host|Port|CaFile|CertFile|KeyFile`,
-`Edge__Buffer__Path`, `Edge__Buffer__MaxPendingSamples` and `Edge:Devices[]` (name, driver key,
-scan interval, settings, tags with the **Gateway's** tag ids) — see
-`deploy/edge/edge.example.json` and `src/EdgeAgent/EdgeOptions.cs`. The Compose stacks take
+`Edge__Buffer__Path` and `Edge__Buffer__MaxPendingSamples`, and nothing else: there is no
+`Edge:Devices` any more, because what an edge reads is derived by the cloud and published on
+`{TopicPrefix}/{Edge:Id}/config`, retained, over the link it already holds (ADR-0019) — see
+`src/EdgeAgent/EdgeOptions.cs`. The Compose stacks take
 `deploy/.env` (template: `deploy/.env.example`): `SCADA_IMAGE_TAG`, `SCADA_DB_ADMIN_PASSWORD`,
 `SCADA_APP_DB_PASSWORD`, `SCADA_INITIAL_ADMIN_*`, `SCADA_HTTP_PORT` (8080 by default). Ports in
 use: 8080 (Gateway and web client), 5432 (PostgreSQL, development only), 5502 (Modbus
@@ -197,13 +199,21 @@ that step 5 needs. What is **still open**, in the order `CLAUDE.md` states it:
    (this repository's PR #4; numbers in the gate record). Nothing has run on plant hardware.
 
 Also worth knowing before touching the link: the edge's device and tag list — including the
-**cloud** tag ids — is still copied to the edge by hand today. How it reaches an edge is no
-longer open: [ADR-0019](docs/architecture/decisions/0019-edge-configuration-provisioning.md)
-decides that the cloud is the source of truth and derives each edge's configuration onto the
-link the edge already holds. **The assignment half of it is built and merged** — an edge is an
-entity of the tenant, a device may be assigned to one by an ordinary edit of the device, and the
-Gateway stops polling and refuses to write a device an edge reads (PR #6, `fe829f0`). The
-provisioning half is not built, so the hand-written file stands until those slices land.
+**cloud** tag ids — is no longer typed by hand anywhere. How it reaches an edge is no longer
+open: [ADR-0019](docs/architecture/decisions/0019-edge-configuration-provisioning.md) decides
+that the cloud is the source of truth and derives each edge's configuration onto the link the
+edge already holds. **The assignment half is built and merged** — an edge is an entity of the
+tenant, a device may be assigned to one by an ordinary edit of the device, and the Gateway stops
+polling and refuses to write a device an edge reads (PR #6, `fe829f0`). **The edge's half of
+provisioning is built** (2026-09-28): the uplink subscribes to this edge's own retained config
+topic on the connection it already holds, `EdgeConfigurationConsumer` accepts a
+`EdgeConfigurationPayload` whole or not at all, the last accepted configuration is kept in the
+buffer beside the samples, and a newer one is applied by restarting acquisition — an edge that
+has accepted none reads nothing rather than something typed by hand. `Edge:Devices` is gone from
+`EdgeOptions`, from `src/EdgeAgent/appsettings.json`, from `deploy/edge/edge.example.json`
+(deleted) and from the edge Compose file. What is still open is the cloud's half: nothing derives
+a configuration from the assignment or publishes it yet, so an edge deployed today accepts
+nothing until that lands.
 
 ### Deferred, with the phase that must pick it up
 

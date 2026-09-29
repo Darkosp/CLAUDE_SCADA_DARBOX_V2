@@ -39,11 +39,18 @@ namespace ScadaDarbox.EdgeAgent.Buffer;
 /// SQLite in WAL mode with <c>synchronous=FULL</c>: a committed transaction survives a power cut
 /// (SQLite's guarantee, not one we can test — ADR-0018); an uncommitted one never appears.
 /// </para>
+/// <para>
+/// It also holds the configuration this edge last accepted (ADR-0019 §5) — the same file, because
+/// it is the edge's only durable store, and a restart taken while the link is down has to leave the
+/// edge reading what it was reading. That is kept as the message itself, so the format stays the
+/// one the cloud wrote rather than a second, local shape of it.
+/// </para>
 /// </remarks>
 public sealed class SampleBuffer : IDisposable
 {
     // 1: samples, lost windows, the account. 2: each lost window has an id, and sealed and sent flags.
-    private const int SchemaVersion = 2;
+    // 3: the configuration this edge last accepted (ADR-0019 §5).
+    private const int SchemaVersion = 3;
 
     private readonly SqliteConnection _db;
     private readonly long _maxPending;
@@ -132,8 +139,15 @@ public sealed class SampleBuffer : IDisposable
                         lost         INTEGER NOT NULL,
                         cursor       INTEGER NOT NULL
                     );
+                    CREATE TABLE IF NOT EXISTS configuration (
+                        id              INTEGER PRIMARY KEY CHECK (id = 1),
+                        revision        TEXT    NOT NULL,
+                        generated_ticks INTEGER NOT NULL,
+                        received_ticks  INTEGER NOT NULL,
+                        payload         TEXT    NOT NULL
+                    );
                     INSERT OR IGNORE INTO account (id, appended, acknowledged, lost, cursor) VALUES (1, 0, 0, 0, 0);
-                    PRAGMA user_version = 2;
+                    PRAGMA user_version = 3;
                     """);
                 create.Commit();
             }
@@ -334,6 +348,61 @@ public sealed class SampleBuffer : IDisposable
     /// <summary>Every window of samples dropped because the buffer was full.</summary>
     public IReadOnlyList<LostWindow> LostWindows() => ReadLostWindows("");
 
+    /// <summary>
+    /// The configuration this edge last accepted (ADR-0019 §5), or null when it has never accepted
+    /// one. The message is kept as the cloud wrote it, so what comes back is read by the same reader
+    /// that read it from the wire.
+    /// </summary>
+    public AcceptedEdgeConfiguration? AcceptedConfiguration()
+    {
+        lock (_gate)
+        {
+            using var read = _db.CreateCommand();
+            read.CommandText = "SELECT revision, generated_ticks, received_ticks, payload FROM configuration WHERE id = 1";
+            using var reader = read.ExecuteReader();
+            if (!reader.Read())
+            {
+                return null;
+            }
+
+            return new AcceptedEdgeConfiguration(
+                reader.GetString(0),
+                new DateTimeOffset(reader.GetInt64(1), TimeSpan.Zero),
+                new DateTimeOffset(reader.GetInt64(2), TimeSpan.Zero),
+                reader.GetString(3));
+        }
+    }
+
+    /// <summary>
+    /// Records the configuration this edge accepted, replacing whatever it accepted before. One row,
+    /// because an edge reads one configuration at a time: the previous one is of no further use once
+    /// the newer is in force.
+    /// </summary>
+    /// <param name="revision">The content version the cloud published.</param>
+    /// <param name="generatedAtUtc">When the cloud derived it.</param>
+    /// <param name="payload">The message itself, exactly as it arrived.</param>
+    public void AcceptConfiguration(string revision, DateTimeOffset generatedAtUtc, string payload)
+    {
+        lock (_gate)
+        {
+            using var write = _db.CreateCommand();
+            write.CommandText = """
+                INSERT INTO configuration (id, revision, generated_ticks, received_ticks, payload)
+                VALUES (1, $revision, $generated, $received, $payload)
+                ON CONFLICT (id) DO UPDATE SET
+                    revision = excluded.revision,
+                    generated_ticks = excluded.generated_ticks,
+                    received_ticks = excluded.received_ticks,
+                    payload = excluded.payload
+                """;
+            write.Parameters.AddWithValue("$revision", revision);
+            write.Parameters.AddWithValue("$generated", generatedAtUtc.UtcTicks);
+            write.Parameters.AddWithValue("$received", _clock.GetUtcNow().UtcTicks);
+            write.Parameters.AddWithValue("$payload", payload);
+            write.ExecuteNonQuery();
+        }
+    }
+
     private IReadOnlyList<LostWindow> ReadLostWindows(string where)
     {
         lock (_gate)
@@ -526,6 +595,17 @@ public sealed class SampleBuffer : IDisposable
 
 /// <summary>A sample waiting to be sent, with its place in the buffer.</summary>
 public sealed record BufferedSample(long Sequence, TagReading Reading);
+
+/// <summary>The configuration an edge last accepted, as it arrived (ADR-0019 §5).</summary>
+/// <param name="Revision">The content version the cloud published — what decides whether anything changed.</param>
+/// <param name="GeneratedAtUtc">When the cloud derived it.</param>
+/// <param name="ReceivedAtUtc">When this edge accepted it.</param>
+/// <param name="Payload">The message itself, kept whole: it is read back by the same reader that read it from the wire.</param>
+public sealed record AcceptedEdgeConfiguration(
+    string Revision,
+    DateTimeOffset GeneratedAtUtc,
+    DateTimeOffset ReceivedAtUtc,
+    string Payload);
 
 /// <summary>Samples dropped because the buffer was full: which, and the source time they spanned (ADR-0017).</summary>
 /// <param name="LossId">The id the cloud records this loss under, once however often it is sent.</param>

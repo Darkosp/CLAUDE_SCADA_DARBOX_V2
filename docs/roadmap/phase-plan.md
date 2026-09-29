@@ -813,14 +813,24 @@ that it has not been walked yet, and the section that replaces it is the
 record.
 
 **The question Phase 7 left open is now decided.** The edge's device and tag
-list — with the cloud Gateway's own tag ids — is a hand-written `edge.json`
-today, and it must agree by hand with the cloud's MQTT device
+list — with the cloud Gateway's own tag ids — used to be a hand-written
+`edge.json` that had to agree by hand with the cloud's MQTT device
 (`src/EdgeAgent/EdgeOptions.cs`). How an edge is configured, and how the two
 lists are kept in agreement, is answered by
 [ADR-0019](../architecture/decisions/0019-edge-configuration-provisioning.md):
 the cloud is the source of truth, and each edge's configuration is derived and
-published over the link it already holds. **Accepted, not yet built** — the
-hand-written file stands until the slices that implement it land.
+published over the link it already holds. **Built so far (2026-09-28): the
+assignment** — an edge is an entity, a device is assigned to one, and the
+Gateway stops polling it — **and the edge's end of the delivery**: the uplink
+subscribes to this edge's own retained config topic on the connection it already
+holds, accepts a versioned `EdgeConfigurationPayload` whole or not at all, keeps
+the last one it accepted in its buffer, and applies a newer one by restarting
+acquisition. `Edge:Devices` is gone from the options, from
+`src/EdgeAgent/appsettings.json`, from `deploy/edge/edge.example.json` (deleted)
+and from the edge Compose file, so no tag id is typed into an edge any more.
+**Still to build: the cloud's end** — deriving each edge's configuration from
+its assignment and publishing it on that topic. Until it lands, an edge accepts
+nothing and reads nothing.
 
 ## Later (not yet scoped)
 

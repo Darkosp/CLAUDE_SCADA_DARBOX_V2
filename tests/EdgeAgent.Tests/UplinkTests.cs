@@ -9,6 +9,7 @@ using MQTTnet.Server;
 using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Model;
 using ScadaDarbox.EdgeAgent.Buffer;
+using ScadaDarbox.EdgeAgent.Configuration;
 using ScadaDarbox.EdgeAgent.Uplink;
 using ScadaDarbox.Modules.Drivers.Mqtt;
 
@@ -111,6 +112,8 @@ public sealed class UplinkTests : IAsyncLifetime
             Buffer = new BufferOptions { Path = _path },
         }),
         buffer,
+        // These tests are about what leaves the edge; what it reads is ConfigurationLinkTests' subject.
+        new EdgeConfigurationConsumer(new EdgeConfigurationSource(), buffer, NullLogger<EdgeConfigurationConsumer>.Instance),
         NullLogger<UplinkService>.Instance);
 
     private async Task StartBrokerAsync(bool refuse)

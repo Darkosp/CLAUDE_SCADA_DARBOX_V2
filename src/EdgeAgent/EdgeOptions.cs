@@ -8,9 +8,10 @@ namespace ScadaDarbox.EdgeAgent;
 /// </summary>
 /// <remarks>
 /// Tag ids are the cloud Gateway's own (ADR-0001): the samples name tags by id, and the Gateway
-/// accepts them only for tags it has under that id. Where this list comes from is decided —
-/// the cloud derives it and publishes it over the link the edge already holds (ADR-0019) — but
-/// not yet built: the file bound here is still written by hand.
+/// accepts them only for tags it has under that id. What this edge reads is not configured here —
+/// the cloud derives it and publishes it over the link the edge already holds (ADR-0019), and this
+/// file names only the edge, its broker and its buffer. There is deliberately no device list: a
+/// second one, typed by hand, is what ADR-0019 exists to remove.
 /// </remarks>
 public sealed class EdgeOptions
 {
@@ -21,10 +22,15 @@ public sealed class EdgeOptions
 
     public BufferOptions Buffer { get; set; } = new();
 
-    public List<EdgeDeviceOptions> Devices { get; set; } = [];
-
     /// <summary>Where this edge publishes: <c>{TopicPrefix}/{Id}/samples</c>.</summary>
     public string SamplesTopic => $"{Broker.TopicPrefix.TrimEnd('/')}/{Id}/samples";
+
+    /// <summary>
+    /// Where the cloud publishes what this edge reads: <c>{TopicPrefix}/{Id}/config</c>, retained
+    /// and versioned (ADR-0019 §4). The edge's own name is the whole address — it is the name in its
+    /// certificate, which is what the broker's ACL confines it to (ADR-0017).
+    /// </summary>
+    public string ConfigurationTopic => $"{Broker.TopicPrefix.TrimEnd('/')}/{Id}/config";
 
     /// <summary>Why this configuration cannot run, or nothing.</summary>
     public IReadOnlyList<string> Problems()
@@ -57,23 +63,9 @@ public sealed class EdgeOptions
             problems.Add("Edge:Buffer:MaxPendingSamples must be at least 1.");
         }
 
-        foreach (var device in Devices)
-        {
-            if (device.ScanIntervalMs < 1)
-            {
-                problems.Add($"Device '{device.Name}': ScanIntervalMs must be positive.");
-            }
-
-            if (device.Tags.Count == 0)
-            {
-                problems.Add($"Device '{device.Name}' has no tags.");
-            }
-
-            problems.AddRange(device.Tags
-                .Where(tag => tag.Id == Guid.Empty || string.IsNullOrWhiteSpace(tag.Address))
-                .Select(tag => $"Device '{device.Name}': every tag needs the Gateway's tag Id and an Address."));
-        }
-
+        // Nothing about a device is checked here, because no device is configured here: an edge reads
+        // what the cloud derives for it, and a configuration that cannot be read is refused whole on
+        // arrival, by name and with every reason (EdgeConfigurationPayload, ADR-0019 §4).
         return problems;
     }
 }
@@ -111,26 +103,7 @@ public sealed class BufferOptions
     public long MaxPendingSamples { get; set; } = 1_000_000;
 }
 
-public sealed class EdgeDeviceOptions
-{
-    public string Name { get; set; } = string.Empty;
-
-    /// <summary><c>modbus-tcp</c> or <c>opc-ua</c> — the same driver keys, and modules, as the Gateway's.</summary>
-    public string Driver { get; set; } = string.Empty;
-
-    public int ScanIntervalMs { get; set; } = 1000;
-
-    public Dictionary<string, string> Settings { get; set; } = [];
-
-    public List<EdgeTagOptions> Tags { get; set; } = [];
-}
-
-public sealed class EdgeTagOptions
-{
-    /// <summary>The cloud Gateway's id for this tag.</summary>
-    public Guid Id { get; set; }
-
-    public string Address { get; set; } = string.Empty;
-
-    public TagValueKind Kind { get; set; } = TagValueKind.Numeric;
-}
+// There is no EdgeDeviceOptions and no EdgeTagOptions here any more, and deliberately so. What an
+// edge reads travels as an EdgeConfigurationDevice (Drivers.Mqtt, ADR-0019 §4) — derived by the
+// cloud, carrying the Gateway's own tag ids — and a second, local shape of the same thing is one
+// more place a tag id could be typed by hand.

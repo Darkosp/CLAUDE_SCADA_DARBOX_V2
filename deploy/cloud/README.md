@@ -201,7 +201,6 @@ At the plant:
 
 ```bash
 cp deploy/edge/.env.example deploy/edge/.env
-cp deploy/edge/edge.example.json deploy/edge/edge.json
 ```
 
 Fill in `deploy/edge/.env`:
@@ -211,9 +210,13 @@ Fill in `deploy/edge/.env`:
 | `SCADA_EDGE_ID` | the edge's name, exactly as its certificate has it |
 | `SCADA_BROKER_HOST` | the broker's name, as in its certificate |
 | `SCADA_EDGE_CERT_DIR` | the directory with `ca.crt`, `<edge-id>.crt` and `<edge-id>.key` |
-| `SCADA_EDGE_CONFIG` | the path of `edge.json` |
 
-In `edge.json`, list the devices and each tag's address and Gateway id. Then:
+That is the whole file. Nothing on the plant machine lists devices, addresses or tag ids: the
+cloud derives what this edge reads and publishes it on the edge's own topic, retained, and the
+edge subscribes to it over the connection it already holds (ADR-0019). **The cloud's half of that
+is not built yet** — nothing derives a configuration from the device-to-edge assignment and
+publishes it — so an edge started today accepts nothing and reads nothing until it is. Its log
+says so, and it keeps the last configuration it accepted across a restart either way. Then:
 
 ```bash
 docker compose -f deploy/edge/docker-compose.yml --env-file deploy/edge/.env up -d
