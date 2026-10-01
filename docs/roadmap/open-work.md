@@ -67,7 +67,7 @@ conditions weaker than the claim.
 - **When it exists:** build on the board, run the agent, confirm readings reach
   the cloud, and record the board and the image digest.
 
-## 2. Built, but never walked
+## 2. Built, and walked on 2026-10-01
 
 ### 2.1 ADR-0019 configuration provisioning, end to end
 
@@ -109,22 +109,20 @@ same claim in `HANDOVER-archive.md` and in ADR-0019's own context.
   `An_edge_cannot_read_another_edges_configuration`, which is the ACL above: run on its own with
   Docker reachable, **9 passed, 0 skipped** (2026-10-01). In a whole-solution run those nine
   report as skipped, and §2.3 gives the reason.
-- **Never done:** a run with a **real broker and a real edge** in which the edge
-  accepts a derived configuration with **no hand-written file on the plant
-  machine** and its readings arrive in the history under the cloud's own tag
-  ids. That is ADR-0019's first review criterion, and nothing has met it.
-- **Needs:** the cloud stack and an edge container — all of it local, no second
-  machine. Docker Desktop is on this machine; see §4 for why a test run cannot
-  reach it and why that does not block this. One piece of friction to expect: to
-  exercise the lost-window path the buffer bound must be lowered, and
-  `deploy/edge/docker-compose.yml` forwards no setting for it, so a walker edits
-  that file or adds a Compose override — step 9 of the gate record now says
-  exactly that. A one-line passthrough (`Edge__Buffer__MaxPendingSamples` from the
-  environment) would make the walk a `.env` change instead, and is an
-  implementation change for a pull request, not a document.
-- **When it exists:** follow *Adding an edge* in
-  [`deploy/cloud/README.md`](../../deploy/cloud/README.md), then write it up the
-  way the Phase 7 walk is written up, and put the numbers in the phase note.
+- **Walked 2026-10-01**, on one machine, and it worked: the Gateway published three revisions of
+  the edge's configuration, the edge accepted the last and answered `Connected to device Plant
+  PLC.`, and 30 readings — 30 distinct times, every one `pushed` — arrived in the cloud database
+  under the cloud's own tag id, the last measured by the edge and stored 0.19 s later. The numbers
+  are in
+  [`phase-7-manual-gate.md`](phase-7-manual-gate.md#since-the-walk-the-provisioning-delivered-and-read).
+  Nothing on the plant machine named a device, an address or a tag id.
+- **Found by that walk, and left open:** a device whose `driverKey` no edge driver answers to is
+  accepted by the Gateway, derived, published, and refused only by the edge (`Device X needs
+  driver 'y', which this edge agent does not have.`). ADR-0019 leaves "whether an edge may be sent
+  a device it cannot reach" to implementation, and that is what the undecided case looks like:
+  loud at the edge, silent in the cloud.
+- **Needs:** nothing beyond Docker to walk it again — the gate record's new section is the recipe.
+  A walk on **two hosts** is §1.1's item, not this one.
 
 ### 2.2 The database half of the suite, on this machine
 
@@ -231,6 +229,16 @@ Recorded so a later session does not mistake it for a defect in the code.
   ignored.** The cloud stack was once started from a second copy of the
   repository inside WSL, so a running container does not necessarily reflect the
   working tree being read.
+- **`OPENSSL_CONF` on this machine points at a file that does not exist**, left by
+  another installation: `C:\Program Files\PostgreSQL\psqlODBC\etc\openssl.cnf`. Every
+  `openssl` invocation therefore dies before it starts. It cost the 2026-10-01 walk its
+  first attempt, and it is why `deploy/cloud/certs.sh` looked like a script that does
+  nothing: the script sends openssl's stderr to `/dev/null`, so a failure that names its
+  own reason is discarded and the script exits 1 without a word. **The repair belongs in
+  the script, not here**, and is small — it should not throw away the reason a step failed;
+  a check of `openssl version` whose output is shown would have printed
+  `Can't open ... openssl.cnf for reading` immediately. Until that lands, clear the
+  variable (`Remove-Item Env:\OPENSSL_CONF`) before making certificates on this machine.
 
 ## 5. Documentation that described an older tree
 

@@ -1099,3 +1099,78 @@ only ever been tested tends to take. The walk that put a screen in front of the
 walker ([below](#since-the-walk-what-the-screen-says)) found a seventh, and that
 one was in the client: a Note whose parts printed as one word.
 
+### Since the walk: the provisioning delivered, and read
+
+**2026-10-01, on the same one machine.** This is ADR-0019 walked end to end: the cloud derived a
+configuration and published it retained, a real edge container accepted it over the link it
+already holds, read the device the configuration named, and its readings reached the cloud
+database under the cloud's own tag ids — with **nothing on the plant machine naming a device, an
+address or a tag id**.
+
+| | |
+|---|---|
+| the commit | `5863abd`; all five images built from it by `deploy/build-images.sh` |
+| certificates | CA, broker (`mqtt.example.com` and `broker`), `scada-gateway`, `plant-7` — made with the four `openssl` invocations `deploy/cloud/certs.sh` performs, because that script could not run here (finding 1) |
+| the cloud stack | `deploy/cloud/docker-compose.yml`, `SCADA_CERT_DIR` at the walk's certificate directory, HTTP 8080, broker 8883 |
+| the link device | `Edge plant-7`, driver `mqtt`, host `broker`, port `8884`, topic `scada/edge/plant-7/samples` |
+| the edge | `plant-7`, joined to `scada-darbox-cloud_default` (for `broker`) and to `scada-darbox_default` (for `modbus-sim`) |
+| the device it reads | `Plant PLC`, driver `modbus-tcp`, host `modbus-sim`, port `5502`, unit `1`, one tag `Discharge Pressure` at `holding:0?scale=0.01` |
+| created by hand on the plant side | nothing: the device, its tag and the edge went in through the API the browser itself calls |
+
+**What the Gateway published**, from its own log — three revisions, the first with nothing
+assigned, the second with the device, the third after the device was corrected:
+
+```
+Connected to the broker at broker:8884; publishing each edge's configuration under scada/edge.
+Published the configuration of edge plant-7 to scada/edge/plant-7/config: 0 device(s), revision sha256:4f53cda1…
+Published the configuration of edge plant-7 to scada/edge/plant-7/config: 1 device(s), revision sha256:2ad26048…
+Published the configuration of edge plant-7 to scada/edge/plant-7/config: 1 device(s), revision sha256:be806376…
+```
+
+**What the edge said:**
+
+```
+Connected to the broker at broker:8883; sending on scada/edge/plant-7/samples and reading scada/edge/plant-7/config.
+A newer configuration arrived; restarting acquisition.
+Configuration sha256:be806376… accepted, derived by the cloud at 2026-10-01T17:20:55.8757044+00:00: 1 device(s), 1 tag(s) to read.
+Reading 1 device(s) from configuration sha256:be806376…
+Connected to device Plant PLC.
+```
+
+**What the history said**, for that tag under the cloud's own id, read at `17:21:25Z`:
+
+| | |
+|---|---|
+| `rows` / `distinct_times` | **30 / 30** — nothing was stored twice |
+| `all_pushed` | **true** — every reading came over the link, so the Gateway polled nothing (ADR-0019 §3) |
+| `first_measured` / `last_measured` | `17:20:55.906` / `17:21:25.034` — the edge's clock, not the store's |
+| `last_stored` | `17:21:25.227`, 0.19 s after the last reading was measured |
+
+ADR-0019's first review criterion is met for the first time: **the edge reads them with no
+hand-written file on the plant machine, and its readings reach the history under the cloud's own
+tag ids.**
+
+**What this walk found.**
+
+1. **`deploy/cloud/certs.sh` failed silently, and the reason was outside the repository.** Every
+   `openssl` invocation on this machine dies on `OPENSSL_CONF`, which points at
+   `C:\Program Files\PostgreSQL\psqlODBC\etc\openssl.cnf` — a file that does not exist, left
+   behind by another installation. The script discards openssl's stderr (`2>/dev/null`), so it
+   printed nothing and exited 1: a step that failed and told nobody. With `OPENSSL_CONF` cleared,
+   the same `openssl` made all four certificates in a second. The repair belongs in the script —
+   it should not hide the reason a step failed — and the environment note belongs with the
+   machine's other traps.
+2. **A driver key no edge driver answers is accepted, derived and published, and only the edge
+   complains.** The first attempt created the device with `driverKey: "modbus"`; the key the
+   module registers is `modbus-tcp`. The Gateway stored it, the publisher derived and published a
+   configuration naming `modbus`, and the edge answered `Device Plant PLC needs driver 'modbus',
+   which this edge agent does not have.` Nothing on the cloud side refused it or noticed. ADR-0019
+   lists "whether an edge may be sent a device it cannot reach" as **not decided here, and left to
+   implementation**; this is what that undecided case looks like — loud at the edge, silent in the
+   cloud.
+
+**What this does not close.** One machine, one edge, one driver. No second host, no two clocks
+disagreeing, no real board (§1.1–§1.3 of `open-work.md`), and the screen half of the gate was not
+walked here — the device, its tag and the edge were created through the API the browser calls,
+which is what the earlier screen walk did too.
+
