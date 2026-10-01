@@ -13,24 +13,32 @@ public sealed class ScratchDatabase : IAsyncDisposable
         Environment.GetEnvironmentVariable("SCADA_TEST_DB_HOST") ?? "localhost";
 
     /// <summary>
+    /// Where that server listens. Overridable so the suite can reach a container published
+    /// somewhere other than 5432 — the only way to run it on a machine where a native PostgreSQL
+    /// already holds 5432 (measured 2026-10-01; these projects used to hard-code the port).
+    /// </summary>
+    private static readonly string ServerPort =
+        Environment.GetEnvironmentVariable("SCADA_TEST_DB_PORT") ?? "5432";
+
+    /// <summary>
     /// The application role is shared by the whole server, so every test run gives it the
     /// same password — the one a developer's own Gateway uses, unless overridden.
     /// </summary>
     public static readonly string ApplicationPassword =
         Environment.GetEnvironmentVariable(GatewayApp.AppPasswordVariable) ?? "scada_app";
 
-    private static readonly Lazy<bool> AvailabilityProbe = new(() =>
+    private static readonly DatabaseAvailability AvailabilityProbe = new(() =>
     {
         try
         {
             using var source = NpgsqlDataSource.Create(ServerConnectionString);
             using var command = source.CreateCommand("SELECT 1");
             command.ExecuteScalar();
-            return true;
+            return (true, (string?)null);
         }
-        catch (Exception)
+        catch (Exception exception)
         {
-            return false;
+            return (false, $"No PostgreSQL/TimescaleDB answered at {ServerHost}:{ServerPort} ({exception.Message.Trim()}).");
         }
     });
 
@@ -44,10 +52,13 @@ public sealed class ScratchDatabase : IAsyncDisposable
     public string ApplicationConnectionString =>
         ApplicationRole.ConnectionStringFor(PrivilegedConnectionString, ApplicationPassword);
 
-    internal static bool IsAvailable => AvailabilityProbe.Value;
+    internal static bool IsAvailable => AvailabilityProbe.IsAvailable;
+
+    /// <summary>Why it is not reachable, in a sentence a skip message can carry.</summary>
+    internal static string Unavailable => AvailabilityProbe.Why;
 
     private static string ServerConnectionString =>
-        $"Host={ServerHost};Port=5432;Database=postgres;Username=scada;Password=scada;Timeout=3;Command Timeout=10";
+        $"Host={ServerHost};Port={ServerPort};Database=postgres;Username=scada;Password=scada;Timeout=3;Command Timeout=10";
 
     public static async Task<ScratchDatabase> CreateMigratedAsync()
     {
@@ -88,7 +99,7 @@ public sealed class ScratchDatabase : IAsyncDisposable
     }
 
     private static string ConnectionStringFor(string database) =>
-        $"Host={ServerHost};Port=5432;Database={database};Username=scada;Password=scada";
+        $"Host={ServerHost};Port={ServerPort};Database={database};Username=scada;Password=scada";
 }
 
 /// <summary>A fact that reports as skipped, rather than passing, when no database is reachable.</summary>
@@ -98,7 +109,7 @@ public sealed class RequiresDatabaseFactAttribute : FactAttribute
     {
         if (!ScratchDatabase.IsAvailable)
         {
-            Skip = "No PostgreSQL/TimescaleDB reachable — start it with 'docker compose up -d'.";
+            Skip = ScratchDatabase.Unavailable;
         }
     }
 }
@@ -110,7 +121,7 @@ public sealed class RequiresDatabaseTheoryAttribute : TheoryAttribute
     {
         if (!ScratchDatabase.IsAvailable)
         {
-            Skip = "No PostgreSQL/TimescaleDB reachable — start it with 'docker compose up -d'.";
+            Skip = ScratchDatabase.Unavailable;
         }
     }
 }

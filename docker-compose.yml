@@ -10,7 +10,10 @@ services:
       POSTGRES_USER: scada
       POSTGRES_PASSWORD: scada
     ports:
-      - "5432:5432"
+      # Overridable so the container can be published somewhere other than 5432. On a machine
+      # where a native PostgreSQL already holds 5432 this is the only way to reach this database
+      # at all, and the test suite follows it with SCADA_TEST_DB_PORT (see HANDOVER.md).
+      - "${SCADA_DB_PORT:-5432}:5432"
     volumes:
       - timescale-data:/var/lib/postgresql/data
     healthcheck:

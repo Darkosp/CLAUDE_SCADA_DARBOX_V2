@@ -22,6 +22,18 @@ docker compose up -d
 Brings up PostgreSQL 17 with TimescaleDB on `localhost:5432` (database `scada`, user
 `scada`, password `scada`). `scada` is the privileged role: only the Migrator uses it.
 
+**If something else already holds 5432** — a native PostgreSQL on Windows does — publish the
+container somewhere else rather than fighting over the port:
+
+```powershell
+$env:SCADA_DB_PORT = "5433"
+docker compose up -d --wait timescaledb
+```
+
+Then point everything else at it: the connection string the Migrator and the Gateway are given,
+and `SCADA_TEST_DB_PORT=5433` for the test suite, which follows that variable and defaults to
+5432.
+
 Only plain hypertables are used. Continuous aggregates and native compression are
 TSL-licensed and remain out of scope pending the legal check recorded in ADR-0006.
 

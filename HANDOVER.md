@@ -295,34 +295,33 @@ scada -c 'select version()'` answers `PostgreSQL 17.2 ... 64-bit` — it is only
 that is unusable. The consequence is the skip column in §1: 57 of 62 Persistence tests and 76 of
 84 Gateway tests reported as skipped rather than passing. `deploy/README.md` documents this exact
 class of failure for port 8080 (Docker not refusing a port another program holds, one listener on
-IPv4 and another on IPv6); here it has happened on 5432. **The test projects hard-code port
-5432** (`Host={SCADA_TEST_DB_HOST};Port=5432`, `tests/Persistence.Tests/TestDatabase.cs`,
-`tests/Gateway.Tests/Hosting/TestDatabases.cs`), so the only way to get the integration tests
-running is to free 5432 — stop the native service for the duration, or reach the container
-through a path that does not pass through the Windows host's port (the `SCADA_TEST_DB_HOST`
-override exists for exactly this). **I did not stop the native service**: it is a
-machine-level service that was there before this session, and stopping it is the operator's
-call, not a side effect of writing a handover.
+IPv4 and another on IPv6); here it has happened on 5432. **Corrected 2026-10-01: the suite no
+longer has to fight over the port.** The test projects take `SCADA_TEST_DB_PORT` as well as
+`SCADA_TEST_DB_HOST` (`tests/Persistence.Tests/TestDatabase.cs`,
+`tests/Gateway.Tests/Hosting/TestDatabases.cs`), and the development Compose file publishes
+`${SCADA_DB_PORT:-5432}`, so the container can sit on 5433 beside the native server — measured
+that day at **401 passed, 0 skipped, 0 failed** across seven projects, with the native service
+running throughout. **The native service was not stopped**: it is a machine-level service that
+was there before this session, and stopping it is the operator's call, not a side effect of
+writing a handover.
 
-**2. There is no `docker` CLI on the Windows PATH; `docker compose` and `docker version` fail.**
-Everything works through WSL instead (`wsl docker ps`, `wsl docker compose version` →
-`Docker Compose version 2.40.3+ds1-0ubuntu1`). The broker tests need `docker version`
-(`RequiresDockerFact`, `tests/Gateway.Tests/Hosting/BrokerFixture.cs`) and the Compose file tests
-need `docker compose version` (`RequiresDockerComposeFact`,
-`tests/Gateway.Tests/ComposeFileTests.cs`); run from Windows PowerShell they all report as
-skipped. `deploy/README.md` assumes Docker Desktop is on the PATH, which on this machine means
-running the guide from a shell that has it.
+**2. Docker *is* on the Windows PATH now, and WSL is refused. *(Corrected 2026-10-01; this
+paragraph said the opposite.)*** `docker` resolves to Rancher Desktop (`docker version` →
+`29.8.0`, `docker compose version` → `v5.3.1`), while `wsl docker` answers `Access is denied
+(Wsl/E_ACCESSDENIED)`. What still holds from the original note: a **sandboxed** process cannot
+open the Docker pipe, so `RequiresDockerFact` and `RequiresDockerComposeFact` tests report as
+skipped from a confined run and run normally outside one. `deploy/README.md` assumes Docker
+Desktop is on the PATH, which on this machine means running the guide from a shell that has it.
 
-**3. LF and CRLF.** The repository has no `.gitattributes`, committed blobs are LF and the
-working tree is CRLF. Two consequences: WSL's `git` in the same directory reports a large number
-of spurious local modifications (it was 287 files when this was last checked), so **use Windows
-git** — `/mnt/c/Program Files/Git/cmd/git.exe` — for `status`, `diff`, `log` and `commit`; and
-shell scripts with CRLF break `bash`, which is how `deploy/cloud/certs.sh` failed in the Phase 7
-walk (`set -euo pipefail` with a trailing CR parses as an unknown command name). That defect is
-fixed in this repository's PR #3, and `deploy/cloud/.gitattributes` exists for that
-subdirectory, but the general hazard stands: strip the CRs before running a script with WSL
-`bash` (`tr -d '\r' < script.sh > /tmp/script.sh`), which is also needed for
-`deploy/build-images.sh` line 27 on a fresh checkout.
+**3. LF and CRLF.** Committed blobs are LF and the working tree is CRLF, and a root
+`.gitattributes` (added 2026-09-27, `527654a`) now has the two gits agree about what counts as
+modified — this paragraph used to say the repository had none. What remains: **use Windows git**
+for `status`, `diff`, `log` and `commit`, and shell scripts with CRLF break `bash`, which is how
+`deploy/cloud/certs.sh` failed in the Phase 7 walk (`set -euo pipefail` with a trailing CR parses
+as an unknown command name). That defect is fixed in this repository's PR #3, and
+`deploy/cloud/.gitattributes` exists for that subdirectory, but the general hazard stands: strip
+the CRs before running a script with WSL `bash` (`tr -d '\r' < script.sh > /tmp/script.sh`),
+which is also needed for `deploy/build-images.sh` line 27 on a fresh checkout.
 
 **4. `deploy/.env` and `deploy/cloud/.env` exist locally and are correctly ignored.** No
 non-example `.env` is tracked (`git ls-files` lists only the three `.env.example` files), so
