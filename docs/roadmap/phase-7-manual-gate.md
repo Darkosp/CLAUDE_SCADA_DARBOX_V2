@@ -253,15 +253,19 @@ cannot show:
   here has lost the readings it was holding.
 - **If the lost-window path is to be exercised, it had to be decided before
   step 7.** The default `Edge:Buffer:MaxPendingSamples` is **1,000,000**, which
-  at one reading a second is about eleven and a half days of outage. It is set in
-  the edge's own configuration file — the copy of `edge.example.json` that
-  `SCADA_EDGE_CONFIG` names, which Compose mounts as `appsettings.Production.json`
-  — and **not** in `deploy/edge/.env`: that file only feeds Compose's
-  substitutions, and the edge stack's `environment:` block forwards no such
-  setting, so a line added there would change nothing. Put `"MaxPendingSamples":
-  60` in that file (one minute at 1 Hz) and restart the edge, which re-reads it:
-  `docker compose -f deploy/edge/docker-compose.yml --env-file deploy/edge/.env
-  restart edge`. The bound is not applied at startup but on the next append, so a
+  at one reading a second is about eleven and a half days of outage.
+  *(Corrected 2026-10-01: this step used to say to put `"MaxPendingSamples": 60`
+  into the file `SCADA_EDGE_CONFIG` names. That file and that variable are gone —
+  an edge mounts no device file any more, and `deploy/edge/edge.example.json` is
+  deleted.)* The bound reaches the process as the configuration key
+  `Edge:Buffer:MaxPendingSamples`, so lower it in the edge stack's `environment:`
+  block in `deploy/edge/docker-compose.yml` — `Edge__Buffer__MaxPendingSamples:
+  "60"`, double underscores for the nesting — or in a Compose override file, and
+  **not** in `deploy/edge/.env`: that file only feeds Compose's substitutions and
+  the block forwards no such setting, so a line added there would change nothing.
+  Restart the edge, which re-reads it: `docker compose -f
+  deploy/edge/docker-compose.yml --env-file deploy/edge/.env restart edge`. The
+  bound is not applied at startup but on the next append, so a
   bound lowered while the buffer already holds more than it drops the oldest
   readings then and there, recording a lost window of its own; do it before step
   7, with the buffer nearly empty, and the loss the walk stages is the one it

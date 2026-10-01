@@ -99,21 +99,31 @@ same claim in `HANDOVER-archive.md` and in ADR-0019's own context.
   `topic write scada/edge/+/config` and each edge `pattern read
   scada/edge/%u/config`. `src/Gateway/appsettings.json` leaves it **off**, which
   is a developer's Gateway with no broker and not a statement about readiness.
-- **Tested, and passing on 2026-10-01.** `tests/Gateway.Tests/EdgeConfigurationPublishingTests.cs`
-  runs the publisher against a real in-process MQTT server and asserts the retained
-  publish, the late subscriber receiving it, no republication when nothing
-  changed, and the emptied topic of a deleted edge — measured here at **3 passed,
-  0 failed**. `EdgeConfigurationPayloadTests`, `EdgeConfigurationTests` and
-  `BrokerConfigurationTests` cover the payload, the assignment rules and the ACL.
-  The publishing tests need no database — only the runtime. The whole run is in
-  §2.3 below.
+- **Tested, and passing on 2026-10-01.** `EdgeConfigurationPublishingTests` runs the
+  publisher against a real in-process MQTT server and asserts the retained publish, the late
+  subscriber receiving it, no republication when nothing changed, and the emptied topic of a
+  deleted edge — measured here at **3 passed, 0 failed**. `EdgeConfigurationPayloadTests` and
+  `EdgeConfigurationTests` cover the payload and the assignment rules, also passing.
+  `BrokerConfigurationTests` covers the delivery at the broker itself, against
+  `deploy/cloud/mosquitto` in a container — including
+  `The_Gateway_publishes_an_edges_configuration_and_that_edge_reads_it` and
+  `An_edge_cannot_read_another_edges_configuration`, which is the ACL above. **Those two are
+  `[RequiresDockerFact]`, so they skipped in the 2026-10-01 run**: the mechanism is covered, but
+  that run did not cover it. The publishing tests need no database, only the runtime. The whole
+  run is in §2.3 below.
 - **Never done:** a run with a **real broker and a real edge** in which the edge
   accepts a derived configuration with **no hand-written file on the plant
   machine** and its readings arrive in the history under the cloud's own tag
   ids. That is ADR-0019's first review criterion, and nothing has met it.
 - **Needs:** the cloud stack and an edge container — all of it local, no second
   machine. Docker Desktop is on this machine; see §4 for why a test run cannot
-  reach it and why that does not block this.
+  reach it and why that does not block this. One piece of friction to expect: to
+  exercise the lost-window path the buffer bound must be lowered, and
+  `deploy/edge/docker-compose.yml` forwards no setting for it, so a walker edits
+  that file or adds a Compose override — step 9 of the gate record now says
+  exactly that. A one-line passthrough (`Edge__Buffer__MaxPendingSamples` from the
+  environment) would make the walk a `.env` change instead, and is an
+  implementation change for a pull request, not a document.
 - **When it exists:** follow *Adding an edge* in
   [`deploy/cloud/README.md`](../../deploy/cloud/README.md), then write it up the
   way the Phase 7 walk is written up, and put the numbers in the phase note.
@@ -204,3 +214,20 @@ Recorded so a later session does not mistake it for a defect in the code.
   ignored.** The cloud stack was once started from a second copy of the
   repository inside WSL, so a running container does not necessarily reflect the
   working tree being read.
+
+## 5. Documentation that described an older tree
+
+Corrected on 2026-10-01. Each was a present-tense fact that had moved on, and they are listed
+here so the same drift is caught faster next time. `HANDOVER.md`'s structural inventory is the
+part of this repository most likely to go stale: it describes the tree rather than recording a
+decision, and the decisions have ADRs to keep them honest while the tree has nothing.
+
+| Where | Said | Actually |
+|---|---|---|
+| `HANDOVER.md`, the tree | migrations `0001…0011` | `0001…0013` — 0012 edge assignment, 0013 edge link device |
+| `HANDOVER.md`, the tree | `ADR-0001…0018` | `ADR-0001…0019` |
+| `HANDOVER.md`, `tests/` | "the table in §1" | the suite table is in `HANDOVER-archive.md`, not §1 |
+| `HANDOVER.md`, limitations | the edge's list is copied by hand, and the answer is not built | both false — `Edge:Devices` is gone and the answer is built |
+| `HANDOVER.md`, limitations | "133 of 327 .NET tests … skipped" | 134 of 394, measured 2026-10-01 (§2.3) |
+| `CLAUDE.md`, solution layout | `Drivers.Mqtt/ (Phase 4)` | Phase 7 — Phase 4 deferred MQTT, as the same file says |
+| `phase-7-manual-gate.md`, step 9 | lower the buffer bound in the file `SCADA_EDGE_CONFIG` names | that file and variable are gone; the bound is a configuration key |

@@ -48,11 +48,12 @@ src/
                             ISecurityStore, IAuditLog (ADR-0011)
   Persistence.TimescaleDb/   Npgsql historian, Dapper configuration repositories,
                             DbUp migration runner, embedded migrations
-    migrations/0001…0011     0001 initial schema, 0002 nullable value kind, 0003 folders,
+    migrations/0001…0013     0001 initial schema, 0002 nullable value kind, 0003 folders,
                             0004 soft delete, 0005 active tag needs a live device,
                             0006 alarm definition, 0007 device templates,
                             0008 users/sessions/audit, 0009 alarm event,
-                            0010 names unique within parent, 0011 edge ingestion
+                            0010 names unique within parent, 0011 edge ingestion,
+                            0012 edge assignment, 0013 edge link device
   Gateway/                  ASP.NET host: Web API, SignalR hub, scanning service, security,
                             alarm and configuration endpoints; serves the built Angular client
   Migrator/                 one-shot privileged step that applies the migrations and gives
@@ -68,8 +69,9 @@ src/
 tools/
   ModbusSimulator/          demo device: `holding:0` (bar × 100), `coil:0` (pump running)
   OpcUaSimulator/           OPC UA server (PumpNodeManager, SimulatorServer)
-tests/                      one project per unit under test (see the table in §1), plus
-                            EdgeAgent.CrashWriter, a helper process that dies mid-write
+tests/                      one project per unit under test (the suite table is in
+                            HANDOVER-archive.md), plus EdgeAgent.CrashWriter, a helper
+                            process that dies mid-write
 deploy/
   docker-compose.yml        on-premises stack: timescaledb, migrator, gateway, both sims
   .env.example              every variable the stack needs; secrets have no defaults
@@ -85,7 +87,7 @@ deploy/
                             and published on the edge's own topic (ADR-0019)
 docs/
   architecture/phase-0-architecture.md      components, topologies, data flow, stack
-  architecture/decisions/                   ADR-0001…0018 plus the index
+  architecture/decisions/                   ADR-0001…0019 plus the index
   roadmap/phase-plan.md                     the plan, each phase's scope, gate and status
   roadmap/phase-1-running.md                how to run the stack locally
   roadmap/phase-5.5-manual-gate.md          the alarm-journal hand walk
@@ -337,16 +339,18 @@ The defects that were already found and fixed are listed in [`HANDOVER-archive.m
 - **No CI.** There is no `.github/` directory and no other pipeline: every build, migration and
   test run is done by hand, and the "gate met" claims rest on a recorded hand walk. Adding a
   pipeline is not scoped by any phase.
-- **The edge's device/tag list is copied by hand**, and it must name the *cloud* Gateway's tag
-  ids (`src/EdgeAgent/EdgeOptions.cs` says so explicitly). What happens when one side's list is
-  edited and the other is not is answered by
-  [ADR-0019](docs/architecture/decisions/0019-edge-configuration-provisioning.md) — the cloud
-  derives the list and publishes it, so there is only one side to edit — but the answer is
-  **not built yet**, so until it is the two lists can still drift.
-- **A test run without a database is not the same evidence as one with it.** §1 shows the shape:
-  133 of 327 .NET tests report as skipped on this machine. Treat any "all green" claim as
-  conditional on which of the three prerequisites (database, `docker version`, `docker compose
-  version`) were actually available, and say which.
+- **The edge's device/tag list is no longer copied by hand, and the answer is built.**
+  *(Corrected 2026-10-01: this bullet said the list was still typed by hand and that the answer was
+  not built. Both had stopped being true — `Edge:Devices` is gone from
+  `src/EdgeAgent/EdgeOptions.cs`, and the cloud derives each edge's list and publishes it.)* What is
+  still unproven is the walk: no run has yet had a real broker and a real edge accept a derived
+  configuration. See `docs/roadmap/open-work.md`.
+- **A test run without a database is not the same evidence as one with it.** The archive's suite
+  table and `docs/roadmap/open-work.md` §2.3 show the shape: with no database reachable, **134 of
+  394** .NET tests reported as skipped on 2026-10-01 (it was 133 of 327 on 2026-09-27, and the
+  counts move as tests are added). Treat any "all green" claim as conditional on which of the
+  three prerequisites (database, `docker version`, `docker compose version`) were actually
+  available, and say which.
 - **The historian grows continuously** — the seeded device scans every 1000 ms and every reading
   is written, so a row count is a snapshot at that instant, not a stable figure. The Phase 7 gate
   record is careful about this ("`rows` equal to `distinct_times`", "all within one instant"); a

@@ -307,7 +307,7 @@ src/
   Modules/
     Drivers.Modbus/          Modbus TCP driver (Phase 1)
     Drivers.OpcUa/           (Phase 4)
-    Drivers.Mqtt/            (Phase 4)
+    Drivers.Mqtt/            (Phase 7; Phase 4 deferred it)
   EdgeAgent/                edge process for the cloud topology (Phase 7):
                             acquisition, an on-disk SQLite buffer, and the
                             uplink. Self-contained on the ordinary runtime,
