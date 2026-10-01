@@ -19,6 +19,10 @@ services:
       Edge__Broker__CertFile: /app/certs/edge.crt
       Edge__Broker__KeyFile: /app/certs/edge.key
       Edge__Buffer__Path: /data/buffer.db
+      # How many readings the buffer may hold before the oldest are dropped. The default is the
+      # one EdgeOptions carries; a walk that needs to exercise the drop lowers it here rather
+      # than editing this file (ADR-0017 §4, and step 9 of the Phase 7 gate record).
+      Edge__Buffer__MaxPendingSamples: ${SCADA_EDGE_MAX_PENDING_SAMPLES:-1000000}
       DOTNET_ENVIRONMENT: Production
     volumes:
       # No device configuration is mounted: what this edge reads is derived by the cloud and sent
