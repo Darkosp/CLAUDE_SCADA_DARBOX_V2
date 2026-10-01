@@ -828,9 +828,14 @@ the last one it accepted in its buffer, and applies a newer one by restarting
 acquisition. `Edge:Devices` is gone from the options, from
 `src/EdgeAgent/appsettings.json`, from `deploy/edge/edge.example.json` (deleted)
 and from the edge Compose file, so no tag id is typed into an edge any more.
-**Still to build: the cloud's end** — deriving each edge's configuration from
-its assignment and publishing it on that topic. Until it lands, an edge accepts
-nothing and reads nothing.
+**The cloud's end is built too** *(corrected 2026-10-01; this said "still to
+build" until then)*: `EdgeConfigurationBuilder` derives each edge's configuration
+from the catalogue, `EdgeConfigurationPublisher` publishes it retained on
+`{prefix}/{edgeId}/config`, `GatewayApp` registers it,
+`deploy/cloud/docker-compose.yml` turns `EdgeProvisioning` on, and `mosquitto/acl`
+confines each side to its own topic. What has not been done is the walk: no run has
+yet had a real broker and a real edge accept a derived configuration end to end.
+See [`open-work.md`](open-work.md).
 
 ## Later (not yet scoped)
 

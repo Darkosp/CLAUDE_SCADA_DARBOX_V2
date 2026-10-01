@@ -211,9 +211,16 @@ topic on the connection it already holds, `EdgeConfigurationConsumer` accepts a
 buffer beside the samples, and a newer one is applied by restarting acquisition — an edge that
 has accepted none reads nothing rather than something typed by hand. `Edge:Devices` is gone from
 `EdgeOptions`, from `src/EdgeAgent/appsettings.json`, from `deploy/edge/edge.example.json`
-(deleted) and from the edge Compose file. What is still open is the cloud's half: nothing derives
-a configuration from the assignment or publishes it yet, so an edge deployed today accepts
-nothing until that lands.
+(deleted) and from the edge Compose file. What is still open is the walk, not the cloud's half. **Corrected 2026-10-01: this
+paragraph said the cloud's half was not built, and it was** — `cf457da` and `487e07d`
+committed it on 2026-09-28/29, and the prose written the next morning did not notice. The
+Gateway derives each edge's devices from the catalogue (`EdgeConfigurationBuilder`), publishes
+them retained on `{prefix}/{edgeId}/config` (`EdgeConfigurationPublisher`, registered in
+`GatewayApp` and turned on by `deploy/cloud/docker-compose.yml`), and
+`deploy/cloud/mosquitto/acl` lets `scada-gateway` write that topic while each edge reads only
+its own. What has never been done is a run with a real broker and a real edge accepting a
+derived configuration end to end. Every unfinished item, with what it waits for, is in
+`docs/roadmap/open-work.md`.
 
 ### Deferred, with the phase that must pick it up
 

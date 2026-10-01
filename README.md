@@ -16,7 +16,11 @@ the numbers — the history holding the readings measured during the outage with
 the edge's own timestamps, the readings a lowered buffer bound dropped reported
 as one journal entry, and an outage nothing was measured in adding no row. What
 Phase 7 still owes is a walk on plant hardware: `linux-arm64` is built and run
-under emulation, not on a board.
+under emulation, not on a board. **ADR-0019 is implemented on both sides** — the
+cloud derives each edge's devices and publishes them on the link the edge already
+holds — but it has not had a walk of its own.
+[`docs/roadmap/open-work.md`](docs/roadmap/open-work.md) registers that and every
+other unfinished or unverified item, with what each one waits for.
 `CLAUDE.md` carries the current
 state; `docs/roadmap/phase-plan.md` holds the plan and each phase's status.
 

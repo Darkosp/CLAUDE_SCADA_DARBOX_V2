@@ -213,10 +213,14 @@ Fill in `deploy/edge/.env`:
 
 That is the whole file. Nothing on the plant machine lists devices, addresses or tag ids: the
 cloud derives what this edge reads and publishes it on the edge's own topic, retained, and the
-edge subscribes to it over the connection it already holds (ADR-0019). **The cloud's half of that
-is not built yet** — nothing derives a configuration from the device-to-edge assignment and
-publishes it — so an edge started today accepts nothing and reads nothing until it is. Its log
-says so, and it keeps the last configuration it accepted across a restart either way. Then:
+edge subscribes to it over the connection it already holds (ADR-0019). **The cloud's half is
+built, and this stack turns it on** (`EdgeProvisioning__Enabled: "true"` in
+`deploy/cloud/docker-compose.yml`, with the Gateway's own certificate mounted for it). An edge
+with no device assigned is published an empty configuration and therefore reads nothing, which
+is a configuration in its own right. **What is missing is the walk** — no run has yet had a real
+broker and a real edge accept a derived configuration end to end — so treat the first edge you
+add as that walk and write down what it did. The edge keeps the last configuration it accepted
+across a restart either way. Then:
 
 ```bash
 docker compose -f deploy/edge/docker-compose.yml --env-file deploy/edge/.env up -d

@@ -55,11 +55,17 @@ screen and the edge picker on the device form are in the client.
 
 Evidence: 353 .NET tests with a docker daemon up — 346 passed / 7 skipped / 0 failed with it down,
 the 7 being `BrokerConfigurationTests`, which need `docker version` — and 53 client tests; the
-create-path guard and the link rule were watched to fail, one mutation at a time, in PR #6. What
-is **not** built is the provisioning half: the Gateway publishing `{prefix}/{edgeId}/config`
-retained and versioned, one MQTT ingestion source per edge, the EdgeAgent subscribing and holding
-a durable last-accepted configuration, and the deploy ACL widening that lets `scada-gateway` write
-`scada/edge/+/config`. Until those land the hand-written `deploy/edge/edge.example.json` stands.
+create-path guard and the link rule were watched to fail, one mutation at a time, in PR #6.
+
+*Corrected 2026-10-01.* The paragraph that stood here said the provisioning half was **not**
+built: the Gateway publishing `{prefix}/{edgeId}/config` retained and versioned, the EdgeAgent
+subscribing and holding a durable last-accepted configuration, and the deploy ACL widening that
+lets `scada-gateway` write `scada/edge/+/config`. All of it was built on 2026-09-28 — commits
+`cf457da` and `487e07d`, both in `main` — and it is where this file said it was not:
+`src/Gateway/Provisioning/`, `src/Modules/Drivers.Mqtt/EdgeConfigurationPayload.cs`, the edge's
+`Configuration/EdgeConfigurationSource.cs` and `EdgeConfigurationConsumer.cs`, and
+`deploy/cloud/mosquitto/acl`. `deploy/edge/edge.example.json` is deleted. What is missing is the
+walk, not the code.
 
 ### What runs right now on this machine — measured
 

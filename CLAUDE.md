@@ -21,9 +21,10 @@ the documents it points to, before doing anything else in this repo.
 history pushed into it, so the merge commits in that history carry the
 predecessor repository's numbers — #1 to #25 — and the notes below use them.
 This repository's own PRs start again at #1, which makes a bare number
-ambiguous. Five are marked *(this repository)* where they appear: its #1, the
+ambiguous. Six are marked *(this repository)* where they appear: its #1, the
 driver logging, its #2, the test-fixture guard, its #3, `certs.sh` under
-`bash`, its #4, `linux-arm64`, and its #5, the Journal Note's spacing.
+`bash`, its #4, `linux-arm64`, its #5, the Journal Note's spacing, and its
+#6, the edge assignment that is ADR-0019's first half.
 `gh pr list` shows what exists here.
 
 
@@ -188,13 +189,21 @@ device that accepts the connection and then stops answering held its scan
 loop while the tags already read kept their values, silence that looks like
 a live plant; the request is bounded at five seconds now.
 
-**What Phase 7 left open is decided, and not built.** How an edge's device
-and tag list reaches it, and how the two sides are kept in agreement, is
+**What Phase 7 left open is decided, and both halves are built.** How an
+edge's device and tag list reaches it, and how the two sides are kept in
+agreement, is
 `docs/architecture/decisions/0019-edge-configuration-provisioning.md` — the
 cloud is the source of truth and derives each edge's configuration onto the
-link the edge already holds. It is **Accepted, not yet built**: the
-hand-written `edge.json` stands until those slices land, and until then the
-two lists can still drift.
+link the edge already holds. The assignment half is merged (this
+repository's PR #6, `fe829f0`). The cloud's half is committed too:
+`EdgeConfigurationBuilder` derives each edge's devices from the catalogue,
+`EdgeConfigurationPublisher` publishes them retained on
+`{prefix}/{edgeId}/config`, `GatewayApp` registers it, the cloud Compose file
+turns `EdgeProvisioning` on, and `deploy/cloud/mosquitto/acl` lets
+`scada-gateway` write that topic and each edge read only its own. **What has
+not happened is the walk** — no run has yet had a real broker and a real edge
+accept a derived configuration end to end. Every unfinished item, with what it
+waits for, is in `docs/roadmap/open-work.md`.
 
 ## When Phase 1 (or any phase) begins
 

@@ -16,10 +16,17 @@ and tags comes from. At the time this ADR was written it was a hand-written
 `edge.json`, mounted into the edge container read-only, and it had to name the
 **cloud** Gateway's tag ids — `src/EdgeAgent/EdgeOptions.cs` said so
 explicitly, and called out that how the list reaches an edge was still open.
-That is the question this ADR answers. The file is still written by hand
-today, because the cloud derives no configuration yet: the only part of the
-decision below that is built is the assignment — which edge reads which device
-— and the Gateway's consequent refusal to poll it (2026-09-27).
+That is the question this ADR answers.
+
+*Amended 2026-10-01.* The sentences that stood here said the file was still
+written by hand because the cloud derived no configuration yet, and that the only
+part of the decision below that was built was the assignment (2026-09-27). Both
+halves are built now: the assignment (`fe829f0`, this repository's PR #6), and the
+delivery — `EdgeConfigurationBuilder`, `EdgeConfigurationPublisher`,
+`EdgeConfigurationPayload`, the edge's own `EdgeConfigurationSource` and
+`EdgeConfigurationConsumer`, the cloud Compose wiring and the broker ACL. What has
+not happened is the walk. Nothing about the decisions below changed; a statement
+that stopped being true was corrected, as `README.md` in this directory requires.
 
 That leaves two lists a human must keep in agreement:
 

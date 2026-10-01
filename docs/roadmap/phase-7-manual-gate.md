@@ -84,8 +84,12 @@ the log lines differ.
 - The port check from the Phase 6 walk still applies, and it was not a formality:
   something else listening on the Gateway's port is invisible to Docker and
   answers a browser first. Use `http://127.0.0.1:<port>` and never `localhost`.
-- **A device that keeps producing readings**, with a tag whose Gateway id is
-  copied into the edge's configuration (`edge.json`). The cloud stack's demo
+- **A device that keeps producing readings**, whose device is assigned to the edge
+  in the cloud. *(Corrected 2026-10-01: this step used to ask for a Gateway tag id
+  copied into the edge's own `edge.json`. No file on a plant names a tag id any
+  more — `deploy/edge/edge.example.json` is deleted and the cloud derives the list
+  (ADR-0019) — so what an edge reads is chosen by assigning its device to it in the
+  cloud, and a walk must record that it used that path.)* The cloud stack's demo
   Modbus device has no simulator to read — the cloud guide says so — so on a
   laptop this means the simulators from the on-premises stack
   (`deploy/docker-compose.yml`), reached by an edge that can see them, or real
