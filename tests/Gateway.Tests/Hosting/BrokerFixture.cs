@@ -34,7 +34,7 @@ public sealed class BrokerFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        if (!DockerAvailable.Value)
+        if (!DockerAvailable.IsAvailable)
         {
             return;
         }
@@ -51,7 +51,7 @@ public sealed class BrokerFixture : IAsyncLifetime
 
     public Task DisposeAsync()
     {
-        if (DockerAvailable.Value)
+        if (DockerAvailable.IsAvailable)
         {
             Docker($"rm -f -v {Container}", check: false);
         }
@@ -119,24 +119,14 @@ public sealed class BrokerFixture : IAsyncLifetime
         return output;
     }
 
-    internal static readonly Lazy<bool> DockerAvailable = new(() =>
-    {
-        try
-        {
-            using var process = Process.Start(new ProcessStartInfo("docker", "version --format {{.Server.Version}}")
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            })!;
-            process.WaitForExit(15_000);
-            return process.HasExited && process.ExitCode == 0;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    });
+    /// <summary>
+    /// Whether Docker is there, asked through <see cref="ToolProbe"/> so that a daemon that did
+    /// not answer in time is not reported as one that is not installed.
+    /// </summary>
+    internal static readonly ToolAvailability DockerAvailable = new(
+        "Docker",
+        TimeSpan.FromSeconds(60),
+        () => ToolProbe.Run("docker", "version --format {{.Server.Version}}", TimeSpan.FromSeconds(60)));
 
     private static string ConfigDirectory
     {
@@ -250,9 +240,9 @@ public sealed class RequiresDockerFactAttribute : FactAttribute
 {
     public RequiresDockerFactAttribute()
     {
-        if (!BrokerFixture.DockerAvailable.Value)
+        if (!BrokerFixture.DockerAvailable.IsAvailable)
         {
-            Skip = "Docker is not available ('docker version' failed).";
+            Skip = BrokerFixture.DockerAvailable.Why;
         }
     }
 }

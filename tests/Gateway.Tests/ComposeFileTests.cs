@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using ScadaDarbox.Gateway.Tests.Hosting;
 
 namespace ScadaDarbox.Gateway.Tests;
 
@@ -167,24 +168,14 @@ public sealed class ComposeFileTests
         }
     }
 
-    internal static readonly Lazy<bool> ComposeAvailable = new(() =>
-    {
-        try
-        {
-            using var process = Process.Start(new ProcessStartInfo("docker", "compose version")
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            })!;
-            process.WaitForExit(10_000);
-            return process.HasExited && process.ExitCode == 0;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    });
+    /// <summary>
+    /// Whether the Compose CLI is there, asked through <see cref="ToolProbe"/> so that a CLI that
+    /// did not answer in time is not reported as one that is not installed.
+    /// </summary>
+    internal static readonly ToolAvailability ComposeAvailable = new(
+        "The Docker Compose CLI",
+        TimeSpan.FromSeconds(30),
+        () => ToolProbe.Run("docker", "compose version", TimeSpan.FromSeconds(30)));
 }
 
 /// <summary>Reports as skipped, rather than passing, where the Docker Compose CLI is not installed.</summary>
@@ -192,9 +183,9 @@ public sealed class RequiresDockerComposeFactAttribute : FactAttribute
 {
     public RequiresDockerComposeFactAttribute()
     {
-        if (!ComposeFileTests.ComposeAvailable.Value)
+        if (!ComposeFileTests.ComposeAvailable.IsAvailable)
         {
-            Skip = "The Docker Compose CLI is not available ('docker compose version' failed).";
+            Skip = ComposeFileTests.ComposeAvailable.Why;
         }
     }
 }
@@ -204,9 +195,9 @@ public sealed class RequiresDockerComposeTheoryAttribute : TheoryAttribute
 {
     public RequiresDockerComposeTheoryAttribute()
     {
-        if (!ComposeFileTests.ComposeAvailable.Value)
+        if (!ComposeFileTests.ComposeAvailable.IsAvailable)
         {
-            Skip = "The Docker Compose CLI is not available ('docker compose version' failed).";
+            Skip = ComposeFileTests.ComposeAvailable.Why;
         }
     }
 }
