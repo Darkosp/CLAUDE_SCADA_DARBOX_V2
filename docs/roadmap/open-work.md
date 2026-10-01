@@ -99,18 +99,16 @@ same claim in `HANDOVER-archive.md` and in ADR-0019's own context.
   `topic write scada/edge/+/config` and each edge `pattern read
   scada/edge/%u/config`. `src/Gateway/appsettings.json` leaves it **off**, which
   is a developer's Gateway with no broker and not a statement about readiness.
-- **Tested, and passing on 2026-10-01.** `EdgeConfigurationPublishingTests` runs the
-  publisher against a real in-process MQTT server and asserts the retained publish, the late
-  subscriber receiving it, no republication when nothing changed, and the emptied topic of a
-  deleted edge — measured here at **3 passed, 0 failed**. `EdgeConfigurationPayloadTests` and
-  `EdgeConfigurationTests` cover the payload and the assignment rules, also passing.
-  `BrokerConfigurationTests` covers the delivery at the broker itself, against
-  `deploy/cloud/mosquitto` in a container — including
+- **Tested, and passing.** `EdgeConfigurationPublishingTests` runs the publisher against a real
+  in-process MQTT server and asserts the retained publish, the late subscriber receiving it, no
+  republication when nothing changed, and the emptied topic of a deleted edge — measured
+  **3 passed, 0 failed**. `EdgeConfigurationPayloadTests` and `EdgeConfigurationTests` cover the
+  payload and the assignment rules, also passing. `BrokerConfigurationTests` covers the delivery
+  at the broker itself, against `deploy/cloud/mosquitto` in a container, including
   `The_Gateway_publishes_an_edges_configuration_and_that_edge_reads_it` and
-  `An_edge_cannot_read_another_edges_configuration`, which is the ACL above. **Those two are
-  `[RequiresDockerFact]`, so they skipped in the 2026-10-01 run**: the mechanism is covered, but
-  that run did not cover it. The publishing tests need no database, only the runtime. The whole
-  run is in §2.3 below.
+  `An_edge_cannot_read_another_edges_configuration`, which is the ACL above: run on its own with
+  Docker reachable, **9 passed, 0 skipped** (2026-10-01). In a whole-solution run those nine
+  report as skipped, and §2.3 gives the reason.
 - **Never done:** a run with a **real broker and a real edge** in which the edge
   accepts a derived configuration with **no hand-written file on the plant
   machine** and its readings arrive in the history under the cloud's own tag
@@ -169,6 +167,25 @@ What this run does **not** say: nothing above needed TimescaleDB, so the
 database-enforced guarantees (append-only tables, the unique-name indexes, the
 migrator's lock) were **skipped**, not verified. Only a run with a reachable
 database proves those.
+
+**The same day, with Docker reachable** (`docker version` answered `29.8.0`):
+the whole solution reported the **same** 260 passed / 134 skipped — and yet
+`BrokerConfigurationTests`, run on its own, reported **9 passed, 0 skipped**. So
+the nine broker tests, including the two that exercise ADR-0019's ACL, do pass
+against a real Mosquitto; they report as skipped only when the whole solution
+runs at once.
+
+The reason is in the probe, and it is worth fixing rather than living with.
+`BrokerFixture.DockerAvailable` (`tests/Gateway.Tests/Hosting/BrokerFixture.cs:122`)
+is a process-wide `Lazy<bool>` that runs `docker version --format
+{{.Server.Version}}` with its output redirected and **waits fifteen seconds**.
+Anything slower than that — a loaded machine, a daemon that has just started,
+seven test assemblies at once — is recorded as *"Docker is not available"*, and
+because it is a `Lazy`, that single observation decides every Docker test in that
+assembly. A timeout and an absent daemon are two different facts, and the run
+reports the wrong one: a later session reading "skipped" concludes the machine has
+no Docker, which on 2026-10-01 was false. It is a change to test infrastructure,
+so it belongs in a pull request rather than in this file.
 
 ## 3. Waits for a decision, before any code
 
