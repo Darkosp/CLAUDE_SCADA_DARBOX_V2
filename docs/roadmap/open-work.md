@@ -126,21 +126,21 @@ same claim in `HANDOVER-archive.md` and in ADR-0019's own context.
   [`deploy/cloud/README.md`](../../deploy/cloud/README.md), then write it up the
   way the Phase 7 walk is written up, and put the numbers in the phase note.
 
-### 2.2 The database half of the suite, on this machine
+### 2.2 The database half of the suite, on this machine — **closed 2026-10-01**
 
-- **What happens instead.** A native PostgreSQL 18 service holds port 5432, so
+- **What used to happen.** A native PostgreSQL 18 service holds port 5432, so
   anything connecting to `localhost:5432` reaches it rather than the container,
-  and authenticates as nobody. Every test that needs a live database reports as
-  **skipped**, which is the design (a skipped test proves nothing) but means a
-  "green" run on this machine is only the part that needs no database.
-- **Why `SCADA_TEST_DB_HOST` cannot work around it.** The port is hard-coded to
-  5432 in both helpers (`tests/Persistence.Tests/TestDatabase.cs:28`,
-  `tests/Gateway.Tests/Hosting/TestDatabases.cs:50`); the variable moves the
-  host only.
-- **Needs:** either the native service stopped for the duration — an operator's
-  call, and this repository has deliberately never stopped it as a side effect
-  of anything — or a machine where the two do not collide.
-- **Detail:** [`HANDOVER.md`](../../HANDOVER.md) §5, trap 1.
+  and authenticates as nobody. Every test that needs a live database reported as
+  **skipped**, which is the design (a skipped test proves nothing) but meant a
+  "green" run on this machine was only the part that needed no database.
+- **What closed it.** The test helpers take `SCADA_TEST_DB_PORT` as well as
+  `SCADA_TEST_DB_HOST` (`tests/Persistence.Tests/TestDatabase.cs`,
+  `tests/Gateway.Tests/Hosting/TestDatabases.cs`), and the development Compose
+  file publishes `${SCADA_DB_PORT:-5432}`, so a container can sit on 5433 beside
+  the native server without either giving way. **The native service was never
+  stopped** — that was the operator's call to make, and not this repository's.
+- **Measured the same day, beside the running native server:** 401 passed, 0
+  skipped, 0 failed across seven projects (§2.3).
 
 ### 2.3 What a run on this machine measured, 2026-10-01
 
@@ -155,37 +155,49 @@ ScadaDarbox.slnx`, **no database reachable**, all seven projects exit 0:
 | `ScadaDarbox.Drivers.Mqtt.Tests` | 47 | 0 | 47 |
 | `ScadaDarbox.EdgeAgent.Tests` | 24 | 0 | 24 |
 | `ScadaDarbox.Persistence.Tests` | 5 | 67 | 72 |
-| `ScadaDarbox.Gateway.Tests` | 39 | 67 | 106 |
-| **all seven** | **260** | **134** | **394** |
+| `ScadaDarbox.Gateway.Tests` | 45 | 67 | 112 |
+| **all seven** | **266** | **134** | **400** |
 
-The client's own suite, `npm test` in `src/Web`: **53 passed, 0 failed**. The
-previous recorded figures — 194 passed / 133 skipped with no database, and 311 /
-17 with one — are in `HANDOVER-archive.md`; the counts differ because the
-provisioning work added tests, not because tests were lost.
+**The same suite, the same day, with a database reachable on 5433** — a throwaway container
+beside the native PostgreSQL, `SCADA_TEST_DB_PORT=5433` — and nothing skipped at all:
+
+| Project | Passed | Skipped | Total |
+|---|---|---|---|
+| `ScadaDarbox.Core.Tests` | 105 | 0 | 105 |
+| `ScadaDarbox.Drivers.Modbus.Tests` | 27 | 0 | 27 |
+| `ScadaDarbox.Drivers.OpcUa.Tests` | 13 | 0 | 13 |
+| `ScadaDarbox.Drivers.Mqtt.Tests` | 47 | 0 | 47 |
+| `ScadaDarbox.EdgeAgent.Tests` | 24 | 0 | 24 |
+| `ScadaDarbox.Persistence.Tests` | 72 | 0 | 72 |
+| `ScadaDarbox.Gateway.Tests` | 113 | 0 | 113 |
+| **all seven** | **401** | **0** | **401** |
+
+The client's own suite, `npm test` in `src/Web`: **53 passed, 0 failed**. The previously
+recorded figures — 194 passed / 133 skipped with no database, and 311 / 17 with one, both on
+2026-09-27 — are in `HANDOVER-archive.md`; the counts grew because the provisioning work added
+tests, not because tests were lost.
 
 What this run does **not** say: nothing above needed TimescaleDB, so the
 database-enforced guarantees (append-only tables, the unique-name indexes, the
 migrator's lock) were **skipped**, not verified. Only a run with a reachable
 database proves those.
 
-**The same day, with Docker reachable** (`docker version` answered `29.8.0`):
-the whole solution reported the **same** 260 passed / 134 skipped — and yet
-`BrokerConfigurationTests`, run on its own, reported **9 passed, 0 skipped**. So
-the nine broker tests, including the two that exercise ADR-0019's ACL, do pass
-against a real Mosquitto; they report as skipped only when the whole solution
-runs at once.
+**Found and fixed the same day: a skip that named the wrong fact.** With Docker reachable
+(`docker version` answered `29.8.0`), the Docker-gated tests reported as *"Docker is not
+available ('docker version' failed)"* in a whole-solution run while passing nine of nine when
+run on their own. The cause was the probe, not the machine: `BrokerFixture.DockerAvailable`
+(`tests/Gateway.Tests/Hosting/BrokerFixture.cs`) was a process-wide `Lazy<bool>` that ran
+`docker version` with its output redirected and **waited fifteen seconds**; anything slower — a
+loaded machine, a daemon just starting, seven test assemblies at once — was recorded as an
+absent daemon, and because it was a `Lazy`, that one observation decided every Docker test in
+that assembly.
 
-The reason is in the probe, and it is worth fixing rather than living with.
-`BrokerFixture.DockerAvailable` (`tests/Gateway.Tests/Hosting/BrokerFixture.cs:122`)
-is a process-wide `Lazy<bool>` that runs `docker version --format
-{{.Server.Version}}` with its output redirected and **waits fifteen seconds**.
-Anything slower than that — a loaded machine, a daemon that has just started,
-seven test assemblies at once — is recorded as *"Docker is not available"*, and
-because it is a `Lazy`, that single observation decides every Docker test in that
-assembly. A timeout and an absent daemon are two different facts, and the run
-reports the wrong one: a later session reading "skipped" concludes the machine has
-no Docker, which on 2026-10-01 was false. It is a change to test infrastructure,
-so it belongs in a pull request rather than in this file.
+It is classified now rather than guessed: `ToolProbe` reports Available, Absent, TimedOut or
+Blocked, `ToolAvailability` keeps only the answers that are facts about the machine and asks
+again after a timeout, and every skip message names which of the four happened. The database
+probes carry their exception in the same way — which is how the 67 skips in the first table
+came to say `28P01: password authentication failed for user "scada"` instead of a sentence that
+blamed the machine. With that in place the same solution run reports **401 passed, 0 skipped**.
 
 ## 3. Waits for a decision, before any code
 
@@ -248,3 +260,6 @@ decision, and the decisions have ADRs to keep them honest while the tree has not
 | `HANDOVER.md`, limitations | "133 of 327 .NET tests … skipped" | 134 of 394, measured 2026-10-01 (§2.3) |
 | `CLAUDE.md`, solution layout | `Drivers.Mqtt/ (Phase 4)` | Phase 7 — Phase 4 deferred MQTT, as the same file says |
 | `phase-7-manual-gate.md`, step 9 | lower the buffer bound in the file `SCADA_EDGE_CONFIG` names | that file and variable are gone; the bound is a configuration key |
+| `HANDOVER.md`, trap 1 | the test projects hard-code 5432, so free the port | `SCADA_TEST_DB_PORT` and `${SCADA_DB_PORT:-5432}`; 401 passed, 0 skipped beside the native server |
+| `HANDOVER.md`, trap 2 | there is no `docker` CLI on the Windows PATH | it is there (Rancher Desktop, 29.8.0); `wsl docker` is the one refused |
+| `HANDOVER.md`, trap 3 | "the repository has no `.gitattributes`" | a root `.gitattributes` was added on 2026-09-27 (`527654a`) |
