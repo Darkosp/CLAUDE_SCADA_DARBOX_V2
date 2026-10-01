@@ -197,6 +197,17 @@ probes carry their exception in the same way — which is how the 67 skips in th
 came to say `28P01: password authentication failed for user "scada"` instead of a sentence that
 blamed the machine. With that in place the same solution run reports **401 passed, 0 skipped**.
 
+**One flake, seen once, recorded rather than chased.** In the first full-solution run after the
+three pull requests merged, `EdgeConfigurationPublishingTests.A_configuration_that_has_not_changed_is_not_published_again`
+failed with `System.TimeoutException: Timed out waiting for the first configuration to be
+published` — a twenty-second window — while all seven assemblies ran in parallel beside the walk's
+five containers. It then passed three times out of three with that class alone, passed again as
+the whole project (113/113), and a repeat of the same full run was green. That test takes a port
+by asking the OS for a free one and releasing it before binding (`FreePort()` in that file), which
+another process on a loaded machine can win in between, and its wait is a wall-clock deadline
+rather than a signal. It matters for the reason the probe fix above does: a test that fails only
+under load makes "the suite is green" mean less than it looks.
+
 ## 3. Waits for a decision, before any code
 
 An ADR is changed by a new ADR, never edited into a different decision; and a
@@ -208,6 +219,7 @@ decided inside an implementation pull request.
 | Alarm flapping — deadband, on-delay | `phase-plan.md`, "Deferred out of Phase 5.5" | **an ADR first**: each changes what an alarm *is* |
 | Filtering the journal (tag, event type, time) | same place | a phase that wants it |
 | Routing a tag write to an edge-assigned device | ADR-0019, Consequences | an ADR — the link is outbound only and the Gateway has no route |
+| A device whose `driverKey` no edge driver answers to | §2.1 above — the walk's finding 2 | a decision first: the Gateway validating the key against its own drivers, the edge declaring which it has, or the refusal travelling back to the cloud |
 | A link device derived from the edge rather than named | ADR-0019, Consequences | implementation, once decided — it is the last thing an operator types |
 | The Modbus 5 s response bound: driver constant or per-device setting | `phase-plan.md`, Phase 7 note | the design conversation; ADR-0016's pattern points one way |
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
