@@ -16,3 +16,8 @@ deploy/.env
 
 # Database backups taken by the steps in deploy/README.md
 backups/
+
+# Generated repository reports. These are copies of documents that already
+# live in the repository, produced by external tools; the originals are the
+# ones to read, and this keeps `git status` honest without committing a copy.
+report_deepseek.md
