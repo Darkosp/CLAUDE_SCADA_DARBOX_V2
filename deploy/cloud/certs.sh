@@ -14,6 +14,9 @@
 # Certificates expire. An expired broker or Gateway certificate stops every edge's data at once; an
 # expired edge certificate stops that edge. Nothing warns first — deploy/cloud/README.md says how
 # to check, and `certs.sh expiry` prints every date.
+#
+# A step that fails says why: openssl's own message is printed, never discarded. A broken openssl
+# environment used to look like a script that did nothing at all (measured 2026-10-01).
 set -eu
 
 # Git Bash on Windows rewrites '/CN=…' into a Windows path unless told not to; file paths it must
@@ -21,10 +24,31 @@ set -eu
 export MSYS2_ARG_CONV_EXCL='/CN'
 unset MSYS_NO_PATHCONV
 
+# openssl has to be able to run at all before anything else is attempted, and a broken environment
+# is worth naming once, up front. Note what the measured case showed: `openssl version` does not
+# load the configuration file, so it succeeds while every other subcommand fails on it. That is why
+# each invocation below reports its own reason as well, and why the helper is what names this
+# particular failure.
+if ! openssl_check=$(openssl version 2>&1); then
+  echo "openssl does not run here:" >&2
+  echo "$openssl_check" >&2
+  exit 1
+fi
+
 dir="${CERT_DIR:-$(dirname "$0")/certs}"
 days_ca="${CA_DAYS:-3650}"
 days="${CERT_DAYS:-825}"
 mkdir -p "$dir"
+
+# Runs openssl, and on failure prints what it said rather than discarding it. On success openssl's
+# own chatter — progress dots, "self-signature ok" — is dropped, so the output stays as it was.
+openssl_do() {
+  if ! openssl_output=$(openssl "$@" 2>&1); then
+    echo "openssl $* failed:" >&2
+    echo "$openssl_output" >&2
+    exit 1
+  fi
+}
 
 need_ca() {
   [ -f "$dir/ca.crt" ] && [ -f "$dir/ca.key" ] || { echo "no CA in $dir: run '$0 ca' first" >&2; exit 1; }
@@ -44,8 +68,8 @@ check_name() {
 }
 
 sign() { # name, extensions file
-  openssl x509 -req -in "$dir/$1.csr" -CA "$dir/ca.crt" -CAkey "$dir/ca.key" -CAcreateserial \
-    -days "$days" -sha256 -extfile "$2" -out "$dir/$1.crt" 2>/dev/null
+  openssl_do x509 -req -in "$dir/$1.csr" -CA "$dir/ca.crt" -CAkey "$dir/ca.key" -CAcreateserial \
+    -days "$days" -sha256 -extfile "$2" -out "$dir/$1.crt"
   rm -f "$dir/$1.csr" "$2"
   # Readable by the service that runs as its own user inside its container (Mosquitto drops to
   # uid 1883, the Gateway runs as the app user); the directory is what to keep private.
@@ -56,8 +80,8 @@ sign() { # name, extensions file
 case "${1:-}" in
   ca)
     [ -f "$dir/ca.key" ] && { echo "$dir/ca.key exists; not replacing a CA everything may already trust" >&2; exit 1; }
-    openssl req -x509 -newkey rsa:3072 -nodes -keyout "$dir/ca.key" -out "$dir/ca.crt" \
-      -days "$days_ca" -sha256 -subj "/CN=SCADA_DARBOX broker CA" 2>/dev/null
+    openssl_do req -x509 -newkey rsa:3072 -nodes -keyout "$dir/ca.key" -out "$dir/ca.crt" \
+      -days "$days_ca" -sha256 -subj "/CN=SCADA_DARBOX broker CA"
     chmod 600 "$dir/ca.key"
     echo "$dir/ca.crt  (expires $(openssl x509 -in "$dir/ca.crt" -noout -enddate | cut -d= -f2))"
     ;;
@@ -66,14 +90,14 @@ case "${1:-}" in
     shift
     names=""
     for name in "$@"; do names="${names:+$names,}DNS:$name"; done
-    openssl req -newkey rsa:3072 -nodes -keyout "$dir/broker.key" -out "$dir/broker.csr" -subj "/CN=$host" 2>/dev/null
+    openssl_do req -newkey rsa:3072 -nodes -keyout "$dir/broker.key" -out "$dir/broker.csr" -subj "/CN=$host"
     ext="$dir/broker.ext"
     printf 'basicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=%s\n' "$names" > "$ext"
     sign broker "$ext"
     ;;
   client)
     need_ca; name="${2:?give the client name: scada-gateway, or the edge id}"; check_name "$name"
-    openssl req -newkey rsa:3072 -nodes -keyout "$dir/$name.key" -out "$dir/$name.csr" -subj "/CN=$name" 2>/dev/null
+    openssl_do req -newkey rsa:3072 -nodes -keyout "$dir/$name.key" -out "$dir/$name.csr" -subj "/CN=$name"
     ext="$dir/$name.ext"
     printf 'basicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth\n' > "$ext"
     sign "$name" "$ext"

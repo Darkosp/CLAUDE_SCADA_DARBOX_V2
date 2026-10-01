@@ -231,14 +231,11 @@ Recorded so a later session does not mistake it for a defect in the code.
   working tree being read.
 - **`OPENSSL_CONF` on this machine points at a file that does not exist**, left by
   another installation: `C:\Program Files\PostgreSQL\psqlODBC\etc\openssl.cnf`. Every
-  `openssl` invocation therefore dies before it starts. It cost the 2026-10-01 walk its
-  first attempt, and it is why `deploy/cloud/certs.sh` looked like a script that does
-  nothing: the script sends openssl's stderr to `/dev/null`, so a failure that names its
-  own reason is discarded and the script exits 1 without a word. **The repair belongs in
-  the script, not here**, and is small — it should not throw away the reason a step failed;
-  a check of `openssl version` whose output is shown would have printed
-  `Can't open ... openssl.cnf for reading` immediately. Until that lands, clear the
-  variable (`Remove-Item Env:\OPENSSL_CONF`) before making certificates on this machine.
+  `openssl` invocation therefore dies before it starts, which cost the 2026-10-01 walk its
+  first attempt. **`deploy/cloud/certs.sh` no longer hides it**: it asks `openssl version`
+  before anything else and prints openssl's own words when that fails, instead of sending
+  each step's reason to `/dev/null` and exiting in silence. Either way, clear the variable
+  (`Remove-Item Env:\OPENSSL_CONF`) before making certificates on this machine.
 
 ## 5. Documentation that described an older tree
 
