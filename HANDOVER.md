@@ -236,15 +236,24 @@ topic on the connection it already holds, `EdgeConfigurationConsumer` accepts a
 buffer beside the samples, and a newer one is applied by restarting acquisition — an edge that
 has accepted none reads nothing rather than something typed by hand. `Edge:Devices` is gone from
 `EdgeOptions`, from `src/EdgeAgent/appsettings.json`, from `deploy/edge/edge.example.json`
-(deleted) and from the edge Compose file. What is still open is the walk, not the cloud's half. **Corrected 2026-10-01: this
+(deleted) and from the edge Compose file. ~~What is still open is the walk, not the cloud's half.~~
+**Walked 2026-10-02, and on two hosts** — the edge started with `0 device(s)`, accepted the
+cloud-derived revision, and logged `Connected to device Pump Station PLC` with nothing on that
+machine naming a device, an address or a tag id
+([the record](docs/roadmap/phase-7-manual-gate.md#the-walk-on-two-hosts-and-two-clocks-2026-10-02)).
+What that walk did **not** test is a device assigned while the edge is connected, or a
+configuration changing under a running edge; both edges accepted one revision and kept it.
+**Corrected 2026-10-01: this
 paragraph said the cloud's half was not built, and it was** — `cf457da` and `487e07d`
 committed it on 2026-09-28/29, and the prose written the next morning did not notice. The
 Gateway derives each edge's devices from the catalogue (`EdgeConfigurationBuilder`), publishes
 them retained on `{prefix}/{edgeId}/config` (`EdgeConfigurationPublisher`, registered in
 `GatewayApp` and turned on by `deploy/cloud/docker-compose.yml`), and
 `deploy/cloud/mosquitto/acl` lets `scada-gateway` write that topic while each edge reads only
-its own. What has never been done is a run with a real broker and a real edge accepting a
-derived configuration end to end. Every unfinished item, with what it waits for, is in
+its own. ~~What has never been done is a run with a real broker and a real edge accepting a
+derived configuration end to end.~~ **Done 2026-10-02, on a second host**: a real Mosquitto over
+real TLS, a real Gateway, and a real edge agent that started from `0 device(s)` and accepted the
+revision the cloud derived. Every unfinished item, with what it waits for, is in
 `docs/roadmap/open-work.md`.
 
 **Added 2026-10-02: the edge declares its own drivers, and the cloud refuses what it cannot read
