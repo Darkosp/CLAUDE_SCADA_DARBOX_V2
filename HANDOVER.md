@@ -194,18 +194,34 @@ simulator), 4840 (OPC UA simulator), 8883 (Mosquitto over TLS).
 
 The plan's step 6 is "the hand walk, with the link cut for real". It has been walked by hand,
 on one machine, and it now has its own record — including a separate walk of the screen half
-that step 5 needs. What is **still open**, in the order `CLAUDE.md` states it:
+that step 5 needs. **Items 1 and 2 below were walked on two machines on 2026-10-02** and are
+closed; the record is
+[the two-host walk](docs/roadmap/phase-7-manual-gate.md#the-walk-on-two-hosts-and-two-clocks-2026-10-02).
+They keep their numbers and their original text, struck through, because that text was true for
+months and a reader who remembers it needs to see what changed. What is **still open** is item 3:
 
-1. **A link between two hosts.** Every outage walked so far was a Docker network disconnect on
+1. ~~**A link between two hosts.** Every outage walked so far was a Docker network disconnect on
    a single machine: the edge container and the cloud stack on the same host, the link cut by
-   detaching the edge from the cloud network. Nothing has yet crossed a real network boundary,
-   with real latency, a real TLS handshake over a wire, and a broker on another machine.
-2. **Two clocks.** Source timestamps have only ever come from the same machine's clock. The
+   detaching the edge from the cloud network.~~ **Walked 2026-10-02.** The outage was a real
+   network boundary — the edge host's WiFi adapter disabled for **2 min 2 s**, not a Docker
+   disconnect. **119 readings measured inside it** reached the history with their own
+   timestamps, none invented, none duplicated, all 379 rows with 379 distinct times. The two
+   ends saw it differently, which is why the item existed: the broker logged the client gone
+   only at `17:01:14`, as `disconnected: exceeded timeout` — **20 s after** the adapter was
+   disabled, and the edge never hung on the dead socket. **What it did not do:** the two hosts
+   were on one `/24`, so a NAT that drops a *mapping* still has not been produced by a walk.
+2. ~~**Two clocks.** Source timestamps have only ever come from the same machine's clock. The
    skew path exists and is tested (`ClockSkewTolerance`, 30 s, and the journal entry an
    over-tolerance edge produces), but no walk has had two machines whose clocks actually
-   disagree.
+   disagree.~~ **Walked 2026-10-02.** A staged **+45 s** on the edge host, against the 30 s
+   tolerance, produced one `SourceClockSkew` row (`clock_skew_seconds = 46.8458066`) and
+   **136 samples stored with the edge's times**, 46.8 s ahead of the cloud host's own clock —
+   the edge's clock neither trusted nor corrected (ADR-0017). It also settled what the standing
+   `ingested_at − source_time` of about −1.8 s is: a clock offset plus pipeline delay, observed
+   rather than set, because neither host had a working NTP source.
 3. **A real arm64 board.** `linux-arm64` is built and has run under QEMU emulation only
    (this repository's PR #4; numbers in the gate record). Nothing has run on plant hardware.
+   This is the last item, and it needs the board.
 
 Also worth knowing before touching the link: the edge's device and tag list — including the
 **cloud** tag ids — is no longer typed by hand anywhere. How it reaches an edge is no longer
@@ -314,6 +330,49 @@ machine. None of it is project state — all of it is regenerable in minutes.
 | Docker images | `deploy/build-images.sh HEAD` on the machine that runs them, or `docker save`/`docker load`. They are tagged with the commit they came from, so a stale image is visible rather than silent. |
 | A database for the suite | A container with `SCADA_TEST_DB_PORT` set to a port the host actually answers on (trap 1 above), or the integration half of the suite skips and "green" means less than it looks. |
 | Running stacks | `docker compose … up -d` per topology; nothing about a running container is remembered anywhere. |
+
+**Added 2026-10-02, from the two-host walk: what the table above understates.** Every line below
+was met while putting a second Windows machine on the link, and none of it is in the repository.
+None of it is a defect either — it is what two machines cost.
+
+| Trap | What happens, and what to do |
+|---|---|
+| **`SCADA_EDGE_CERT_DIR` does not travel.** | It names a path *on the machine that holds the certificates*. Copying a filled `deploy/edge/.env` from the cloud host to the edge host carries the cloud host's path, and the container then mounts nothing and dies on a missing file. Rewrite that one line on the second machine. |
+| **`hosts` needs an elevated shell, and `Set-Date` does too.** | Both fail with "Access is denied" / "A required privilege is not held by the client" from an ordinary prompt — and an ordinary prompt that happens to be *in* `C:\Windows\System32` still is not elevated. Use `Start-Process powershell -Verb RunAs`. |
+| **Docker Desktop may not put `docker` on `PATH` in the session you have open.** | `'docker' is not recognized` while Docker Desktop is running and healthy. A new terminal fixes it; so does the full path, `"$env:ProgramFiles\Docker\Docker\resources\bin\docker.exe"`. Do not conclude Docker is missing. |
+| **A closed port proves nothing.** | `Test-NetConnection <host> -Port 8883` failing *before the broker is up* reads as a blocked network, and `Ping` failing alongside it reads as client isolation. It is neither: Windows Firewall drops ICMP by default. Prove the path with something listening — a temporary `TcpListener` on the far host — rather than inferring it from a closed port. On this walk the network was fine and the port simply had nothing behind it. |
+| **Do not add a firewall rule for the broker by hand.** | It is refused from a non-elevated shell, and it is not needed: Docker Desktop's own inbound rules for `com.docker.backend.exe` carry the published port. Check for them before concluding the port is closed. |
+| **`gunzip \| docker load` through Git Bash failed here** (`archive/tar: invalid tar header`) on an archive whose SHA256 matched the source exactly. | The archive was fine. `docker load -i <file>.tar` — the uncompressed one, from PowerShell, no shell in the middle — worked. Prefer it, and transfer the `.tar` if the pipe is the only thing that breaks. |
+| **`openssl` is fine in Git Bash but not in PowerShell, and `OPENSSL_CONF` breaks it even there.** | This machine has `OPENSSL_CONF` pointing at `C:\Program Files\PostgreSQL\psqlODBC\etc\openssl.cnf`, which does not exist. `openssl version` still succeeds — it does not read the config — while every `req`/`x509` call fails on it. `certs.sh` names the failure now; the fix is `unset OPENSSL_CONF` in the same bash invocation. |
+| **Line endings break a generated script's heredoc.** | A `.ps1` written through a CRLF pipe can carry a stray CR into a quoted command and corrupt it silently. Prefer `docker load -i` over a piped shell command, and write scripts with `Set-Content` rather than pasting a heredoc through several layers. |
+
+The two listed in the table above that this walk **did not** need: no `npm install` (the edge host
+runs no client), and the certificates were reused from the cloud host's existing CA rather than
+made again — `certs.sh client <edge-id>` adds an identity to a CA that already exists, which is
+the cheap path and the one to take. `ca.key` was verified absent on the second machine before the
+walk started, not after.
+
+**Left running on this machine after that walk, 2026-10-02.** None of it is in git and none of it
+survives a reboot, which is the point of writing it down — a session that finds a stack already
+up should know what put it there.
+
+| What | State |
+|---|---|
+| `scada-darbox-cloud` stack | **Up**: `timescaledb` (healthy), `broker` (8883), `gateway` (8080). `migrator` `Exited (0)`, which is correct. |
+| `scada-walk-modbus-sim` | **Up** on 5502, published on every interface, on the cloud stack's network as `modbus-sim`. Not part of either Compose file — a plain `docker run` made for the walk. `deploy/README.md`'s own simulator belongs to the on-premises stack. |
+| `scada-test-db-5433` | **Up**, `scada/scada`, so `SCADA_TEST_DB_PORT=5433 dotnet test ScadaDarbox.slnx` runs the integration half instead of skipping it. The native PostgreSQL 18 service still holds 5432 (trap 1 below); neither gives way. |
+| Certificates | `C:\Users\darko\scada-certs` — **this is the active CA**, the one the running broker serves. It holds `broker`, `scada-gateway`, `plant-7` and `plant-b`. `ca.key` is here and must stay here. |
+| The edge host's certificates | `C:\_walk-transfer\certs` on the second machine, plus that machine's `C:\DEEP_SCADA_DARBOX` at `57025c7`. |
+
+**The WSL copy is gone, deliberately.** Until 2026-10-02 this repository also existed at
+`/root/deep-scada-darbox` inside WSL, with its **own, different CA** at `/root/scada-certs` —
+same subject (`CN=SCADA_DARBOX broker CA`), different key, so a certificate from one is refused by
+the other with nothing on screen naming the reason. `deploy/cloud/.env` still pointed
+`SCADA_CERT_DIR` at that WSL path, which is why the cloud stack was once started from a second
+copy of the tree. Both were removed: the repository copy because git is the source of truth and a
+second checkout only drifts, and the certificates after copying them to
+`/root/scada-certs-superseded-2026-10-02`. **If a container reports a certificate it should trust,
+check which CA signed the file it was handed before looking anywhere else.**
 
 **The workspace's own file permissions are a trap on Windows, measured here 2026-10-02.** A
 confined session can end up unable to write anywhere below the workspace root: the harness reports

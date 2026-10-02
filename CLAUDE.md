@@ -180,9 +180,11 @@ outage with the buffer bound left at its default, 14 min 42 s, whose 877
 readings per tag were all measured inside it and stored 56.9 ms after the
 reconnect. It found a seventh defect and this one was in the client — a Note
 whose parts printed as one word, fixed in this repository's PR #5, merged. What
-is still open is **a link between two hosts**, **two clocks** and **a real arm64
-board**, since every outage walked so far has been a Docker network disconnect
-on one machine. Both drivers
+is still open is **a real arm64 board**: the link between two hosts and the
+two-clock case were walked on two machines on 2026-10-02, with the numbers in
+`docs/roadmap/phase-7-manual-gate.md#the-walk-on-two-hosts-and-two-clocks-2026-10-02`,
+so every outage walked before that one was a Docker network disconnect on a
+single machine. Both drivers
 now name the reason a tag has no value
 (ADR-0003's silence). That work found a Modbus read with **no timeout** — a
 device that accepts the connection and then stops answering held its scan

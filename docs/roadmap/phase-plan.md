@@ -773,10 +773,13 @@ and the client's own chart query answering 895 samples per tag at that instant: 
 live, 877 replayed. It found one defect in the client — a Note whose parts printed as
 one word, fixed in this repository's PR #5, merged — and one in the procedure, where
 step 5 promised a reason no screen can show.
-Still open: **a link between two hosts**, **two clocks**, and **a real arm64
-machine**, because every outage walked so far was a Docker network disconnect on one
-machine: no walk has yet had an edge and a cloud that disagree about the time, or a
-board in the plant.
+Still open: **a real arm64
+machine**, because no walk has yet had a board in the plant. The other two —
+**a link between two hosts** and **two clocks** — were walked on 2026-10-02, on
+two machines, with a real network boundary and a staged 45 s clock disagreement:
+[the record](phase-7-manual-gate.md#the-walk-on-two-hosts-and-two-clocks-2026-10-02).
+Every outage walked before that one was a Docker network disconnect on a single
+machine.
 
 The small step beside them is merged — this repository's PR #1. Both drivers
 take an optional `ILogger` and name the reason a tag has no value — a

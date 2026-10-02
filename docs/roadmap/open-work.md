@@ -181,6 +181,18 @@ same claim in `HANDOVER-archive.md` and in ADR-0019's own context.
   with a null actor. The numbers and the exact output are in
   [`phase-7-manual-gate.md`](phase-7-manual-gate.md#since-the-walk-driverkey-declared-by-the-edge-and-refused-by-the-cloud-2026-10-02).
   A walk on **two hosts** is §1.1's item, not this one.
+- **Carried onto two hosts on 2026-10-02, and it worked there too.** The two-host walk
+  ([the record](phase-7-manual-gate.md#the-walk-on-two-hosts-and-two-clocks-2026-10-02)) ran
+  this path end to end for real: the edge started with **0 device(s)**, declared
+  `["modbus-tcp","opc-ua"]` on the link it holds, accepted revision
+  `sha256:a6dd9e23…` **derived by the cloud**, and logged `Connected to device Pump Station PLC`
+  — with nothing on that machine naming a device, an address or a tag id. The declaration was
+  audited twice (`17:03:01.772016`, and `16:59:02.72734` on first connect), `unreadableDeviceIds`
+  empty both times. This was not a deliberate re-walk of §2.1 — the edge's configuration was
+  simply how the walk got a device to read — so treat it as confirming evidence, not as a repeat
+  of the walk above. **What it did not test:** a device being assigned *while* the edge is
+  connected, or a configuration changing under a running edge. Both edges here accepted one
+  revision and kept it.
 - **Needs:** nothing beyond Docker to walk it again — the gate record's new section is the recipe.
 - **Two flakes, seen once each on 2026-10-02, in the same loaded run.** With the whole Gateway test
   project running beside the other six assemblies — the step above added three in-process MQTT
