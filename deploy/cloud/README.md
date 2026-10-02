@@ -217,10 +217,11 @@ edge subscribes to it over the connection it already holds (ADR-0019). **The clo
 built, and this stack turns it on** (`EdgeProvisioning__Enabled: "true"` in
 `deploy/cloud/docker-compose.yml`, with the Gateway's own certificate mounted for it). An edge
 with no device assigned is published an empty configuration and therefore reads nothing, which
-is a configuration in its own right. **What is missing is the walk** — no run has yet had a real
-broker and a real edge accept a derived configuration end to end — so treat the first edge you
-add as that walk and write down what it did. The edge keeps the last configuration it accepted
-across a restart either way. Then:
+is a configuration in its own right. **This was walked on 2026-10-01 and again on 2026-10-02**, with
+a real broker and a real edge agent accepting a derived configuration end to end, and the numbers
+are in `docs/roadmap/phase-7-manual-gate.md`; an edge also states which drivers its own build has,
+and the cloud refuses a device it cannot read by name (ADR-0019 §8, the second walk). The edge keeps
+the last configuration it accepted across a restart either way. Then:
 
 ```bash
 docker compose -f deploy/edge/docker-compose.yml --env-file deploy/edge/.env up -d

@@ -238,8 +238,15 @@ as having declared nothing — null is not empty — and a declaration that omit
 device's driver is audited with the device named and the assignment left alone. The tests are in
 `Drivers.Mqtt.Tests` (the format), `EdgeDriverDeclarationsTests` and `EdgeDriverRefusalTests` (the
 Gateway's halves), `EdgeAssignmentTests` (the column) and `BrokerConfigurationTests` (the ACL for
-the new topic). What is still owed is the walk: no run has yet had a real Mosquitto, a real
-Gateway and a real edge agent agree on a declaration end to end.
+the new topic). **Walked 2026-10-02**, on one machine with the real cloud stack: the edge declared
+its two drivers at `15:36:07.811`, the cloud read them 0.019 s later, `/api/edges` answered
+`["modbus-tcp","opc-ua"]` where it had answered `null`, the save that had been accepted before the
+declaration was then refused `400` naming the edge and the drivers it has, and the one device
+assigned before the declaration was named in the log and in one audit row with a null actor. The
+record, with the output, is
+`docs/roadmap/phase-7-manual-gate.md#since-the-walk-driverkey-declared-by-the-edge-and-refused-by-the-cloud-2026-10-02`.
+What the walk also found, and left open, is a device with no tags derived into a configuration the
+edge refuses whole, recorded in `open-work.md` with the decision it waits for.
 
 ### Deferred, with the phase that must pick it up
 

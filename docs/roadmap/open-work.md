@@ -128,12 +128,18 @@ same claim in `HANDOVER-archive.md` and in ADR-0019's own context.
   shown as having declared nothing rather than as having the Gateway's drivers; a declaration that
   arrives without the driver of a device already assigned to it is recorded in the audit trail with
   the device named, and the assignment is left alone.
-- **What that step has not had: a walk.** Everything above is measured — the payload's own tests,
-  a declaration arriving over a real in-process broker, the API refusal against a live database, and
-  the broker's ACL for the new topic in `BrokerConfigurationTests` — but no run has yet had a real
-  Mosquitto, a real Gateway and a real edge agent agree on a declaration end to end, which is the
-  same bar §2.1's walk set. **Needs:** nothing beyond Docker; the recipe is §2.1's, with the
-  declaration read out of the Gateway's log and the edge's `EdgeDriversPayload` seen arriving.
+- **Walked 2026-10-02**, on one machine, with the real cloud stack — real Mosquitto over real TLS, a
+  real Gateway, a real edge agent, images built from PR #11 (`7f9692a`). Before the edge ran,
+  `declaredDriverKeys` was `null` and a device whose driver the edge does not have (`mqtt`, which
+  the cloud registers and no edge does) was **accepted** into it. The edge then declared two drivers
+  at `15:36:07.811`, the cloud read them **0.019 s later**, `/api/edges` answered
+  `["modbus-tcp","opc-ua"]` where it had answered `null`, the same save was then **refused 400**
+  naming the edge and the drivers it has, a `modbus-tcp` device was accepted `201`, and the one
+  device that had been assigned before the declaration was named in the log and in one audit row
+  with a null actor. The numbers and the exact output are in
+  [`phase-7-manual-gate.md`](phase-7-manual-gate.md#since-the-walk-driverkey-declared-by-the-edge-and-refused-by-the-cloud-2026-10-02).
+  A walk on **two hosts** is §1.1's item, not this one.
+- **Needs:** nothing beyond Docker to walk it again — the gate record's new section is the recipe.
 - **Two flakes, seen once each on 2026-10-02, in the same loaded run.** With the whole Gateway test
   project running beside the other six assemblies — the step above added three in-process MQTT
   brokers to that parallel load — `StartupCheckTests.A_journal_ahead_of_the_build_is_refused_too`
@@ -141,8 +147,12 @@ same claim in `HANDOVER-archive.md` and in ADR-0019's own context.
   failed once. Each passed when its class ran alone, and the next whole-project run was green at
   **119 passed, 0 skipped**. Recorded rather than chased, for the reason the flake below is: a test
   that fails only under load makes "the suite is green" mean less than it looks.
-- **Needs:** nothing beyond Docker to walk it again — the gate record's new section is the recipe.
-  A walk on **two hosts** is §1.1's item, not this one.
+- **Also found by the walk, 2026-10-02, and open: a device with no tags is derived into a
+  configuration the edge refuses whole.** A device assigned to an edge before its tags existed
+  travelled in the message, and the edge refused all of it (`device '…' has no tags`) — the reader
+  is right, since a device with no tags is not a device, but the cloud published it without
+  noticing, which is the shape of the finding this step closed. Nothing was lost: the edge kept
+  reading the last configuration it accepted. It waits for a **decision** (§3), not for a fix.
 
 ### 2.2 The database half of the suite, on this machine — **closed 2026-10-01**
 
@@ -239,6 +249,8 @@ decided inside an implementation pull request.
 | Alarm flapping — deadband, on-delay | `phase-plan.md`, "Deferred out of Phase 5.5" | **an ADR first**: each changes what an alarm *is* |
 | Filtering the journal (tag, event type, time) | same place | a phase that wants it |
 | Routing a tag write to an edge-assigned device | ADR-0019, Consequences | an ADR — the link is outbound only and the Gateway has no route |
+| A device with no tags, assigned to an edge | §2.1 above — the walk's finding of 2026-10-02 | a decision first: the Gateway refusing a tagless device that is assigned to an edge, or the derivation leaving it out of the message |
+| A device whose `driverKey` the edge loses after declaring it | ADR-0019 §8, Consequences | the refusal travelling back from the edge — a payload version, and an ADR before it |
 | A link device derived from the edge rather than named | ADR-0019, Consequences | implementation, once decided — it is the last thing an operator types |
 | The Modbus 5 s response bound: driver constant or per-device setting | `phase-plan.md`, Phase 7 note | the design conversation; ADR-0016's pattern points one way |
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
