@@ -1278,6 +1278,167 @@ recorded in `open-work.md` as an open item rather than fixed here, because what 
 Gateway refusing a tagless device an edge is assigned, or the derivation skipping it — is a decision
 before any code.
 
+## The walk on two hosts, and two clocks (2026-10-02)
+
+The first walk of this gate that crossed a real network boundary, and the first
+whose two ends had two clocks. It closes `open-work.md` §1.1 and §1.2. §1.3 — a
+real arm64 board — is untouched: both machines here were x64.
+
+### The setup
+
+Two machines on one `/24`, real WiFi between them, no Docker network in the path.
+
+| | A — the cloud host | B — the edge host |
+|---|---|---|
+| Address | `192.168.100.106` | `192.168.100.146` |
+| Role | `timescaledb`, `migrator`, `broker`, `gateway`, and a Modbus simulator on 5502 | `edge` only |
+| Docker | `29.8.0` (Rancher Desktop on the Windows PATH) | `29.8.1` (Docker Desktop) |
+| Time source | `Local CMOS Clock`, `Last Successful Sync Time: unspecified` | not recorded |
+
+Both were x64, and both kept their existing clocks. Images
+`scada-darbox/{migrator,gateway,modbus-sim,opcua-sim,edge-agent}:57025c7` from
+`57025c7` (`build-images.sh HEAD`); the edge host was given the edge agent's image
+alone, 83.66 MB, `docker save` → transfer → `docker load`, verified by SHA256.
+
+`SCADA_BROKER_PORT=8883` and `SCADA_HTTP_PORT=8080` on A; the edge ran from
+`deploy/edge/docker-compose.yml` with `SCADA_BROKER_HOST=mqtt.example.com` and
+`SCADA_IMAGE_TAG=57025c7`. The device was **not** configured at the plant: it was
+assigned to the edge in the cloud (ADR-0019), and `Pump Station PLC` addressed the
+simulator at A's own address, `192.168.100.106:5502`.
+
+The certificates were those already on A, whose CA carries the broker's two DNS
+names (`mqtt.example.com`, `broker`) and expires 2029-01-03; B was issued
+`plant-b` under the same CA (expires 2029-01-04). `ca.key` was not copied to B —
+checked before the walk began, not after.
+
+**A trap that cost time and was not a defect.** `Test-NetConnection
+192.168.100.106 -Port 8883` failed from B *before anything was listening*, and
+`Ping` failed too, which reads as an isolated network. It was not: a temporary
+listener confirmed a TCP connection from B to A, and the ping failure was
+Windows Firewall dropping ICMP, which is its default. The port was therefore
+proven by a listener rather than inferred from a closed one.
+
+### The link outage
+
+Cut by disabling B's **WiFi adapter** (`Disable-NetAdapter`), not by a Docker
+command — the first time this gate's outage was a real network boundary.
+
+| Event | UTC |
+|---|---|
+| `CUT - disabling adapter` | `17:00:54.405` |
+| adapter reported `Disabled` | `17:00:56.245` |
+| `RECONNECT - enabling adapter` | `17:02:56.252` |
+| adapter reported `Up` | `17:03:10.690` |
+
+**2 min 2 s**, from B's own clock, written down as it happened.
+
+### What the history said
+
+`tag_sample` for the edge's one tag, `b418c2d9-3674-4c67-b08c-c657b6e846b8`:
+
+| Measure | Value |
+|---|---|
+| measured before the cut (`source_time < 17:00:54`) | 113 |
+| **measured inside the outage** (`17:00:54`–`17:02:56`) | **119** |
+| after the reconnect | 147 |
+| rows / distinct `source_time` | 379 / **379** |
+| rows in the outage window with `pushed = false` | **0** |
+| stored at | `17:03:01.860266` — **one instant, one batch** |
+| longest wait | **2 min 6.473 s** (`17:00:55.386` → `17:03:01.860`) |
+| duplicate `source_time` at any point | 0 |
+
+So the readings taken while the cable was down were carried across it and stored
+with the times they were taken: nothing lost, nothing invented, nothing
+duplicated. `alarm_event` held no `SamplesLost` row, which is right — the outage
+never approached the buffer's bound.
+
+**The two ends saw the outage differently, and that is the point of crossing a
+network boundary.** The broker logged the client as gone only at `17:01:14`, as
+`disconnected: exceeded timeout` — **20 s after the adapter was disabled**. A
+link that goes down cleanly and a socket that goes quiet are different events, and
+only the second leaves the far end guessing. It also answers the appendix's first
+question: the edge's publish has no timeout of its own, but it did not hang on a
+dead socket — from `17:00:56` it logged `Cannot reach the broker` once a second
+and kept acquiring, its buffer climbing `0, 2, 4, … 124`. **76 reconnect attempts
+in 122 s**, about one every 1.6 s: no backoff, and no hammering either. The
+broker's session survived the reconnect, so the appendix's second question is
+answered as well.
+
+### The clock half
+
+Staged on B, over the tolerance of 30 s: **+45 s**. Before it, `ingested_at −
+source_time` for a live sample was **−1.8047 s**; during it, **−46.809532 s**. The
+difference between those two is the 45 s that were added, to within 5 ms.
+
+The Gateway journalled it, naming the link device:
+
+```text
+Device Edge plant-b: the source's clock is 47 s ahead of the Gateway's; journalled.
+Its samples keep the times it gave them.
+```
+
+and the entry in `alarm_event`:
+
+| Column | Value |
+|---|---|
+| `event_type` | `SourceClockSkew` |
+| `clock_skew_seconds` | **46.8458066** |
+| `recorded_at` | `17:10:07.975926` — **A's clock** |
+| `source_time` | `17:10:54.821733` — **B's clock**, 46.85 s later |
+| `tag_path` | `Bitola/Edge plant-b` |
+
+**And the samples kept B's times.** 136 of them, `17:10:54.795` to `17:12:39.582`,
+were stored with a `source_time` ahead of the cloud host's own clock by the full
+46.8 s, `quality` Good, values and all. That is ADR-0017's whole position on time
+enacted rather than asserted: the edge's clock is neither trusted nor corrected,
+and the disagreement is recorded instead of silently resolved. These rows are
+still in the database with a source time in the future relative to the local
+wall clock; that is the behaviour working, not a defect to tidy away.
+
+B's clock was put back (`Set-Date -Adjust -45`), and the lag returned to
+**−1.80 s** — the value measured before the skew was staged.
+
+### What was not measured
+
+- **A real arm64 board** (§1.3). Both hosts were x64.
+- **What that standing −1.8 s is.** The consistent `ingested_at − source_time`
+  is a clock offset plus pipeline delay, and this walk separates them only to the
+  extent that the +45 s showed up in full — which it did, to within 5 ms. Neither
+  host had a working NTP source (`Source: Local CMOS Clock`), so the pre-skew
+  offset is observed, not set. The staged offset is the part of this walk that is
+  controlled.
+
+### What the walk found
+
+**One thing, and it is in this document rather than in the feature.** The appendix
+above says an edge reaching a bare IP "will fail TLS verification and no amount of
+port-forwarding will help", and that extending `certs.sh` to issue `IP:` SANs is
+work the walk does not need. That holds only while a DNS name is available to
+carry. The labs here had one, by hand in a `hosts` file — which is also why
+`mqtt.example.com` resolved to A on B and to nothing on A itself, and why the
+control test on A had to connect to `127.0.0.1` with `-servername` instead. A
+plant with no DNS at all still cannot be served by `certs.sh` as it stands, which
+the appendix already asked to be written down if it were met. It was not met here;
+it remains true.
+
+**One thing that looked wrong and was not.** `ingested_at` was **earlier** than
+`source_time` for every live sample throughout the walk, by about 1.8 s before the
+skew was staged. Two clocks that are merely close produce this, and the
+explanation is not "the cloud is behind" but "the host clocks differ by about that
+much and nothing corrects either" — worth writing down because a reader who
+expects `ingested_at ≥ source_time` will read the line above as a bug. It is
+`open-work.md` §1.2's own point, seen from the other side.
+
+**One event outside the procedure.** The broker's audit log holds three `OpenSSL
+Error … peer did not return a certificate` entries at `16:49:55` and `16:49:59` —
+mutual TLS refusals from a client that offered no certificate, nine minutes before
+this edge connected, and not repeated by anything this walk ran. They are the
+broker refusing an unauthenticated client on a published port, which is the
+listener doing its job. Recorded rather than explained, because what made those
+connections is not known from here — and because a port published on a `/24`
+classified **Public** is worth naming when the next walk decides how wide to open
+the cloud host.
+
 ## What to report
 
 Anything that looks wrong or merely confusing, even where the behaviour is

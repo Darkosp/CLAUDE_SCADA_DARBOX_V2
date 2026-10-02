@@ -21,6 +21,12 @@ None of these can be finished on one machine, and none of them is a defect:
 each is a claim the project makes that has only ever been tested under
 conditions weaker than the claim.
 
+**§1.1 and §1.2 were walked on two hosts on 2026-10-02** and are no longer
+open. The record, with every number and the two things that looked wrong, is
+[`phase-7-manual-gate.md`](phase-7-manual-gate.md#the-walk-on-two-hosts-and-two-clocks-2026-10-02).
+Each item below keeps its own text and carries what the walk changed. §1.3 is
+untouched: both hosts that walk used were x64.
+
 ### 1.1 A link between two hosts
 
 - **What has never happened.** Every outage walked so far was a Docker network
@@ -44,6 +50,20 @@ conditions weaker than the claim.
 - **When it exists:** walk that procedure on two hosts, and record it as the
   first walk's record does — the numbers, the cut and reconnect times, and
   everything that looked wrong or merely confusing.
+- **Walked 2026-10-02, on two hosts, and closed.** The outage was a real network
+  boundary: B's WiFi adapter disabled for 2 min 2 s, not a Docker disconnect.
+  `tag_sample` held **119 readings measured inside the outage**, all 379 rows with
+  379 distinct times, **0** of them invented for the window, stored as one batch
+  at `17:03:01.860266`, the longest having waited **2 min 6.473 s**. The two ends
+  saw it differently, which is the reason this item existed: the broker logged the
+  client gone only at `17:01:14`, as `disconnected: exceeded timeout`, **20 s
+  after the adapter was disabled**. The edge did not hang on the dead socket — it
+  logged `Cannot reach the broker` once a second and made 76 reconnect attempts in
+  122 s. The record is
+  [`phase-7-manual-gate.md`](phase-7-manual-gate.md#the-walk-on-two-hosts-and-two-clocks-2026-10-02).
+  **What it did not do:** put the two hosts on separate networks behind a router
+  or a NAT. Both were on one `/24`, so a NAT that drops a *mapping* — the
+  appendix's fourth question — still has not been produced by a walk.
 
 ### 1.2 Two clocks
 
@@ -60,6 +80,20 @@ conditions weaker than the claim.
   records the skew, and confirm the stored `source_time` is still the edge's.
   The two-host appendix above carries the trap: both clocks have to be right
   before the offset is staged, or the walk's own numbers mean nothing.
+- **Walked 2026-10-02, on two hosts, and closed.** B's clock was put **+45 s**
+  past the 30 s tolerance. The Gateway logged `the source's clock is 47 s ahead
+  of the Gateway's; journalled. Its samples keep the times it gave them.` and
+  `alarm_event` holds one `SourceClockSkew` row with `clock_skew_seconds =
+  46.8458066`, `recorded_at` on A's clock (`17:10:07.975926`) and `source_time`
+  on B's (`17:10:54.821733`). **136 samples were stored with B's times, 46.8 s
+  ahead of the cloud host's own clock, `quality` Good** — the edge's clock
+  neither trusted nor corrected, which is the whole claim. B's clock was put back
+  and the live lag returned to the `−1.80 s` measured before the skew was staged.
+  **The caveat the walk leaves behind:** neither host had a working NTP source
+  (`Source: Local CMOS Clock`), so the pre-skew offset was observed rather than
+  set, and the standing `ingested_at − source_time` of about −1.8 s is a clock
+  offset plus pipeline delay that this walk does not separate. What it does
+  establish is that the staged +45 s appeared in full, to within 5 ms.
 
 ### 1.3 A real arm64 board
 
