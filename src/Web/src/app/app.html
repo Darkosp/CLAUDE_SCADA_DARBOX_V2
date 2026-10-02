@@ -428,22 +428,33 @@
             <p class="field-error" role="alert">{{ taken }}</p>
           }
 
-          <!-- The one device this edge dials. While devices are assigned it cannot be moved:
-               that link is the only thing reading their tags (ADR-0019). -->
-          <label>Link device
-            <select name="link" [disabled]="linkLocked(draft)" [(ngModel)]="draft.linkDeviceId">
-              @for (choice of linkChoices(draft); track choice.id) {
-                <option [ngValue]="choice.id">{{ choice.label }}</option>
-              }
-            </select>
-          </label>
-          @if (linkLocked(draft)) {
-            <p class="muted">This edge still reads devices, so its link cannot be moved. Unassign
-              them first.</p>
-          } @else {
-            <p class="muted">A link has to be a device that pushes its values; a polled one has
-              nothing to send (ADR-0016).</p>
+          <!-- The link is the Gateway's to write, not the operator's to choose (ADR-0022). Shown
+               read-only because it is the thing the edge's samples arrive through and an operator
+               should be able to see it — but a link naming a topic the edge does not publish to is
+               an edge that is silent with nothing to say why, so it is not a field. -->
+          @if (draft.linkDeviceId) {
+            <p class="muted">Its link is derived by the Gateway from this edge's name, so its topic
+              cannot be typed wrong. Silence from it marks this edge's tags Bad.</p>
           }
+
+          <!-- The two things about a link that are a judgement rather than a constant: how long
+               silence may last, and how long the broker queues for it while the Gateway is away
+               (ADR-0022 §3). -->
+          <label>Silence allowed before Bad (seconds)
+            <input name="linkStaleness" type="number" min="1" required
+              [(ngModel)]="draft.linkStalenessSeconds" />
+          </label>
+          <p class="muted">How long this edge's link may be quiet before the tags of the devices it
+            reads go Bad (ADR-0016). Applies to everything this edge carries: it is one link, and one
+            link is either silent or not.</p>
+
+          <label>Broker queues for (hours)
+            <input name="linkSessionExpiry" type="number" min="1" required
+              [(ngModel)]="draft.linkSessionExpiryHours" />
+          </label>
+          <p class="muted">How long the broker holds this edge's samples while the Gateway is away
+            (ADR-0022). Past it the queue is discarded; the edge's own disk buffer is what makes that
+            survivable (ADR-0017).</p>
 
           <!-- What this edge says its own build has (ADR-0019 §8). It is the edge's statement
                about itself, so there is nothing to edit here: the Gateway's own drivers are a

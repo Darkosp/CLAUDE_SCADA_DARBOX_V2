@@ -207,6 +207,17 @@ export interface Edge {
    * the edge tried.
    */
   unreadableDevices: UnreadableDevice[] | null;
+  /**
+   * How long this edge's link may be silent before the tags of the devices it reads go Bad, in
+   * seconds (ADR-0016, ADR-0022).
+   *
+   * The edge's own setting rather than the link device's, because the edge *is* the link: the
+   * Gateway derives the device and it is not overridable, so this is the only place the limit is
+   * chosen. It is the one setting with a reason to vary per plant.
+   */
+  linkStalenessSeconds: number;
+  /** How long the broker queues for this edge while the Gateway is away (ADR-0022). */
+  linkSessionExpiryHours: number;
 }
 
 /** A device an edge is assigned and is not reading, and the driver it needs (ADR-0021). */

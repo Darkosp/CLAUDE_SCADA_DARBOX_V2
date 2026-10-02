@@ -164,7 +164,19 @@ export class Api {
     return this.get<Edge[]>('/api/edges');
   }
 
-  saveEdge(edgeId: string | null, body: { name: string; linkDeviceId: string | null }): Promise<unknown> {
+  /**
+   * Saves an edge. The link device is not sent: the Gateway derives it from the edge and the
+   * deployment, and an edge cannot be pointed at a topic it does not publish to (ADR-0022). What
+   * the operator chooses is how long silence may last, and how long the broker queues for it.
+   */
+  saveEdge(
+    edgeId: string | null,
+    body: {
+      name: string;
+      linkStalenessSeconds: number;
+      linkSessionExpiryHours: number;
+    },
+  ): Promise<unknown> {
     return edgeId === null
       ? this.send('POST', '/api/edges', body)
       : this.send('PUT', `/api/edges/${edgeId}`, body);

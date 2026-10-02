@@ -76,7 +76,14 @@ interface DeviceDraft {
 interface EdgeDraft {
   id: string | null;
   name: string;
+  /**
+   * The link device is shown but not edited: the Gateway derives it from the edge and the
+   * deployment (ADR-0022), and a link naming a topic the edge does not publish to is an edge that
+   * is silent with nothing to say why. Kept on the draft so the panel can display it.
+   */
   linkDeviceId: string | null;
+  linkStalenessSeconds: number;
+  linkSessionExpiryHours: number;
 }
 
 /** A device being created from a template, with the parameters that template asks for. */
@@ -505,11 +512,25 @@ export class App implements OnInit {
   }
 
   protected startNewEdge(): void {
-    this.edgeDraft.set({ id: null, name: '', linkDeviceId: null });
+    this.edgeDraft.set({
+      id: null,
+      name: '',
+      linkDeviceId: null,
+      // The MQTT driver's own defaults, so an edge that says nothing about them behaves as one
+      // always has (ADR-0022 §3).
+      linkStalenessSeconds: 60,
+      linkSessionExpiryHours: 720,
+    });
   }
 
   protected editEdge(edge: Edge): void {
-    this.edgeDraft.set({ id: edge.id, name: edge.name, linkDeviceId: edge.linkDeviceId });
+    this.edgeDraft.set({
+      id: edge.id,
+      name: edge.name,
+      linkDeviceId: edge.linkDeviceId,
+      linkStalenessSeconds: edge.linkStalenessSeconds,
+      linkSessionExpiryHours: edge.linkSessionExpiryHours,
+    });
   }
 
   protected async saveEdge(): Promise<void> {
@@ -519,7 +540,13 @@ export class App implements OnInit {
     }
 
     await this.saveNamed('edge', async () => {
-      await this.api.saveEdge(draft.id, { name: draft.name, linkDeviceId: draft.linkDeviceId });
+      // No linkDeviceId: the Gateway derives the link and a request cannot move it (ADR-0022). The
+      // two limits are the whole of what this form chooses about the link.
+      await this.api.saveEdge(draft.id, {
+        name: draft.name,
+        linkStalenessSeconds: draft.linkStalenessSeconds,
+        linkSessionExpiryHours: draft.linkSessionExpiryHours,
+      });
       this.edgeDraft.set(null);
       await this.reloadEdges();
     });
@@ -550,6 +577,12 @@ export class App implements OnInit {
     const reads = this.readsOf(draft);
     return reads.names.length + reads.elsewhere > 0;
   }
+
+  // Both of the above are now unused by the template: the link is derived and is not a field
+  // (ADR-0022). linkOptions and its tests stay because the answer — which pushing device of this
+  // Site could carry an edge — is still a real question about the tree, and the day an override is
+  // wanted it is the thing to reach for. Kept rather than deleted so that day is a template change
+  // and not a rewrite.
 
   /** What this edge reads, as far as the Site being browsed knows it. */
   protected readsOf(draft: EdgeDraft): { names: string[]; elsewhere: number } {
