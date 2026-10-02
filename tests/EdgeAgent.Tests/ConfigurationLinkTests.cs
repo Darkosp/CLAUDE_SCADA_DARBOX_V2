@@ -5,11 +5,14 @@ using Microsoft.Extensions.Options;
 using MQTTnet;
 using MQTTnet.Protocol;
 using MQTTnet.Server;
+using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Model;
 using ScadaDarbox.EdgeAgent.Buffer;
 using ScadaDarbox.EdgeAgent.Configuration;
 using ScadaDarbox.EdgeAgent.Uplink;
+using ScadaDarbox.Modules.Drivers.Modbus;
 using ScadaDarbox.Modules.Drivers.Mqtt;
+using ScadaDarbox.Modules.Drivers.OpcUa;
 
 namespace ScadaDarbox.EdgeAgent.Tests;
 
@@ -62,7 +65,7 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
         using var buffer = SampleBuffer.Open(_path, maxPending: 1_000);
         var configuration = new EdgeConfigurationSource();
         var consumer = new EdgeConfigurationConsumer(configuration, buffer, NullLogger<EdgeConfigurationConsumer>.Instance);
-        using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, NullLogger<UplinkService>.Instance);
+        using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, Drivers, NullLogger<UplinkService>.Instance);
 
         Assert.Null(configuration.Revision);
 
@@ -88,7 +91,7 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
         using var buffer = SampleBuffer.Open(_path, maxPending: 1_000);
         var configuration = new EdgeConfigurationSource();
         var consumer = new EdgeConfigurationConsumer(configuration, buffer, NullLogger<EdgeConfigurationConsumer>.Instance);
-        using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, NullLogger<UplinkService>.Instance);
+        using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, Drivers, NullLogger<UplinkService>.Instance);
 
         await uplink.StartAsync(CancellationToken.None);
         await PublishAsync(EdgeConfigurationPayload.Write(Devices(Pressure), Derived));
@@ -168,6 +171,17 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
             await Task.Delay(100);
         }
     }
+
+    /// <summary>
+    /// The drivers this build has, as the composition root registers them (ADR-0002). The edge
+    /// declares these to the cloud the moment it connects (ADR-0019 §8), so a test that starts the
+    /// real service says what a plant's edge says.
+    /// </summary>
+    private static IDeviceDriverFactory[] Drivers =>
+    [
+        new ModbusTcpDriverFactory(TimeProvider.System),
+        new OpcUaDriverFactory(TimeProvider.System),
+    ];
 
     private static int FreePort()
     {

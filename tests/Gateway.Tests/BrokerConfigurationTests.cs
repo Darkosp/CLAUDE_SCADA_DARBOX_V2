@@ -236,6 +236,53 @@ public sealed class BrokerConfigurationTests : IClassFixture<BrokerFixture>
         Assert.Empty(received);
     }
 
+    [RequiresDockerFact]
+    public async Task An_edge_declares_its_drivers_and_the_Gateway_reads_it_and_no_other_edge_can()
+    {
+        // The declaration is the edge's own statement about its build, so the ACL gives it write on
+        // its own topic only (ADR-0019 §8) — the same confinement as its samples.
+        using var edge = await ConnectAsync(_broker.Edge("edge-a"));
+
+        var declared = await edge.PublishAsync(new MqttApplicationMessageBuilder()
+            .WithTopic("scada/edge/edge-a/drivers")
+            .WithPayload($"{_run}:drivers")
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .WithRetainFlag()
+            .Build());
+        Assert.True(declared.IsSuccess, $"refused: {declared.ReasonCode}");
+
+        // The Gateway reads every edge's declaration: one subscription for the deployment, because
+        // an edge the catalogue does not know yet is exactly the one it has to hear from.
+        using var gateway = await ConnectAsync(_broker.Gateway($"scada-darbox-{_run}-provisioning"));
+        var received = new ConcurrentQueue<string>();
+        gateway.ApplicationMessageReceivedAsync += message =>
+        {
+            received.Enqueue(message.ApplicationMessage.ConvertPayloadToString());
+            return Task.CompletedTask;
+        };
+        await gateway.SubscribeAsync(new MqttClientSubscribeOptionsBuilder()
+            .WithTopicFilter("scada/edge/+/drivers", MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (received.IsEmpty && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+        }
+
+        Assert.Equal($"{_run}:drivers", received.SingleOrDefault());
+
+        // Another edge may not say it for it: a declaration an edge did not make is a declaration
+        // about a build nobody asked.
+        using var other = await ConnectAsync(_broker.Edge("edge-b"));
+        var forged = await other.PublishAsync(new MqttApplicationMessageBuilder()
+            .WithTopic("scada/edge/edge-a/drivers")
+            .WithPayload($"{_run}:forged")
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+        Assert.False(forged.IsSuccess, "an edge must not be able to declare another edge's drivers");
+    }
+
     private async Task<GatewaySession> GatewayAsync(string? clientId = null)
     {
         var client = new MqttClientFactory().CreateMqttClient();

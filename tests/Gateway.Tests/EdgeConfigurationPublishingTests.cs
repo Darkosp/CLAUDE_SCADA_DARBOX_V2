@@ -9,6 +9,7 @@ using MQTTnet.Protocol;
 using MQTTnet.Server;
 using ScadaDarbox.Core.Model;
 using ScadaDarbox.Core.Tags;
+using ScadaDarbox.Gateway.Configuration;
 using ScadaDarbox.Gateway.Provisioning;
 using ScadaDarbox.Modules.Drivers.Mqtt;
 
@@ -116,15 +117,31 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
         await publisher.StopAsync(CancellationToken.None);
     }
 
-    private EdgeConfigurationPublisher Publisher(TagCatalogSource source) => new(
-        source,
-        Options.Create(new EdgeProvisioningOptions
+    private EdgeConfigurationPublisher Publisher(TagCatalogSource source)
+    {
+        var options = Options.Create(new EdgeProvisioningOptions
         {
             Host = "127.0.0.1",
             Port = _port,
             UsesTls = false,
-        }),
-        NullLogger<EdgeConfigurationPublisher>.Instance);
+        });
+
+        // One client, both directions (ADR-0019 §8): the declaration handler is built over the same
+        // catalogue the publisher reads, so what this test starts is the service the Gateway starts.
+        var catalogue = new FakeCatalogue();
+
+        return new EdgeConfigurationPublisher(
+            source,
+            new EdgeDriverDeclarations(
+                source,
+                catalogue,
+                new ConfigurationReloader(catalogue, source),
+                new RecordingAuditLog(),
+                options,
+                NullLogger<EdgeDriverDeclarations>.Instance),
+            options,
+            NullLogger<EdgeConfigurationPublisher>.Instance);
+    }
 
     /// <summary>A catalogue with this edge, and one device either assigned to it or not.</summary>
     private static TagCatalog Catalogue(bool assigned, bool withEdge = true)
