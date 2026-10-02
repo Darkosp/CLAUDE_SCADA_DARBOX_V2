@@ -263,6 +263,34 @@ recorded figures — 194 passed / 133 skipped with no database, and 311 / 17 wit
 2026-09-27 — are in `HANDOVER-archive.md`; the counts grew because the provisioning work added
 tests, not because tests were lost.
 
+### 2.4 The same suite after ADR-0019 §8, 2026-10-02 — **425 passed, 0 skipped**
+
+This is the baseline to compare against, and it is the first run that includes the tests §8
+added (`EdgeDriverDeclarationsTests`, `EdgeDriverRefusalTests`, `EdgeDriversPayloadTests`,
+`EdgeAssignmentTests`, `BrokerConfigurationTests`) with a database reachable, so nothing in it
+is skipped. `dotnet test ScadaDarbox.slnx` with `SCADA_TEST_DB_PORT=5433`, beside the native
+PostgreSQL on 5432, **exit 0**:
+
+| Project | Passed | Skipped | Total |
+|---|---|---|---|
+| `ScadaDarbox.Core.Tests` | 105 | 0 | 105 |
+| `ScadaDarbox.Drivers.Modbus.Tests` | 27 | 0 | 27 |
+| `ScadaDarbox.Drivers.OpcUa.Tests` | 13 | 0 | 13 |
+| `ScadaDarbox.Drivers.Mqtt.Tests` | 61 | 0 | 61 |
+| `ScadaDarbox.EdgeAgent.Tests` | 25 | 0 | 25 |
+| `ScadaDarbox.Persistence.Tests` | 75 | 0 | 75 |
+| `ScadaDarbox.Gateway.Tests` | 119 | 0 | 119 |
+| **all seven** | **425** | **0** | **425** |
+
+The client's suite, `npm test` in `src/Web`: **60 passed, 0 failed, 0 skipped**.
+
+**And the three flakes did not appear.** §2.1's two and §2.3's one were all seen exactly once
+under a loaded parallel run. This run was the same shape — seven assemblies at once, the walk's
+containers beside them, the whole Gateway project at 119 — and all three passed. That is one
+green run, not a fix: none of the three has been made deterministic, and PR #10 (the broker's
+port taken at the bind rather than twenty seconds later) is still closed. Treat this as a
+baseline that a future red run can be compared against, not as evidence the flakes are gone.
+
 What this run does **not** say: nothing above needed TimescaleDB, so the
 database-enforced guarantees (append-only tables, the unique-name indexes, the
 migrator's lock) were **skipped**, not verified. Only a run with a reachable
