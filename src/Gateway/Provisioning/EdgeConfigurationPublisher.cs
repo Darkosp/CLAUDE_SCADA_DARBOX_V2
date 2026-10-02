@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using MQTTnet;
 using MQTTnet.Formatter;
 using MQTTnet.Protocol;
+using ScadaDarbox.Core.Model;
 using ScadaDarbox.Core.Tags;
 using ScadaDarbox.Modules.Drivers.Mqtt;
 
@@ -55,6 +56,11 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
     /// <summary>What was last published, by edge id: its name — a deleted edge still needs its
     /// topic — and the revision that was sent there.</summary>
     private readonly ConcurrentDictionary<Guid, Published> _published = new();
+
+    /// <summary>The devices left out of each edge's configuration for having no tags, by edge id,
+    /// as last reported (ADR-0020). Kept so the line is written when the set changes rather than
+    /// on every publish.</summary>
+    private readonly ConcurrentDictionary<Guid, string> _omittedReported = new();
 
     /// <summary>Raised whenever the catalogue is replaced, to wake the loop.</summary>
     private readonly SemaphoreSlim _changed = new(0);
@@ -228,7 +234,7 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
         {
             present.Add(edge.Id);
 
-            var devices = EdgeConfigurationBuilder.DevicesFor(catalog, edge);
+            var devices = EdgeConfigurationBuilder.DevicesFor(catalog, edge, out var omitted);
             var revision = EdgeConfigurationPayload.RevisionOf(devices);
 
             if (_published.TryGetValue(edge.Id, out var last) && last.Revision == revision)
@@ -249,6 +255,8 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
                 topic,
                 devices.Count,
                 revision);
+
+            ReportOmitted(edge, omitted);
         }
 
         foreach (var (edgeId, last) in _published)
@@ -269,10 +277,45 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
             }
 
             _published[edgeId] = new Published(last.Name, EdgeConfigurationPayload.RevisionOf([]));
+            _omittedReported.TryRemove(edgeId, out _);
             _logger.LogInformation("Edge {Edge} is gone; {Topic} now holds a configuration of no devices.", last.Name, topic);
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Says which of an edge's devices were left out of its configuration for having no tags, once
+    /// per change rather than once per publish (ADR-0020).
+    /// </summary>
+    /// <remarks>
+    /// Not an error and not a refusal: a device assigned before its tags exist is a state an
+    /// operator is passing through, and the first tag's save republishes the configuration with
+    /// the device in it. It is said out loud because a device that is assigned and silently
+    /// unread is the shape of finding ADR-0019 §8 closed on the other axis, and because an
+    /// operator who sees nothing happen after an assignment has been told nothing.
+    /// </remarks>
+    private void ReportOmitted(Edge edge, IReadOnlyList<string> omitted)
+    {
+        if (omitted.Count == 0)
+        {
+            _omittedReported.TryRemove(edge.Id, out _);
+            return;
+        }
+
+        var report = string.Join(", ", omitted);
+
+        if (_omittedReported.TryGetValue(edge.Id, out var already) && already == report)
+        {
+            return;
+        }
+
+        _omittedReported[edge.Id] = report;
+        _logger.LogInformation(
+            "Edge {Edge} has {Count} device(s) assigned with no tags, so they are not in its configuration: {Devices}. The edge reads nothing from them until one of their tags is added (ADR-0020).",
+            edge.Name,
+            omitted.Count,
+            report);
     }
 
     /// <summary>Publishes one configuration, retained, at QoS 1; true only when the broker took it.</summary>

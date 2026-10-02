@@ -32,15 +32,48 @@ public static class EdgeConfigurationBuilder
     /// What one edge reads, as it will travel to that edge. An edge with nothing assigned
     /// derives an empty list, which is a configuration in its own right: it reads nothing.
     /// </summary>
-    public static IReadOnlyList<EdgeConfigurationDevice> DevicesFor(TagCatalog catalog, Edge edge) =>
-        catalog.DevicesOfEdge(edge.Id)
-            .Select(device => new EdgeConfigurationDevice(
+    /// <remarks>
+    /// A device with no tags is left out, and named in <paramref name="omitted"/> (ADR-0020).
+    /// The payload reader refuses a device whose tag array is empty and refuses the whole
+    /// message with it, so deriving one would take every other device that edge reads down
+    /// with it — the cloud would be producing a message its own reader cannot read. Such a
+    /// device is a legitimate state rather than a fault: an operator creates a device, assigns
+    /// it, and adds its tags next, and the catalog's reload republishes the configuration the
+    /// moment the first tag is saved. The list is reported so the caller can say so, because a
+    /// device that is assigned and silently unread is exactly the shape of finding ADR-0019 §8
+    /// closed on the other axis.
+    /// </remarks>
+    public static IReadOnlyList<EdgeConfigurationDevice> DevicesFor(
+        TagCatalog catalog,
+        Edge edge,
+        out IReadOnlyList<string> omitted)
+    {
+        var devices = new List<EdgeConfigurationDevice>();
+        var withoutTags = new List<string>();
+
+        foreach (var device in catalog.DevicesOfEdge(edge.Id))
+        {
+            var tags = catalog.TagsOfDevice(device.Id)
+                .Select(tag => new EdgeConfigurationTag(tag.Id, tag.SourceAddress, tag.ValueKind))
+                .ToList();
+
+            if (tags.Count == 0)
+            {
+                // Not sent. A device with no tags is not a device the edge can read, and one
+                // empty tag array would have the edge refuse the whole configuration.
+                withoutTags.Add(device.Name);
+                continue;
+            }
+
+            devices.Add(new EdgeConfigurationDevice(
                 device.Name,
                 device.DriverKey,
                 (int)device.ScanInterval.TotalMilliseconds,
                 device.ConnectionSettings,
-                catalog.TagsOfDevice(device.Id)
-                    .Select(tag => new EdgeConfigurationTag(tag.Id, tag.SourceAddress, tag.ValueKind))
-                    .ToList()))
-            .ToList();
+                tags));
+        }
+
+        omitted = withoutTags;
+        return devices;
+    }
 }

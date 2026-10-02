@@ -1,6 +1,7 @@
 using ScadaDarbox.Core.Model;
 using ScadaDarbox.Core.Tags;
 using ScadaDarbox.Gateway.Provisioning;
+using ScadaDarbox.Modules.Drivers.Mqtt;
 
 namespace ScadaDarbox.Gateway.Tests;
 
@@ -18,13 +19,77 @@ public sealed class EdgeConfigurationTests
         fixture.Assign(fixture.Pump);
         fixture.Assign(fixture.Plc);
 
-        var names = EdgeConfigurationBuilder.DevicesFor(fixture.Catalog, fixture.Edge)
-            .Select(device => device.Name)
-            .ToList();
+        var names = Names(fixture);
 
         Assert.Equal(2, names.Count);
         Assert.Contains("Pump skid", names);
         Assert.Contains("Discharge PLC", names);
+    }
+
+    [Fact]
+    public void A_device_with_no_tags_is_left_out_of_the_configuration_and_named()
+    {
+        // ADR-0020. The payload reader refuses a device whose tag array is empty, and refuses the
+        // whole message with it — so deriving one would take every other device down with it. The
+        // device stays assigned; it is reported instead, because a device that is assigned and
+        // silently unread is the shape of finding ADR-0019 §8 closed on the other axis.
+        var fixture = new ProvisioningFixture();
+        fixture.Assign(fixture.Pump);
+        fixture.Assign(fixture.Plc);
+        fixture.RemoveTags(fixture.Plc);
+
+        var devices = Derive(fixture, out var omitted);
+
+        Assert.Equal(new[] { "Pump skid" }, devices.Select(device => device.Name));
+        Assert.Equal(new[] { "Discharge PLC" }, omitted);
+    }
+
+    [Fact]
+    public void A_device_whose_tags_all_go_leaves_nothing_to_refuse()
+    {
+        // The same rule from the other direction, and the case that would otherwise be a
+        // configuration the cloud's own reader rejects: every assigned device omitted derives an
+        // empty list, which is a configuration in its own right (ADR-0019 §4) and not a failure.
+        var fixture = new ProvisioningFixture();
+        fixture.Assign(fixture.Pump);
+        fixture.RemoveTags(fixture.Pump);
+
+        var devices = Derive(fixture, out var omitted);
+
+        Assert.Empty(devices);
+        Assert.Equal(new[] { "Pump skid" }, omitted);
+    }
+
+    [Fact]
+    public void Nothing_derived_is_a_configuration_the_edges_reader_refuses()
+    {
+        // The invariant ADR-0020 exists for, stated over every fixture shape: whatever the builder
+        // produces, the payload it becomes is one the edge accepts. The reader refuses an empty tag
+        // array, so this fails the moment the omission is removed.
+        var fixture = new ProvisioningFixture();
+        fixture.Assign(fixture.Pump);
+        fixture.Assign(fixture.Plc);
+        fixture.RemoveTags(fixture.Plc);
+
+        var devices = Derive(fixture, out _);
+        var payload = EdgeConfigurationPayload.Write(devices, DateTimeOffset.UnixEpoch);
+
+        var result = EdgeConfigurationPayload.Read(payload);
+
+        Assert.Null(result.Refusal);
+        Assert.Equal(new[] { "Pump skid" }, result.Devices.Select(device => device.Name));
+    }
+
+    [Fact]
+    public void An_edges_configuration_carries_no_device_with_an_empty_tag_array()
+    {
+        // Checked on the derived shape rather than through the reader, so this fails for the right
+        // reason when the omission goes: a device with no tags is present again.
+        var fixture = new ProvisioningFixture();
+        fixture.Assign(fixture.Plc);
+        fixture.RemoveTags(fixture.Plc);
+
+        Assert.DoesNotContain(Derive(fixture, out _), device => device.Tags.Count == 0);
     }
 
     [Fact]
@@ -65,7 +130,7 @@ public sealed class EdgeConfigurationTests
         var fixture = new ProvisioningFixture();
         fixture.Assign(fixture.Pump);
 
-        var device = Assert.Single(EdgeConfigurationBuilder.DevicesFor(fixture.Catalog, fixture.Edge));
+        var device = Assert.Single(Derive(fixture, out _));
         var tag = Assert.Single(device.Tags);
 
         Assert.Equal(fixture.Pressure.Id, tag.TagId);
@@ -79,7 +144,7 @@ public sealed class EdgeConfigurationTests
         var fixture = new ProvisioningFixture();
         fixture.Assign(fixture.Pump);
 
-        var device = Assert.Single(EdgeConfigurationBuilder.DevicesFor(fixture.Catalog, fixture.Edge));
+        var device = Assert.Single(Derive(fixture, out _));
 
         Assert.Equal("opc-ua", device.Driver);
         Assert.Equal(1500, device.ScanIntervalMs);
@@ -91,13 +156,19 @@ public sealed class EdgeConfigurationTests
     {
         var fixture = new ProvisioningFixture();
 
-        Assert.Empty(EdgeConfigurationBuilder.DevicesFor(fixture.Catalog, fixture.Edge));
+        var devices = Derive(fixture, out var omitted);
+
+        Assert.Empty(devices);
+        Assert.Empty(omitted);
     }
 
+    private static IReadOnlyList<EdgeConfigurationDevice> Derive(
+        ProvisioningFixture fixture,
+        out IReadOnlyList<string> omitted) =>
+        EdgeConfigurationBuilder.DevicesFor(fixture.Catalog, fixture.Edge, out omitted);
+
     private static IReadOnlyList<string> Names(ProvisioningFixture fixture) =>
-        EdgeConfigurationBuilder.DevicesFor(fixture.Catalog, fixture.Edge)
-            .Select(device => device.Name)
-            .ToList();
+        Derive(fixture, out _).Select(device => device.Name).ToList();
 
     private sealed class ProvisioningFixture
     {
@@ -113,6 +184,8 @@ public sealed class EdgeConfigurationTests
         internal Device Link { get; }
 
         internal Tag Pressure { get; }
+
+        internal Tag PlcLevel { get; }
 
         internal Edge Edge { get; }
 
@@ -166,8 +239,17 @@ public sealed class EdgeConfigurationTests
                 SourceAddress = "ns=2;s=Pump1.Pressure",
             };
 
+            PlcLevel = new Tag
+            {
+                Id = Guid.NewGuid(),
+                DeviceId = Plc.Id,
+                Name = "Discharge Level",
+                ValueKind = TagValueKind.Numeric,
+                SourceAddress = "holding:3",
+            };
+
             Devices = [Pump, Plc, Link];
-            Tags = [Pressure];
+            Tags = [Pressure, PlcLevel];
 
             Edge = AddEdge("north-01");
             Edge.LinkDeviceId = Link.Id;
@@ -187,6 +269,16 @@ public sealed class EdgeConfigurationTests
         internal void Assign(Device device, Edge? edge = null)
         {
             device.EdgeId = (edge ?? Edge).Id;
+            Catalog = Rebuild();
+        }
+
+        /// <summary>
+        /// Takes every tag off a device, as if none had been added yet — the state ADR-0020 is
+        /// about. The catalogue is rebuilt, which is what an operator's own edit does.
+        /// </summary>
+        internal void RemoveTags(Device device)
+        {
+            Tags.RemoveAll(tag => tag.DeviceId == device.Id);
             Catalog = Rebuild();
         }
 
