@@ -138,6 +138,18 @@ defects and not open questions: the work exists and nothing has been through it 
   against two builds of different ages on a real link. **Also not walked:** that the declaration is
   republished when the set changes and not otherwise — the unit tests watch it through a real
   in-process broker, and no walk has watched it over the TLS link.
+- **[ADR-0022](../architecture/decisions/0022-derived-link-device.md) — an edge's link device is
+  derived, is not overridable, and the edge names its limits.** Decided and implemented
+  2026-10-02, with its own tests. **What has not happened:** no run has created an edge against a
+  real deployment and watched the derived link device connect. The unit tests cover the derivation
+  — the topic, the settings, one device per edge, a second pass writing nothing, an existing link
+  kept — and the Gateway's integration tests cover the API creating an edge with its link already
+  in place. What no test does is watch the **derived** link actually subscribe and receive, because
+  that needs a broker and an edge. The two-host walk is the place: create a new edge there and
+  confirm the Gateway is subscribed to `{prefix}/{edge}/samples` before the edge is started.
+  **And one thing an upgrade exercises that nothing here does:** an existing deployment's
+  hand-made link devices are reused rather than replaced, which is what keeps the broker's session
+  — and the queue under it — from being dropped by the change.
 
 ### 2.1 ADR-0019 configuration provisioning, end to end
 
@@ -451,7 +463,6 @@ decided inside an implementation pull request.
 | Alarm flapping — deadband, on-delay | `phase-plan.md`, "Deferred out of Phase 5.5" | **an ADR first**: each changes what an alarm *is* |
 | Filtering the journal (tag, event type, time) | same place | a phase that wants it |
 | Routing a tag write to an edge-assigned device | ADR-0019, Consequences | an ADR — the link is outbound only and the Gateway has no route |
-| A link device derived from the edge rather than named | ADR-0019, Consequences | implementation, once decided — it is the last thing an operator types |
 | The Modbus 5 s response bound: driver constant or per-device setting | `phase-plan.md`, Phase 7 note | the design conversation; ADR-0016's pattern points one way |
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
 | TimescaleDB continuous aggregates and native compression | ADR-0006 | the legal review ADR-0006 asks for; the code deliberately does not use them |

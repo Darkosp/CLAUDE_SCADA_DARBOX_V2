@@ -252,10 +252,15 @@ write on its own declaration and the Gateway read on all of them.
   carries the devices it has been assigned and cannot read, version 2, and the cloud records and
   reports them without touching the assignment. The note in Consequences that listed this as
   waiting for a payload version and an ADR is no longer open.
+- **The link device is derived from the edge, and that is decided.**
+  *Corrected 2026-10-02.* It was in the list below as left to implementation.
+  [ADR-0022](0022-derived-link-device.md) decides it: the Gateway writes an edge's link device
+  from the edge's own name and the deployment's settings, the device is not overridable, and the
+  two settings that can vary — the staleness limit and the session expiry — move onto the edge.
+  The list below loses that entry.
 - **Not decided here, and left to implementation:** live reload instead of a
-  restart; how a device moving from one edge to another is ordered so that no
-  reading is attributed twice; and the link device being derived from the edge
-  rather than named, so that nothing about an edge is typed by hand.
+  restart; and how a device moving from one edge to another is ordered so that no
+  reading is attributed twice.
 - **A device with no tags was in that list and no longer is.** *Corrected
   2026-10-02.* The walk found the derivation producing a device the payload reader
   refuses, which took the edge's whole configuration down with it.

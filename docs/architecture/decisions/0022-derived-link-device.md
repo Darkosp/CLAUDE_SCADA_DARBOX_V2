@@ -1,15 +1,15 @@
 # ADR-0022 — An edge's link device is derived from the edge, and the edge names its staleness limit
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-02
 **Complements:** ADR-0019 (§3 the Gateway stops polling a device an edge reads; §5 the link carries
 the staleness limit; Consequences — this was left to implementation), ADR-0016 (a pushing tag goes
 Bad on silence rather than holding a cached value), ADR-0011 (the audit trail), ADR-0002 (Core
 names no protocol).
 
-*Proposed, and asking for two decisions rather than stating them as settled: whether the link
-device should be derived at all (decision 1), and where the staleness limit lives once it is
-(decision 3). Everything else here follows from ADR-0019.*
+*Accepted 2026-10-02, having been put as a proposal first. The two questions it raised were
+answered: the link device is derived (decision 1), and the staleness limit lives on the edge
+(decision 3). One thing was settled more firmly than the proposal left it — see decision 6.*
 
 ## Context
 
@@ -111,6 +111,26 @@ longer has to make one first, so the state they could reach that refusal from is
 device is still not deleted, nor an edge's link cleared or moved, while devices are assigned.
 Deleting an edge still deletes its link.
 
+**6. A derived link device is not overridable, and this is a decision rather than a deferral.**
+
+The proposal left this open as "not yet, and it needs a case that wants it". Having made the rest
+of the decision, the answer is no, and the reason is the one the whole ADR rests on: a link device
+whose topic names something the edge does not publish to is an edge that is silent — Bad tags, no
+error, and nothing that says why. That is the failure the derivation exists to make
+unrepresentable. An override would put it back, and put it back behind a form, where the operator
+who most needs the protection is the one least able to recognise that they are removing it.
+
+So the settings are written by the Gateway and are not editable, which is also what makes decision
+3's two settings the *only* thing about a link an operator chooses: they say how long silence may
+last, and nothing about where the link points.
+
+**7. What is stored for the link is the settings that are not constants, and only those.**
+
+`stalenessSeconds` and `sessionExpiryHours` are edge columns. The host, port, TLS flag and the
+three certificate paths are read from the deployment's own `EdgeProvisioningOptions` when the link
+device is built, and are not stored per edge: they cannot vary, so a column for them would be a
+column an operator could make wrong.
+
 ## Consequences
 
 - **Nothing about an edge is typed by hand.** The last hand-written thing is the edge's own name —
@@ -131,13 +151,10 @@ Deleting an edge still deletes its link.
   derived from a freshly generated device id, and the broker therefore has no queue for it. That is
   correct rather than lossy: the edge's own buffer holds anything not yet acknowledged (ADR-0017),
   so nothing is lost, and there is nothing queued under a name nothing has ever used.
-- **Not decided here.** Whether an operator may override a derived link device, and what that would
-  mean for an edge's identity — an edge whose link names a topic the edge does not publish to is
-  silent, and the derivation exists to make that unrepresentable. Left open deliberately: the
-  answer is "not yet", and it needs a case that wants it.
-- **And not here:** the Gateway's own subscription as a device at all. The link is a device because
-  ADR-0019 §5 gave the limit to a driver, and a driver is reached through a device (ADR-0016). A
-  future ADR could make the Gateway subscribe without one; nothing in this decision depends on it.
+- **Not decided here.** Whether the Gateway should subscribe to an edge's topics without a device
+  at all. The link is a device because ADR-0019 §5 gave the limit to a driver, and a driver is
+  reached through a device (ADR-0016). A future ADR could remove the device; nothing in this
+  decision depends on it.
 
 ## Verified in review by
 
@@ -155,3 +172,8 @@ Deleting an edge still deletes its link.
   it, and deleting an edge deletes its link.
 - No Core type mentions MQTT, a topic or a broker (ADR-0002, ADR-0016): the derivation and the
   setting are reached through the same device and driver abstractions as before.
+- A derived link device's topic, host, port and certificate paths are **not** editable, and are
+  rebuilt from the edge and the deployment's own settings. Making any of them settable puts back
+  the silent edge this decision removes, and fails a named test.
+- An edge created on a Gateway that is already running gets its link device without a restart, and
+  an edge never ends up with two.
