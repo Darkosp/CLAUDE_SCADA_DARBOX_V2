@@ -28,6 +28,13 @@ delivery — `EdgeConfigurationBuilder`, `EdgeConfigurationPublisher`,
 not happened is the walk. Nothing about the decisions below changed; a statement
 that stopped being true was corrected, as `README.md` in this directory requires.
 
+*Amended 2026-10-02.* The walk recorded in
+[`phase-7-manual-gate.md`](../../roadmap/phase-7-manual-gate.md) found the case
+this ADR left to implementation: a device whose `driverKey` no edge driver
+answered to was accepted by the Gateway, derived into the configuration,
+published, and refused only by the edge — loud on the plant machine, silent in
+the cloud. §8 decides it. Nothing else about the decision changed.
+
 That leaves two lists a human must keep in agreement:
 
 - the cloud Gateway's MQTT device and its tags, created in the web client;
@@ -124,6 +131,40 @@ an edge can read no other edge's configuration and no other edge can read its.
 The derived configuration carries each tag's own stable id (ADR-0001). The two
 hand-typed lists become one.
 
+**8. An edge declares which drivers it has, and the cloud refuses, by name, a
+device that edge cannot read.**
+
+Which driver keys exist is a fact about the build that runs the device, and the
+cloud's build is not the edge's. The Gateway registers Modbus, OPC UA and MQTT;
+an edge registers Modbus and OPC UA. So the cloud cannot answer the question
+from its own list — it holds `mqtt`, which no edge can read — and a build that
+gave an edge a driver the cloud lacks would be the same mistake mirrored. The
+edge is therefore the one that says what it has, over the connection it already
+holds, retained on its own topic under its own prefix.
+
+A device is refused when it is assigned to an edge that has declared its drivers
+and does not have the device's. The refusal names the edge and the keys it does
+have, so an operator is told what to do rather than that something went wrong.
+This is the refusal migration 0013's link guard already makes, for the same
+reason: a device an edge cannot read is a state in which nothing reads its tags
+and nothing says so.
+
+An edge that has **not** declared yet is not a wrong one. It may never have
+started, and a plant's devices are ordinarily configured before its edge is, so
+an assignment to an undeclared edge is accepted — the cloud cannot know yet —
+and the edge is shown as having declared nothing, so that "nobody has told us"
+is never read as "we checked and it is fine". When a declaration arrives that
+omits the driver of a device already assigned to that edge, the cloud records
+the declaration in the audit trail with the device named (ADR-0011) and leaves
+the assignment alone: what an edge reads must not change as a side effect of the
+edge answering, and only the edge can refuse to read it.
+
+*(Settled while implementing, 2026-10-02.)* The message is `EdgeDriversPayload`
+(Drivers.Mqtt, version 1) on `{TopicPrefix}/{Edge:Name}/drivers`, retained and
+republished after every connect — a fact about a build, not a measurement, so it
+does not go stale and is not given an expiry. The broker's ACL gives each edge
+write on its own declaration and the Gateway read on all of them.
+
 ## Consequences
 
 - The operator configures a plant once, in the cloud. No file is edited on a
@@ -179,12 +220,16 @@ hand-typed lists become one.
   moved, while devices are assigned. There is deliberately no state in which a
   device is read by an edge while the Gateway neither polls it nor watches a
   link for it.
+- **An edge's driver keys are declared by the edge, and are not configuration
+  the cloud edits.** *Added 2026-10-02 with §8.* They are a property of the
+  build at the plant, so there is no edge form for them and no default: an edge
+  that has not declared is shown as having declared nothing, not as having the
+  cloud's list. The declaration is a compatibility surface like the two payloads
+  beside it, and carries a version from its first message.
 - **Not decided here, and left to implementation:** live reload instead of a
-  restart; the exact topic and payload shape; whether an edge may be sent a
-  device it cannot reach; how a device moving from one edge to another is
-  ordered so that no reading is attributed twice; and the link device being
-  derived from the edge rather than named, so that nothing about an edge is
-  typed by hand.
+  restart; how a device moving from one edge to another is ordered so that no
+  reading is attributed twice; and the link device being derived from the edge
+  rather than named, so that nothing about an edge is typed by hand.
 
 ## Verified in review by
 
@@ -213,5 +258,17 @@ hand-typed lists become one.
   link device is not deleted, nor an edge's link cleared or moved, while
   devices are assigned to it. There is no state in which a device is read by an
   edge while the Gateway neither polls it nor watches a link for it.
+- A device whose driver the edge has declared it does not have is **refused at
+  the save that assigns it**, and the message names the edge and the drivers it
+  does have. Changing an assigned device's driver key to one the edge does not
+  have is refused the same way.
+- A device assigned to an edge that has declared nothing yet is accepted, and
+  the edge reports that nothing has been declared — never the cloud's own list.
+  When that edge's declaration arrives without the assigned device's driver, the
+  audit trail names the edge and the device, and the assignment is left as it
+  was.
+- An edge's declaration reaches the cloud over the link: republished after a
+  broker restart, read by the Gateway, and refused at the broker for any edge
+  that publishes under another edge's name.
 - No Core type mentions MQTT, Mosquitto or a topic (ADR-0002, ADR-0016,
   ADR-0017).

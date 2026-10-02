@@ -48,12 +48,13 @@ src/
                             ISecurityStore, IAuditLog (ADR-0011)
   Persistence.TimescaleDb/   Npgsql historian, Dapper configuration repositories,
                             DbUp migration runner, embedded migrations
-    migrations/0001…0013     0001 initial schema, 0002 nullable value kind, 0003 folders,
+    migrations/0001…0014     0001 initial schema, 0002 nullable value kind, 0003 folders,
                             0004 soft delete, 0005 active tag needs a live device,
                             0006 alarm definition, 0007 device templates,
                             0008 users/sessions/audit, 0009 alarm event,
                             0010 names unique within parent, 0011 edge ingestion,
-                            0012 edge assignment, 0013 edge link device
+                            0012 edge assignment, 0013 edge link device,
+                            0014 the edge's declared driver keys (ADR-0019 §8)
   Gateway/                  ASP.NET host: Web API, SignalR hub, scanning service, security,
                             alarm and configuration endpoints; serves the built Angular client
   Migrator/                 one-shot privileged step that applies the migrations and gives
@@ -223,6 +224,22 @@ them retained on `{prefix}/{edgeId}/config` (`EdgeConfigurationPublisher`, regis
 its own. What has never been done is a run with a real broker and a real edge accepting a
 derived configuration end to end. Every unfinished item, with what it waits for, is in
 `docs/roadmap/open-work.md`.
+
+**Added 2026-10-02: the edge declares its own drivers, and the cloud refuses what it cannot read
+(ADR-0019 §8).** The walk of the provisioning step found a device whose `driverKey` no edge driver
+answered to accepted, derived, published, and refused only by the edge — loud at the plant, silent
+in the cloud. The edge now publishes `EdgeDriversPayload` (Drivers.Mqtt, version 1) retained on
+`{prefix}/{edgeId}/drivers` as it connects; `EdgeDriverDeclarations` reads it on the provisioning
+connection the publisher already holds, `EdgeRepository.RecordDriversAsync` stores it (migration
+`0014`: `edge.driver_keys text[]`, `edge.drivers_declared_at`), and a device assigned to an edge
+that has declared it does not have that driver is refused by name at the save that assigns it
+(`EdgeEndpoints.ProblemWithEdgeDrivers`). An edge that has declared nothing is accepted and shown
+as having declared nothing — null is not empty — and a declaration that omits an already-assigned
+device's driver is audited with the device named and the assignment left alone. The tests are in
+`Drivers.Mqtt.Tests` (the format), `EdgeDriverDeclarationsTests` and `EdgeDriverRefusalTests` (the
+Gateway's halves), `EdgeAssignmentTests` (the column) and `BrokerConfigurationTests` (the ACL for
+the new topic). What is still owed is the walk: no run has yet had a real Mosquitto, a real
+Gateway and a real edge agent agree on a declaration end to end.
 
 ### Deferred, with the phase that must pick it up
 

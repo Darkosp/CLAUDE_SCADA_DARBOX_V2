@@ -116,11 +116,31 @@ same claim in `HANDOVER-archive.md` and in ADR-0019's own context.
   are in
   [`phase-7-manual-gate.md`](phase-7-manual-gate.md#since-the-walk-the-provisioning-delivered-and-read).
   Nothing on the plant machine named a device, an address or a tag id.
-- **Found by that walk, and left open:** a device whose `driverKey` no edge driver answers to is
-  accepted by the Gateway, derived, published, and refused only by the edge (`Device X needs
-  driver 'y', which this edge agent does not have.`). ADR-0019 leaves "whether an edge may be sent
-  a device it cannot reach" to implementation, and that is what the undecided case looks like:
-  loud at the edge, silent in the cloud.
+- **Found by that walk, and closed 2026-10-02** (this repository's PR #10). A device whose
+  `driverKey` no edge driver answered to was accepted by the Gateway, derived, published, and
+  refused only by the edge (`Device X needs driver 'y', which this edge agent does not have.`) —
+  loud at the plant, silent in the cloud. ADR-0019 had left "whether an edge may be sent a device
+  it cannot reach" to implementation; **§8 now decides it**. The edge declares the driver keys its
+  own build has, retained on `{TopicPrefix}/{Edge:Name}/drivers` (`EdgeDriversPayload`, version 1,
+  edge to cloud); the cloud records them (migration `0014`) and refuses, by name, a device assigned
+  to an edge that has declared it does not have that driver — at the save that assigns it, and when
+  the driver of an assigned device is edited. An edge that has **not** declared yet is accepted, and
+  shown as having declared nothing rather than as having the Gateway's drivers; a declaration that
+  arrives without the driver of a device already assigned to it is recorded in the audit trail with
+  the device named, and the assignment is left alone.
+- **What that step has not had: a walk.** Everything above is measured — the payload's own tests,
+  a declaration arriving over a real in-process broker, the API refusal against a live database, and
+  the broker's ACL for the new topic in `BrokerConfigurationTests` — but no run has yet had a real
+  Mosquitto, a real Gateway and a real edge agent agree on a declaration end to end, which is the
+  same bar §2.1's walk set. **Needs:** nothing beyond Docker; the recipe is §2.1's, with the
+  declaration read out of the Gateway's log and the edge's `EdgeDriversPayload` seen arriving.
+- **Two flakes, seen once each on 2026-10-02, in the same loaded run.** With the whole Gateway test
+  project running beside the other six assemblies — the step above added three in-process MQTT
+  brokers to that parallel load — `StartupCheckTests.A_journal_ahead_of_the_build_is_refused_too`
+  and `EdgeConfigurationPublishingTests.A_change_is_published_retained_to_that_edges_topic` each
+  failed once. Each passed when its class ran alone, and the next whole-project run was green at
+  **119 passed, 0 skipped**. Recorded rather than chased, for the reason the flake below is: a test
+  that fails only under load makes "the suite is green" mean less than it looks.
 - **Needs:** nothing beyond Docker to walk it again — the gate record's new section is the recipe.
   A walk on **two hosts** is §1.1's item, not this one.
 
@@ -219,7 +239,6 @@ decided inside an implementation pull request.
 | Alarm flapping — deadband, on-delay | `phase-plan.md`, "Deferred out of Phase 5.5" | **an ADR first**: each changes what an alarm *is* |
 | Filtering the journal (tag, event type, time) | same place | a phase that wants it |
 | Routing a tag write to an edge-assigned device | ADR-0019, Consequences | an ADR — the link is outbound only and the Gateway has no route |
-| A device whose `driverKey` no edge driver answers to | §2.1 above — the walk's finding 2 | a decision first: the Gateway validating the key against its own drivers, the edge declaring which it has, or the refusal travelling back to the cloud |
 | A link device derived from the edge rather than named | ADR-0019, Consequences | implementation, once decided — it is the last thing an operator types |
 | The Modbus 5 s response bound: driver constant or per-device setting | `phase-plan.md`, Phase 7 note | the design conversation; ADR-0016's pattern points one way |
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
