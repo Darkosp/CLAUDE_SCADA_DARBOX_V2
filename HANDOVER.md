@@ -479,14 +479,17 @@ The defects that were already found and fixed are listed in [`HANDOVER-archive.m
   394** .NET tests reported as skipped on 2026-10-01 (it was 133 of 327 on 2026-09-27, and the
   counts move as tests are added). Treat any "all green" claim as conditional on which of the
   three prerequisites (database, `docker version`, `docker compose version`) were actually
-  available, and say which. **The current baseline is `open-work.md` §2.4, 2026-10-02: 425 passed
-  and 0 skipped** with `SCADA_TEST_DB_PORT=5433`, plus the client's 60 passed — measured after
-  ADR-0019 §8 added its tests, and the first run in which nothing was skipped. **But that run was
-  a lucky one, and §2.4 says so:** six further whole-solution runs the same evening, three of them
-  with no change applied at all, each produced one or two failures in database-heavy and
-  audit-writing tests, never the same pair twice, every one of them passing in isolation. A
-  whole-solution run on this machine is **not currently green**, and "the suite passes" is not
-  evidence until it is.
+  available, and say which. **The baseline is `open-work.md` §2.4–§2.5, 2026-10-02: 429 passed and
+  0 skipped** across seven projects with `SCADA_TEST_DB_PORT=5433`, plus the client's 60 — after
+  ADR-0019 §8 and ADR-0020 added their tests, and the first runs in which nothing was skipped.
+  **Read §2.5 before trusting a red run.** The suite was *not* green when §2.4 was first written:
+  eight whole-solution runs produced one or two failures each, never the same pair twice, every one
+  of them passing in isolation. Two causes were found — `Command Timeout=10` on the test helpers'
+  administrative connection making the client give up on a slow `CREATE`/`DROP DATABASE`, and three
+  tests in `EdgeDriverDeclarationsTests` waiting for the declaration rather than for the audit row
+  appended after it — and after fixing both, seven consecutive whole-solution runs were green.
+  A whole-solution run on this machine **is** green now; what is not fixed is the design those two
+  causes came from, and §2.5 says which parts remain.
 - **The historian grows continuously** — the seeded device scans every 1000 ms and every reading
   is written, so a row count is a snapshot at that instant, not a stable figure. The Phase 7 gate
   record is careful about this ("`rows` equal to `distinct_times`", "all within one instant"); a

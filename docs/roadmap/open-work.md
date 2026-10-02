@@ -342,6 +342,53 @@ shared one they create and drop under each other, or serialise the assemblies. W
 should start from the reproduction above — and should note that a *skipped* test proves nothing,
 so this is not fixed by making the database unreachable.
 
+### 2.5 The flakes, diagnosed and fixed — **closed 2026-10-02**
+
+Two causes, both of them the same mistake in two places: a wall-clock deadline standing in for a
+signal. Neither was in the code under test.
+
+**1. A client-side timeout on a server-side operation.** `ServerConnectionString` in both test
+helpers (`tests/Persistence.Tests/TestDatabase.cs`, `tests/Gateway.Tests/Hosting/TestDatabases.cs`)
+carried `Command Timeout=10`. That connection does `CREATE DATABASE` and `DROP DATABASE … WITH
+(FORCE)` and nothing else, and on a loaded server those are slow — seven assemblies at once,
+several of them creating and dropping databases, each migration running hundreds of statements.
+The **client** gave up while the server was still working, which surfaced as `NpgsqlException …
+TimeoutException: Timeout during reading attempt` inside `DropEmptyAsync`. The change is
+`Command Timeout=0` on that connection and that connection only: it is an administrative
+connection with no user waiting on it, so it has nothing to protect with a deadline. The
+`Timeout=3` beside it stays, because connecting fast and failing fast is still right and the
+availability probe depends on it. Per-database connection strings are untouched — those carry a
+user's query and a deadline is appropriate there. **Honesty about the evidence:** this cause is
+*read off the failure*, not proven load-bearing. The exception names a read timeout on a `DROP`,
+and the connection it names carried the ten seconds; but when the ten seconds was put back, three
+whole-solution runs and six project-only runs were all green, so the failure could not be
+reproduced to order. What reproduced was the *rate* — one or two failures in eight consecutive
+runs under the load this session's own concurrent commands were adding — and that load is not
+something a later reader can summon on demand.
+
+**2. A wait on the wrong step of a chain, in `EdgeDriverDeclarationsTests`.** `EdgeDriverDeclarations`
+records the declaration, reloads the catalogue, and *then* appends the audit row. All three tests
+waited only for `Catalogue.Declarations.Count == 1` and then asserted on `Audit.Entries`, so the
+assertion was racing the write it checked. Each test now waits for the audit row too. This is the
+race the whole file's `WaitUntilAsync` exists to avoid, applied to the last step rather than the
+first. **This one is a real race and the fix is not a guess:** the failure was
+`Assert.Single() Failure: The collection was empty` — the collection being `Audit.Entries`, the
+row the test had never waited for — and the code path appends it after the reload the test did wait
+for.
+
+**Measured.** Eight whole-solution runs before either change — three of them on a commit with no
+change applied — produced one or two failures each, never the same pair twice. **Seven consecutive
+whole-solution runs after them were green**, at **429 passed, 0 skipped** across seven projects,
+with the client's 60 passed beside them. The count is 425 plus the four ADR-0020 tests.
+
+**Not claimed:** that no flake remains anywhere, and not that both changes are individually
+necessary. What is claimed is that the diagnosed race is fixed, that the timeout was wrong on its
+own terms whatever its share of the blame, and that the reproduction rate went from 8 of 8 red to
+7 of 7 green on the same machine, the same stack and the same test database. The third candidate
+above — one shared database that several classes create and drop under each other — is still the
+shape of the design, and a deadline that is a wall clock rather than a signal is still how
+`WaitUntilAsync` is written.
+
 
 What this run does **not** say: nothing above needed TimescaleDB, so the
 database-enforced guarantees (append-only tables, the unique-name indexes, the
