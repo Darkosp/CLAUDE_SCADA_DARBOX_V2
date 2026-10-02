@@ -445,6 +445,13 @@
               nothing to send (ADR-0016).</p>
           }
 
+          <!-- What this edge says its own build has (ADR-0019 §8). It is the edge's statement
+               about itself, so there is nothing to edit here: the Gateway's own drivers are a
+               different list and are never shown as this edge's. -->
+          @if (declarationOf(draft); as declared) {
+            <p class="muted">{{ declared }}</p>
+          }
+
           @if (draft.id) {
             @if (readsOf(draft); as reads) {
               @if (reads.names.length === 0 && reads.elsewhere === 0) {

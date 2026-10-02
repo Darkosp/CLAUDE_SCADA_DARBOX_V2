@@ -12,8 +12,9 @@ using ScadaDarbox.Modules.Drivers.Mqtt;
 namespace ScadaDarbox.EdgeAgent.Uplink;
 
 /// <summary>
-/// The edge's connection to the cloud: it sends the buffer, oldest first, and receives the
-/// configuration this edge is to read (ADR-0017, ADR-0019 §4).
+/// The edge's connection to the cloud: it sends the buffer, oldest first, receives the
+/// configuration this edge is to read, and says which drivers this build has (ADR-0017,
+/// ADR-0019 §4, §8).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -46,6 +47,7 @@ public sealed class UplinkService : BackgroundService
     private readonly EdgeOptions _options;
     private readonly SampleBuffer _buffer;
     private readonly EdgeConfigurationConsumer _configuration;
+    private readonly IReadOnlyList<string> _driverKeys;
     private readonly ILogger<UplinkService> _logger;
     private readonly TimeProvider _clock;
 
@@ -53,12 +55,16 @@ public sealed class UplinkService : BackgroundService
         IOptions<EdgeOptions> options,
         SampleBuffer buffer,
         EdgeConfigurationConsumer configuration,
+        IEnumerable<IDeviceDriverFactory> factories,
         ILogger<UplinkService> logger,
         TimeProvider? clock = null)
     {
         _options = options.Value;
         _buffer = buffer;
         _configuration = configuration;
+        // The drivers this build has, asked of the same factories the acquisition service scans
+        // through, so what this edge declares and what it can actually read cannot disagree.
+        _driverKeys = factories.Select(factory => factory.DriverKey).ToList();
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
     }
@@ -121,6 +127,13 @@ public sealed class UplinkService : BackgroundService
                             _options.Broker.Port,
                             _options.SamplesTopic,
                             _options.ConfigurationTopic);
+
+                        // After every connection, not only the first: a broker that has just come
+                        // back may hold no retained messages at all, and this one is how the cloud
+                        // knows which devices this edge can be sent (ADR-0019 §8). Sending samples
+                        // does not depend on it, so a refusal here is reported and retried at the
+                        // next connection rather than ending the loop.
+                        await DeclareDriversAsync(client, stoppingToken).ConfigureAwait(false);
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException)
                     {
@@ -173,6 +186,54 @@ public sealed class UplinkService : BackgroundService
                     // Leaving anyway.
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Says which drivers this build has, retained, on this edge's own topic (ADR-0019 §8). False
+    /// when the broker did not take it; the caller carries on sending samples regardless.
+    /// </summary>
+    private async Task<bool> DeclareDriversAsync(IMqttClient client, CancellationToken cancellationToken)
+    {
+        var payload = EdgeDriversPayload.Write(_driverKeys);
+
+        try
+        {
+            var result = await client.PublishAsync(
+                new MqttApplicationMessageBuilder()
+                    .WithTopic(_options.DriversTopic)
+                    .WithPayload(payload)
+                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                    // Retained, and no expiry: the cloud may be away while this edge declares
+                    // itself, and a fact about a build does not go stale the way a sample does
+                    // (EdgeDriversPayload).
+                    .WithRetainFlag()
+                    .Build(),
+                cancellationToken).ConfigureAwait(false);
+
+            if (result.IsSuccess)
+            {
+                _logger.LogInformation(
+                    "Declared {Count} driver(s) on {DriversTopic}: {Drivers}.",
+                    _driverKeys.Count,
+                    _options.DriversTopic,
+                    string.Join(", ", _driverKeys));
+                return true;
+            }
+
+            _logger.LogWarning(
+                "The broker refused this edge's declaration on {DriversTopic}: {Reason}. The cloud keeps the last one it read, and this is tried again at the next connection.",
+                _options.DriversTopic,
+                result.ReasonCode);
+            return false;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                "Declaring this edge's drivers on {DriversTopic} failed ({Reason}); it is tried again at the next connection.",
+                _options.DriversTopic,
+                exception.Message);
+            return false;
         }
     }
 

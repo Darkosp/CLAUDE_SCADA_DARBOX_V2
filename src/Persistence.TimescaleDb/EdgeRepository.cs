@@ -1,5 +1,6 @@
 using Dapper;
 using Npgsql;
+using NpgsqlTypes;
 using ScadaDarbox.Core.Configuration;
 using ScadaDarbox.Core.Model;
 using static ScadaDarbox.Persistence.TimescaleDb.ConfigurationRows;
@@ -25,7 +26,8 @@ public sealed class EdgeRepository : IEdgeRepository
 
         var rows = await connection.QueryAsync<EdgeRow>(
             new CommandDefinition(
-                "SELECT id, tenant_id, name, link_device_id FROM edge_active ORDER BY name",
+                "SELECT id, tenant_id, name, link_device_id, driver_keys, drivers_declared_at "
+                + "FROM edge_active ORDER BY name",
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
 
@@ -106,6 +108,35 @@ public sealed class EdgeRepository : IEdgeRepository
                 + "device carries its link: while a device is assigned, that link is the only thing "
                 + "reading its tags, and moving it would leave them with no source at all.")
             : new ConfigurationConflictException($"Edge {edge.Id} no longer exists.");
+    }
+
+    public async Task<bool> RecordDriversAsync(
+        Guid edgeId,
+        IReadOnlyList<string> driverKeys,
+        DateTimeOffset declaredAtUtc,
+        CancellationToken cancellationToken)
+    {
+        // Only the declaration is touched. It is not an edit of the edge: a declaration arriving
+        // must not be able to rewrite a name or a link, and it must not be refused because a link
+        // is being repointed at that instant — the two have nothing to do with each other.
+        const string sql = """
+            UPDATE edge
+            SET driver_keys = @driver_keys,
+                drivers_declared_at = @declared_at
+            WHERE id = @edge_id
+              AND deleted_at IS NULL
+            """;
+
+        // Npgsql's own parameters rather than Dapper's here, for the array: the element type has to
+        // be named rather than inferred — an edge that declares no drivers is a legal declaration,
+        // and an empty array gives the driver nothing to infer a type from (the shape AlarmJournal
+        // already takes for its own typed parameters).
+        await using var command = _dataSource.CreateCommand(sql);
+        command.Parameters.AddWithValue("edge_id", NpgsqlDbType.Uuid, edgeId);
+        command.Parameters.AddWithValue("driver_keys", NpgsqlDbType.Array | NpgsqlDbType.Text, driverKeys.ToArray());
+        command.Parameters.AddWithValue("declared_at", NpgsqlDbType.TimestampTz, declaredAtUtc);
+
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
     }
 
     public async Task DeleteAsync(Guid edgeId, CancellationToken cancellationToken)

@@ -33,6 +33,11 @@ namespace ScadaDarbox.Gateway.Provisioning;
 /// of a configuration that outlives the process that sent it.
 /// </para>
 /// <para>
+/// The same connection carries the other direction: each edge's declaration of the drivers it has
+/// (ADR-0019 §8), handed to <see cref="EdgeDriverDeclarations"/>. One client, because the broker
+/// knows this Gateway by its certificate and a second connection would be the same identity twice.
+/// </para>
+/// <para>
 /// An edge that has been deleted is published a configuration with no devices, retained, so a
 /// later edge of the same name does not inherit the one before it.
 /// </para>
@@ -42,6 +47,7 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(2);
 
     private readonly TagCatalogSource _catalogSource;
+    private readonly EdgeDriverDeclarations _declarations;
     private readonly EdgeProvisioningOptions _options;
     private readonly ILogger<EdgeConfigurationPublisher> _logger;
     private readonly TimeProvider _clock;
@@ -55,11 +61,13 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
 
     public EdgeConfigurationPublisher(
         TagCatalogSource catalogSource,
+        EdgeDriverDeclarations declarations,
         IOptions<EdgeProvisioningOptions> options,
         ILogger<EdgeConfigurationPublisher> logger,
         TimeProvider? clock = null)
     {
         _catalogSource = catalogSource;
+        _declarations = declarations;
         _options = options.Value;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
@@ -103,6 +111,29 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
 
         var connection = builder.Build();
 
+        // The other direction on the same client (ADR-0019 §8): every edge's declaration arrives
+        // here. One client, because a second connection under the same certificate would be the
+        // same identity twice, and because this one already holds the connection that carries the
+        // conversation.
+        client.ApplicationMessageReceivedAsync += async message =>
+        {
+            var application = message.ApplicationMessage;
+
+            try
+            {
+                await _declarations.HandleAsync(
+                    application.Topic,
+                    application.ConvertPayloadToString(),
+                    stoppingToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // A declaration that cannot be recorded must not take the publisher down with it:
+                // every edge's configuration still has to be published.
+                _logger.LogError(exception, "Handling a message on {Topic} failed.", application.Topic);
+            }
+        };
+
         try
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -112,12 +143,23 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
                     try
                     {
                         await client.ConnectAsync(connection, stoppingToken).ConfigureAwait(false);
+
+                        // Subscribed before anything is published, so an edge's declaration that is
+                        // already retained on the broker is read rather than merely overwritten by
+                        // this connection's own traffic.
+                        await client.SubscribeAsync(
+                            new MqttClientSubscribeOptionsBuilder()
+                                .WithTopicFilter(_options.DriversTopicFilter, MqttQualityOfServiceLevel.AtLeastOnce)
+                                .Build(),
+                            stoppingToken).ConfigureAwait(false);
+
                         _published.Clear();
                         _logger.LogInformation(
-                            "Connected to the broker at {Host}:{Port}; publishing each edge's configuration under {Prefix}.",
+                            "Connected to the broker at {Host}:{Port}; publishing each edge's configuration under {Prefix} and reading their declarations on {Filter}.",
                             _options.Host,
                             _options.Port,
-                            _options.TopicPrefix);
+                            _options.TopicPrefix,
+                            _options.DriversTopicFilter);
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException)
                     {

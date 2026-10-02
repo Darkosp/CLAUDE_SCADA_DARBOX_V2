@@ -110,6 +110,24 @@ public interface IEdgeRepository
     /// unassigns its devices explicitly first.
     /// </exception>
     Task DeleteAsync(Guid edgeId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Records the driver keys the edge itself says it has (ADR-0019 §8).
+    /// </summary>
+    /// <remarks>
+    /// Which driver keys exist is a fact about the build running at the plant, so it is the edge
+    /// that states it and nothing in the cloud that edits it. A declaration arrives over the link
+    /// and is written as it stands: an unknown edge name is the caller's to report, not something
+    /// to invent an edge for.
+    /// </remarks>
+    /// <param name="driverKeys">The keys the edge declared, as it declared them.</param>
+    /// <param name="declaredAtUtc">When the cloud read the declaration; the edge's own clock is not trusted with this.</param>
+    /// <returns>False when there is no live edge with that id; nothing is written, and that is not an error.</returns>
+    Task<bool> RecordDriversAsync(
+        Guid edgeId,
+        IReadOnlyList<string> driverKeys,
+        DateTimeOffset declaredAtUtc,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>

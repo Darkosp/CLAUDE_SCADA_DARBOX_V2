@@ -112,12 +112,21 @@ internal static class ConfigurationEndpoints
             SaveDeviceRequest request,
             IDeviceRepository devices,
             DriverShapes shapes,
+            TagCatalogSource catalogSource,
             ConfigurationReloader reloader,
             CancellationToken cancellationToken) =>
         {
             if (shapes.ScanIntervalProblem(request.DriverKey, request.ScanIntervalMs) is { } problem)
             {
                 return Results.BadRequest(new { error = problem });
+            }
+
+            // An edge that cannot read this driver is refused here, at the save that assigns it
+            // (ADR-0019 §8). Further down — a device published to an edge that refuses it — the
+            // only one who knows is the edge.
+            if (EdgeEndpoints.ProblemWithEdgeDrivers(request.EdgeId, request.DriverKey, catalogSource.Current) is { } edgeProblem)
+            {
+                return Results.BadRequest(new { error = edgeProblem });
             }
 
             var device = ToDomain(Guid.NewGuid(), siteId, request);
@@ -135,12 +144,20 @@ internal static class ConfigurationEndpoints
             SaveDeviceRequest request,
             IDeviceRepository devices,
             DriverShapes shapes,
+            TagCatalogSource catalogSource,
             ConfigurationReloader reloader,
             CancellationToken cancellationToken) =>
         {
             if (shapes.ScanIntervalProblem(request.DriverKey, request.ScanIntervalMs) is { } problem)
             {
                 return Results.BadRequest(new { error = problem });
+            }
+
+            // Assigning to an edge and changing the driver are the same save, so a device already
+            // assigned cannot be edited into a driver its edge does not have either.
+            if (EdgeEndpoints.ProblemWithEdgeDrivers(request.EdgeId, request.DriverKey, catalogSource.Current) is { } edgeProblem)
+            {
+                return Results.BadRequest(new { error = edgeProblem });
             }
 
             return await SaveAsync(

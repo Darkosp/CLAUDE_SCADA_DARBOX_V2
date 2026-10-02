@@ -185,6 +185,58 @@ export interface Edge {
   linkDeviceId: string | null;
   /** The devices it reads. Assigning one is an ordinary edit of the device (ADR-0019). */
   deviceIds: string[];
+  /**
+   * The driver keys the edge itself says its build has, or null when it has never said
+   * (ADR-0019 §8).
+   *
+   * null and [] are different answers and are shown differently: null is "nobody has told us",
+   * [] is "this edge says it has none". Neither is ever filled in from the Gateway's own
+   * drivers, which are a different list.
+   */
+  declaredDriverKeys: string[] | null;
+  /** When the cloud read that declaration, or null when it never has. */
+  driversDeclaredAtUtc: string | null;
+}
+
+/**
+ * What an edge has said about its own drivers, in a sentence, or null when there is nothing to
+ * say yet because the edge has not declared.
+ *
+ * The driver keys are the edge's own statement, so there is no form field for them: this reads
+ * back what the edge said rather than letting anyone type it.
+ */
+export function declarationOf(edge: Edge): string {
+  if (!edge.declaredDriverKeys) {
+    return (
+      'This edge has not declared its drivers yet. Until it does, a device may be assigned to ' +
+      'it whatever driver it names — the cloud cannot check, and says so rather than guessing.'
+    );
+  }
+
+  return edge.declaredDriverKeys.length === 0
+    ? 'This edge has declared it has no drivers at all, so no device assigned to it can be read.'
+    : `This edge has declared it has: ${edge.declaredDriverKeys.map((key) => `'${key}'`).join(', ')}.`;
+}
+
+/**
+ * Why the edge chosen on a device form cannot read a device with this driver, or null.
+ *
+ * The Gateway refuses the assignment, so this is the same answer earlier — and an edge that has
+ * declared nothing is deliberately not refused: it may simply never have started, and a plant's
+ * devices are configured before its edge is (ADR-0019 §8).
+ */
+export function edgeDriverNote(edge: Edge | null, driverKey: string): string | null {
+  if (edge === null || !edge.declaredDriverKeys) {
+    return null;
+  }
+
+  return edge.declaredDriverKeys.some((key) => key.toLowerCase() === driverKey.toLowerCase())
+    ? null
+    : `Edge "${edge.name}" has declared it cannot read '${driverKey}'; the drivers it has declared are ${
+        edge.declaredDriverKeys.length === 0
+          ? 'none at all'
+          : edge.declaredDriverKeys.map((key) => `'${key}'`).join(', ')
+      }.`;
 }
 
 /** An edge as a picker option, where null is "not on an edge". */

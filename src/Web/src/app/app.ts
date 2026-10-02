@@ -23,7 +23,9 @@ import {
   TemplateTag,
   TreeDevice,
   folderOptions,
+  declarationOf,
   edgeOfDevice,
+  edgeDriverNote,
   edgeOptions,
   edgeReads,
   linkOptions,
@@ -568,9 +570,21 @@ export class App implements OnInit {
     const chosen =
       draft.edgeId === null ? null : (this.edges().find((edge) => edge.id === draft.edgeId) ?? null);
 
-    return chosen !== null && chosen.linkDeviceId === null
-      ? 'That edge has no link device yet, so it has nothing to read with. Give it one on the Edges screen first.'
-      : null;
+    if (chosen !== null && chosen.linkDeviceId === null) {
+      return 'That edge has no link device yet, so it has nothing to read with. Give it one on the Edges screen first.';
+    }
+
+    // What that edge says its own build has, which is the only list that can answer this
+    // (ADR-0019 §8). The Gateway refuses the save; this is the same answer before it is made.
+    return edgeDriverNote(chosen, draft.driverKey);
+  }
+
+  /** What this edge has said about its own drivers (ADR-0019 §8), or null for one not created yet. */
+  protected declarationOf(draft: EdgeDraft): string | null {
+    const edge =
+      draft.id === null ? null : (this.edges().find((candidate) => candidate.id === draft.id) ?? null);
+
+    return edge === null ? null : declarationOf(edge);
   }
 
   protected async select(selection: Selection): Promise<void> {

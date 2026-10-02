@@ -1,14 +1,18 @@
 # Who may do what, by the name in the client's certificate (ADR-0017).
 
-# The Gateway reads every edge's samples and writes each edge's configuration: what an edge reads
-# is derived in the cloud and delivered to it, never typed into the edge by hand (ADR-0019).
+# The Gateway reads every edge's samples and every edge's declaration of its own drivers, and
+# writes each edge's configuration: what an edge reads is derived in the cloud and delivered to it,
+# never typed into the edge by hand (ADR-0019).
 user scada-gateway
 topic read scada/edge/+/samples
+topic read scada/edge/+/drivers
 topic write scada/edge/+/config
 
-# Every edge writes its own samples topic and reads its own configuration, and nothing else: %u is
-# the name in its certificate, which is its Edge:Id. An edge that publishes under another edge's
-# name, or reads another edge's configuration, is refused here, and the refusal is written to the
+# Every edge writes its own samples topic and its own declaration, and reads its own configuration,
+# and nothing else: %u is the name in its certificate, which is its Edge:Id. An edge that publishes
+# under another edge's name — a declaration included, which is why this one is a pattern and not a
+# topic — or reads another edge's configuration, is refused here, and the refusal is written to the
 # audit file.
 pattern write scada/edge/%u/samples
+pattern write scada/edge/%u/drivers
 pattern read scada/edge/%u/config

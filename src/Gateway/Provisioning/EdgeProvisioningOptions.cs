@@ -51,6 +51,18 @@ public sealed class EdgeProvisioningOptions
     /// </summary>
     public string ConfigurationTopic(string edgeName) => $"{TopicPrefix}/{edgeName}/config";
 
+    /// <summary>
+    /// The topic one edge declares its drivers on (ADR-0019 §8).
+    /// </summary>
+    public string DriversTopic(string edgeName) => $"{TopicPrefix}/{edgeName}/drivers";
+
+    /// <summary>
+    /// Every edge's declaration topic at once. One subscription for the deployment rather than one
+    /// per edge, because the case that matters most is an edge the Gateway does not know about yet:
+    /// a subscription created from the catalogue could never hear from it.
+    /// </summary>
+    public string DriversTopicFilter => $"{TopicPrefix}/+/drivers";
+
     /// <summary>Why these settings cannot be used, or nothing.</summary>
     public IReadOnlyList<string> Problems() =>
         UsesTls ? TlsFiles.Problems() : [];

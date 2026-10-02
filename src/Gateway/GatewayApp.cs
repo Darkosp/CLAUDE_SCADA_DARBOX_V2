@@ -209,9 +209,10 @@ public static class GatewayApp
             builder.Configuration.GetValue("PushedSources:ClockSkewTolerance", PushedSourceSettings.DefaultClockSkewTolerance)));
         services.AddHostedService<DeviceScannerService>();
 
-        // Where each edge's configuration is published (ADR-0019 §4): the same broker, over the
-        // Gateway's own certificate, on a topic of its own. Nothing is published while it is off,
-        // which is how a deployment is undone without touching the edges.
+        // Where each edge's configuration is published (ADR-0019 §4), and where what each edge says
+        // about its own drivers is read (ADR-0019 §8): the same broker, over the Gateway's own
+        // certificate, on topics of their own. Nothing is published and nothing is read while it is
+        // off, which is how a deployment is undone without touching the edges.
         var provisioning = builder.Configuration.GetSection("EdgeProvisioning");
         services.AddSingleton(new EdgeProvisioningOptions
         {
@@ -224,6 +225,7 @@ public static class GatewayApp
             CertFile = provisioning.GetValue("CertFile", "/app/mqtt/scada-gateway.crt") ?? "/app/mqtt/scada-gateway.crt",
             KeyFile = provisioning.GetValue("KeyFile", "/app/mqtt/scada-gateway.key") ?? "/app/mqtt/scada-gateway.key",
         });
+        services.AddSingleton<EdgeDriverDeclarations>();
         services.AddHostedService<EdgeConfigurationPublisher>();
     }
 

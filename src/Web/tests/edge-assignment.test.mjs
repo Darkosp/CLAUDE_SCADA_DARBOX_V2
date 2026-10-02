@@ -48,13 +48,26 @@ const tree = {
   ],
 };
 
-const edge = { id: 'e1', name: 'edge-a', linkDeviceId: 'd1', deviceIds: ['d2', 'd3', 'gone'] };
+const edge = {
+  id: 'e1',
+  name: 'edge-a',
+  linkDeviceId: 'd1',
+  deviceIds: ['d2', 'd3', 'gone'],
+  // Never declared: the state an edge is in before it has ever connected (ADR-0019 §8).
+  declaredDriverKeys: null,
+  driversDeclaredAtUtc: null,
+};
 
 test('the edges are a picker, with "not on an edge" first', () => {
-  assert.deepEqual(edgeOptions([{ id: 'e1', name: 'edge-a', linkDeviceId: null, deviceIds: [] }]), [
-    { id: null, label: 'Not on an edge' },
-    { id: 'e1', label: 'edge-a' },
-  ]);
+  assert.deepEqual(
+    edgeOptions([
+      { id: 'e1', name: 'edge-a', linkDeviceId: null, deviceIds: [], declaredDriverKeys: null, driversDeclaredAtUtc: null },
+    ]),
+    [
+      { id: null, label: 'Not on an edge' },
+      { id: 'e1', label: 'edge-a' },
+    ],
+  );
 });
 
 test('a device is found on the edge that reads it, wherever it sits in the tree', () => {

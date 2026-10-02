@@ -32,6 +32,13 @@ public sealed class EdgeOptions
     /// </summary>
     public string ConfigurationTopic => $"{Broker.TopicPrefix.TrimEnd('/')}/{Id}/config";
 
+    /// <summary>
+    /// Where this edge says which drivers it has: <c>{TopicPrefix}/{Id}/drivers</c>, retained
+    /// (ADR-0019 §8). Under the same name and the same ACL as the two topics beside it, because
+    /// the fact is this edge's own and no other edge may state it for it.
+    /// </summary>
+    public string DriversTopic => $"{Broker.TopicPrefix.TrimEnd('/')}/{Id}/drivers";
+
     /// <summary>Why this configuration cannot run, or nothing.</summary>
     public IReadOnlyList<string> Problems()
     {

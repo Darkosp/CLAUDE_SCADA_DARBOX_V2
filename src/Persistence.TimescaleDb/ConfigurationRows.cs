@@ -58,7 +58,21 @@ internal static class ConfigurationRows
         };
     }
 
-    internal sealed record EdgeRow(Guid Id, Guid TenantId, string Name, Guid? LinkDeviceId)
+    /// <summary>
+    /// An edge, with the driver keys it declared. Two of the three shapes here are the reader's
+    /// rather than the domain's, and both are narrowed in the projection: the declared list arrives
+    /// as <see cref="Array"/> (the column is <c>text[]</c>, and an array is reported as the array
+    /// type, which Dapper matches against no <c>string[]</c> parameter), and a <c>timestamptz</c>
+    /// arrives as a UTC <see cref="DateTime"/>, which is not the <see cref="DateTimeOffset"/> the
+    /// domain keeps.
+    /// </summary>
+    internal sealed record EdgeRow(
+        Guid Id,
+        Guid TenantId,
+        string Name,
+        Guid? LinkDeviceId,
+        Array? DriverKeys,
+        DateTime? DriversDeclaredAt)
     {
         internal Edge ToDomain() => new()
         {
@@ -66,6 +80,12 @@ internal static class ConfigurationRows
             TenantId = TenantId,
             Name = Name,
             LinkDeviceId = LinkDeviceId,
+            // Null is "never declared" and empty is "declared none"; the cast keeps that difference
+            // rather than flattening both into nothing.
+            DeclaredDriverKeys = DriverKeys as string[],
+            DriversDeclaredAt = DriversDeclaredAt is { } declaredAt
+                ? new DateTimeOffset(DateTime.SpecifyKind(declaredAt, DateTimeKind.Utc))
+                : null,
         };
     }
 
