@@ -24,6 +24,7 @@ import {
   TreeDevice,
   folderOptions,
   declarationOf,
+  unreadableOf,
   edgeOfDevice,
   edgeDriverNote,
   edgeOptions,
@@ -585,6 +586,19 @@ export class App implements OnInit {
       draft.id === null ? null : (this.edges().find((candidate) => candidate.id === draft.id) ?? null);
 
     return edge === null ? null : declarationOf(edge);
+  }
+
+  /**
+   * What this edge is assigned and cannot read (ADR-0021), or null when there is nothing wrong.
+   *
+   * Read from the cloud's record rather than worked out here: the whole point is that the cloud was
+   * the only party that could not see this, so the screen shows what the cloud now knows.
+   */
+  protected unreadableOf(draft: EdgeDraft): string | null {
+    const edge =
+      draft.id === null ? null : (this.edges().find((candidate) => candidate.id === draft.id) ?? null);
+
+    return edge === null ? null : unreadableOf(edge);
   }
 
   protected async select(selection: Selection): Promise<void> {

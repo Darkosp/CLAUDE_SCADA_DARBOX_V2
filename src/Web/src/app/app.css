@@ -55,6 +55,18 @@ h3 { font-size: 0.85rem; margin: 0; font-weight: 600; }
   font-size: 0.85rem;
 }
 
+/* A device an edge is assigned and cannot read (ADR-0021). Not an error — the assignment is
+   legitimate and deliberate — but not muted either: it is the one line on the panel that explains
+   why tags are reading Bad, and nothing else would. */
+.warn {
+  margin: 0.3rem 0;
+  padding: 0.5rem 0.7rem;
+  background: #fdf3dc;
+  color: #8a5a00;
+  border-left: 3px solid #d9a441;
+  font-size: 0.8rem;
+}
+
 main {
   display: grid;
   grid-template-columns: minmax(15rem, 22rem) 1fr;

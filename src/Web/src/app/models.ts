@@ -196,6 +196,26 @@ export interface Edge {
   declaredDriverKeys: string[] | null;
   /** When the cloud read that declaration, or null when it never has. */
   driversDeclaredAtUtc: string | null;
+  /**
+   * The devices assigned to this edge that are not being read, each with the driver it needs
+   * (ADR-0021). Empty means every assigned device is being read.
+   *
+   * Two facts arrive here as one list, because an operator has one question — "is this device
+   * being read?" — and it has two causes: a device assigned to an edge that declared it lacks the
+   * driver (ADR-0019 §8), and a device the edge itself reported it cannot open (ADR-0021), which
+   * is the case no save re-examines. `reportedByEdge` says which, because the second is stronger:
+   * the edge tried.
+   */
+  unreadableDevices: UnreadableDevice[] | null;
+}
+
+/** A device an edge is assigned and is not reading, and the driver it needs (ADR-0021). */
+export interface UnreadableDevice {
+  /** The cloud's own device, or null when the name the edge reported no longer resolves. */
+  deviceId: string | null;
+  device: string;
+  driver: string;
+  reportedByEdge: boolean;
 }
 
 /**
@@ -216,6 +236,29 @@ export function declarationOf(edge: Edge): string {
   return edge.declaredDriverKeys.length === 0
     ? 'This edge has declared it has no drivers at all, so no device assigned to it can be read.'
     : `This edge has declared it has: ${edge.declaredDriverKeys.map((key) => `'${key}'`).join(', ')}.`;
+}
+
+/**
+ * What an edge cannot read, in a sentence, or null when there is nothing wrong (ADR-0021).
+ *
+ * This is the direction ADR-0019 §8 cannot see: a device assigned before the edge's build lost a
+ * driver is never re-examined by any save, so the cloud would otherwise hold a device it believes
+ * is being read while nothing reads it. The edge reports it, the cloud records it, and this is
+ * where an operator reads it — the assignment is deliberately not changed, so nothing else would
+ * tell them.
+ */
+export function unreadableOf(edge: Edge): string | null {
+  const devices = edge.unreadableDevices ?? [];
+
+  if (devices.length === 0) {
+    return null;
+  }
+
+  const named = devices.map((device) => `'${device.device}' (needs '${device.driver}')`).join(', ');
+
+  return devices.length === 1
+    ? `This edge is assigned ${named} and cannot read it. Its tags will read Bad until the device is unassigned or the edge's build has that driver.`
+    : `This edge is assigned ${devices.length} devices it cannot read: ${named}. Their tags will read Bad until they are unassigned or the edge's build has those drivers.`;
 }
 
 /**

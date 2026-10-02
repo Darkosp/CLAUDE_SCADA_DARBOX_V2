@@ -452,6 +452,15 @@
             <p class="muted">{{ declared }}</p>
           }
 
+          <!-- What this edge is assigned and cannot read (ADR-0021). The direction ADR-0019 §8
+               cannot see: no save re-examines a device assigned before the edge's build lost a
+               driver, so this is the only place an operator is told. Shown as a warning rather
+               than muted, because it is the one line on this panel that means tags will read Bad
+               and nothing else explains why. -->
+          @if (unreadableOf(draft); as unreadable) {
+            <p class="warn">{{ unreadable }}</p>
+          }
+
           @if (draft.id) {
             @if (readsOf(draft); as reads) {
               @if (reads.names.length === 0 && reads.elsewhere === 0) {
