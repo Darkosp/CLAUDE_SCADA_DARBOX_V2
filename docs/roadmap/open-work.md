@@ -127,14 +127,17 @@ defects and not open questions: the work exists and nothing has been through it 
   device up without a second edit.
 - **[ADR-0021](../architecture/decisions/0021-edge-reports-what-it-cannot-read.md) — an edge says
   which assigned devices it cannot read, on its own declaration (version 2).** Decided and
-  implemented 2026-10-02, with its own tests. **What has not happened:** no run has had an edge
-  lose a driver under a live assignment. The state it is about needs a real edge whose build lacks
-  a driver that one of its assigned devices uses — a stripped or rolled-back agent image is the
-  cheapest way — after which the declaration should carry the device, the audit trail should name
-  it, `/api/edges` should report it, and the assignment should be unchanged. **And the version
-  half wants a walk of its own:** this is the project's first payload version bump, so the claim
-  that a version 1 message still reads and a version 3 is refused whole has been tested against
-  this build and never against two builds of different ages on a real link.
+  implemented 2026-10-02, with its own tests and the client showing the result. **What has not
+  happened:** no run has had an edge lose a driver under a live assignment. The state it is about
+  needs a real edge whose build lacks a driver that one of its assigned devices uses — a stripped
+  or rolled-back agent image is the cheapest way — after which the declaration should carry the
+  device, the audit trail should name it, `/api/edges` should report it, the edge's panel should
+  show it, and the assignment should be unchanged. **And the version half wants a walk of its
+  own:** this is the project's first payload version bump, so the claim that a version 1 message
+  still reads and a version 3 is refused whole has been tested against this build and never
+  against two builds of different ages on a real link. **Also not walked:** that the declaration is
+  republished when the set changes and not otherwise — the unit tests watch it through a real
+  in-process broker, and no walk has watched it over the TLS link.
 
 ### 2.1 ADR-0019 configuration provisioning, end to end
 
@@ -390,6 +393,10 @@ for.
 change applied — produced one or two failures each, never the same pair twice. **Seven consecutive
 whole-solution runs after them were green**, at **429 passed, 0 skipped** across seven projects,
 with the client's 60 passed beside them. The count is 425 plus the four ADR-0020 tests.
+
+**And it stayed green.** ADR-0021 added twenty more tests and five more whole-solution runs were
+green, at **447 passed, 0 skipped**, with the client's 63. The two flakes above have not been seen
+since the fix.
 
 **Not claimed:** that no flake remains anywhere, and not that both changes are individually
 necessary. What is claimed is that the diagnosed race is fixed, that the timeout was wrong on its

@@ -479,9 +479,10 @@ The defects that were already found and fixed are listed in [`HANDOVER-archive.m
   394** .NET tests reported as skipped on 2026-10-01 (it was 133 of 327 on 2026-09-27, and the
   counts move as tests are added). Treat any "all green" claim as conditional on which of the
   three prerequisites (database, `docker version`, `docker compose version`) were actually
-  available, and say which. **The baseline is `open-work.md` §2.4–§2.5, 2026-10-02: 429 passed and
-  0 skipped** across seven projects with `SCADA_TEST_DB_PORT=5433`, plus the client's 60 — after
-  ADR-0019 §8 and ADR-0020 added their tests, and the first runs in which nothing was skipped.
+  available, and say which. **The baseline is `open-work.md` §2.4–§2.5, 2026-10-02: 447 passed and
+  0 skipped** across seven projects with `SCADA_TEST_DB_PORT=5433`, plus the client's 63 — after
+  ADR-0019 §8, ADR-0020 and ADR-0021 added their tests, and the first runs in which nothing was
+  skipped.
   **Read §2.5 before trusting a red run.** The suite was *not* green when §2.4 was first written:
   eight whole-solution runs produced one or two failures each, never the same pair twice, every one
   of them passing in isolation. Two causes were found — `Command Timeout=10` on the test helpers'
