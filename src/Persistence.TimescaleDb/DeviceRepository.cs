@@ -164,7 +164,8 @@ public sealed class DeviceRepository : IDeviceRepository
         }
 
         var edge = await connection.QuerySingleOrDefaultAsync<EdgeRow>(new CommandDefinition(
-            "SELECT id, tenant_id, name, link_device_id FROM edge_active WHERE id = @edgeId",
+            "SELECT id, tenant_id, name, link_device_id, driver_keys, drivers_declared_at "
+            + "FROM edge_active WHERE id = @edgeId",
             new { edgeId },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
 

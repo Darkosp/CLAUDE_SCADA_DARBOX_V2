@@ -251,6 +251,72 @@ public sealed class EdgeAssignmentTests : IClassFixture<TestDatabase>
         await devices.FindAsync(deviceId, CancellationToken.None)
         ?? throw new InvalidOperationException($"Device {deviceId} was not found.");
 
+    [RequiresDatabaseFact]
+    public async Task A_declaration_is_stored_as_the_edge_stated_it_and_read_back_whole()
+    {
+        // Migration 0014 (ADR-0019 §8). The list is an array, not a document, so what a driver key
+        // is — text — is the schema's own guarantee rather than a convention in the payload.
+        var world = await SeedAsync();
+        var edges = new EdgeRepository(_database.DataSource);
+        var edge = NewEdge(world, "Declaring edge");
+        await edges.AddAsync(edge, CancellationToken.None);
+
+        var declaredAt = new DateTimeOffset(2026, 10, 2, 9, 30, 0, TimeSpan.Zero);
+        Assert.True(await edges.RecordDriversAsync(
+            edge.Id, ["modbus-tcp", "opc-ua"], declaredAt, CancellationToken.None));
+
+        var stored = Assert.Single(await edges.GetAllAsync(CancellationToken.None), e => e.Id == edge.Id);
+        Assert.Equal(["modbus-tcp", "opc-ua"], stored.DeclaredDriverKeys);
+        Assert.Equal(declaredAt, stored.DriversDeclaredAt);
+
+        // A second declaration replaces the first: a build that lost a driver has to be able to say
+        // so, or the cloud would keep refusing a device the edge can no longer read.
+        Assert.True(await edges.RecordDriversAsync(
+            edge.Id, ["modbus-tcp"], declaredAt.AddHours(1), CancellationToken.None));
+
+        var replaced = Assert.Single(await edges.GetAllAsync(CancellationToken.None), e => e.Id == edge.Id);
+        Assert.Equal(["modbus-tcp"], replaced.DeclaredDriverKeys);
+    }
+
+    [RequiresDatabaseFact]
+    public async Task An_edge_that_has_declared_nothing_is_not_an_edge_that_declared_no_drivers()
+    {
+        // Null and empty are different answers (ADR-0019 §8): null is "nobody has told us", which
+        // accepts an assignment, and empty is "this edge says it has none", which does not. An
+        // empty array carries no type for the driver to infer, which is why the repository names
+        // the element type rather than letting it be guessed.
+        var world = await SeedAsync();
+        var edges = new EdgeRepository(_database.DataSource);
+        var silent = NewEdge(world, "Silent edge");
+        var empty = NewEdge(world, "Empty edge");
+        await edges.AddAsync(silent, CancellationToken.None);
+        await edges.AddAsync(empty, CancellationToken.None);
+
+        Assert.True(await edges.RecordDriversAsync(empty.Id, [], DateTimeOffset.UtcNow, CancellationToken.None));
+
+        var all = await edges.GetAllAsync(CancellationToken.None);
+        Assert.Null(Assert.Single(all, e => e.Id == silent.Id).DeclaredDriverKeys);
+        Assert.Null(Assert.Single(all, e => e.Id == silent.Id).DriversDeclaredAt);
+        Assert.Empty(Assert.Single(all, e => e.Id == empty.Id).DeclaredDriverKeys!);
+    }
+
+    [RequiresDatabaseFact]
+    public async Task A_declaration_from_an_edge_that_is_gone_is_not_recorded()
+    {
+        // An edge that has been deleted, or a race with one being deleted now: reported as "there is
+        // no such edge" rather than inventing a row for it.
+        var world = await SeedAsync();
+        var edges = new EdgeRepository(_database.DataSource);
+        var edge = NewEdge(world, "Vanishing edge");
+        await edges.AddAsync(edge, CancellationToken.None);
+        await edges.DeleteAsync(edge.Id, CancellationToken.None);
+
+        Assert.False(await edges.RecordDriversAsync(
+            edge.Id, ["modbus-tcp"], DateTimeOffset.UtcNow, CancellationToken.None));
+        Assert.False(await edges.RecordDriversAsync(
+            Guid.NewGuid(), ["modbus-tcp"], DateTimeOffset.UtcNow, CancellationToken.None));
+    }
+
     private static Edge NewEdge(World world, string name) => new()
     {
         Id = Guid.NewGuid(),

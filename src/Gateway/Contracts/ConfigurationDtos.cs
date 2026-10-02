@@ -74,7 +74,22 @@ public sealed record SiteDto(Guid Id, string Name, string TimeZoneId);
 /// here: it is an ordinary edit of the device, and <c>EdgeId</c> on its save request is the only
 /// way it changes (ADR-0019 §2).
 /// </param>
-public sealed record EdgeDto(Guid Id, string Name, Guid? LinkDeviceId, IReadOnlyList<Guid> DeviceIds);
+/// <param name="DeclaredDriverKeys">
+/// The driver keys this edge says its own build has, or <b>null</b> when it has never said
+/// (ADR-0019 §8). Null and empty are different answers and are shown differently: null is "nobody
+/// has told us", empty is "this edge says it has none". Neither is ever filled in from the
+/// Gateway's own drivers, which are a different list.
+/// </param>
+/// <param name="DriversDeclaredAtUtc">
+/// When the cloud read that declaration, in the cloud's own time, or null when it never has.
+/// </param>
+public sealed record EdgeDto(
+    Guid Id,
+    string Name,
+    Guid? LinkDeviceId,
+    IReadOnlyList<Guid> DeviceIds,
+    IReadOnlyList<string>? DeclaredDriverKeys = null,
+    DateTimeOffset? DriversDeclaredAtUtc = null);
 
 // ---- request bodies -------------------------------------------------------
 

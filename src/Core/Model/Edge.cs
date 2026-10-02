@@ -44,4 +44,29 @@ public sealed class Edge
     /// </para>
     /// </remarks>
     public Guid? LinkDeviceId { get; set; }
+
+    /// <summary>
+    /// The driver keys this edge has said it has, or null when it has never said (ADR-0019 §8).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Declared by the edge and not configured here: which driver keys exist is a fact about the
+    /// build running at the plant, and the cloud's own list is not a substitute for it — the
+    /// Gateway registers a driver the edge does not run, and an edge may one day run one the cloud
+    /// does not.
+    /// </para>
+    /// <para>
+    /// Null and empty are different facts, and the difference is why this is nullable. Null means
+    /// nobody has told us — an edge that has never connected, which is the ordinary state while a
+    /// plant is being configured — and empty means the edge said it has none. Reading the first as
+    /// the second would refuse every assignment to an edge that is merely not switched on yet.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string>? DeclaredDriverKeys { get; set; }
+
+    /// <summary>
+    /// When the cloud last read a declaration from this edge, or null when it never has. The
+    /// cloud's own time: an edge's clock is neither trusted nor overwritten (ADR-0017).
+    /// </summary>
+    public DateTimeOffset? DriversDeclaredAt { get; set; }
 }

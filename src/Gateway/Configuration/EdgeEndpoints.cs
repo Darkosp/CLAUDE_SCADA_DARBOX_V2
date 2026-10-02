@@ -44,7 +44,9 @@ internal static class EdgeEndpoints
                     catalog.Devices
                         .Where(device => device.EdgeId == edge.Id)
                         .Select(device => device.Id)
-                        .ToArray())));
+                        .ToArray(),
+                    edge.DeclaredDriverKeys,
+                    edge.DriversDeclaredAt)));
         });
 
         edges.MapPost("", async (
@@ -144,4 +146,48 @@ internal static class EdgeEndpoints
             ? null
             : $"'{device.DriverKey}' is polled, not pushing, so a device using it cannot carry an edge's link.";
     }
+
+    /// <summary>
+    /// Why this driver key cannot be used for a device assigned to this edge, or null when it can
+    /// (ADR-0019 §8).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The edge's own declaration is the only list that can answer this. Which driver keys exist is
+    /// a fact about the build running at the plant, and the Gateway's list is a different one: it
+    /// registers a driver no edge reads with, and an edge may one day register one the Gateway does
+    /// not. Refusing here is what stops a device being derived, published, and refused only by the
+    /// edge — loud at the plant, silent in the cloud.
+    /// </para>
+    /// <para>
+    /// An edge that has declared nothing yet is <b>not</b> refused. It may simply never have
+    /// started, and a plant's devices are ordinarily configured before its edge is, so refusing
+    /// would make the natural order impossible. The difference is reported instead: an edge that
+    /// has declared nothing is shown as having declared nothing, never as having the cloud's list.
+    /// </para>
+    /// </remarks>
+    internal static string? ProblemWithEdgeDrivers(Guid? edgeId, string driverKey, TagCatalog catalog)
+    {
+        if (edgeId is not { } id)
+        {
+            return null;
+        }
+
+        if (catalog.Edges.FirstOrDefault(edge => edge.Id == id) is not { } edge)
+        {
+            return "There is no such edge to read this device.";
+        }
+
+        if (edge.DeclaredDriverKeys is not { } declared)
+        {
+            return null;
+        }
+
+        return declared.Contains(driverKey, StringComparer.OrdinalIgnoreCase)
+            ? null
+            : $"Edge '{edge.Name}' has declared it cannot read '{driverKey}'; the drivers it has declared are {Describe(declared)}.";
+    }
+
+    private static string Describe(IReadOnlyList<string> declared) =>
+        declared.Count == 0 ? "none at all" : string.Join(", ", declared.Select(key => $"'{key}'"));
 }

@@ -1085,6 +1085,92 @@ container prints is — is 0.047 s behind the store's own write of the four held
 file is not where to look and does not claim to be: `refused.log` records connections and
 refusals, ten lines for this run and every one of them a connect.
 
+## Since the walk: `driverKey`, declared by the edge and refused by the cloud (2026-10-02)
+
+ADR-0019 §8, walked on one machine, with the real cloud stack: real Mosquitto over real TLS, a real
+Gateway, a real edge agent. Images built from this repository's PR #11 (`7f9692a`) —
+
+```bash
+export CERT_DIR=$HOME/scada-certs && export MSYS_NO_PATHCONV=1
+deploy/cloud/certs.sh ca
+deploy/cloud/certs.sh broker mqtt.example.com broker
+deploy/cloud/certs.sh client scada-gateway
+deploy/cloud/certs.sh client plant-7
+deploy/build-images.sh HEAD
+docker compose -f deploy/cloud/docker-compose.yml --env-file deploy/cloud/.env up -d
+docker run -d --name scada-edge-plant-7 --network scada-darbox-cloud_default \
+  -e Edge__Id=plant-7 -e Edge__Broker__Host=broker -e Edge__Broker__Port=8883 ... \
+  scada-darbox/edge-agent:7f9692a
+```
+
+`SCADA_HTTP_PORT=8098` and `SCADA_BROKER_PORT=8885`, so this could not touch the on-premises stack
+already running on this machine.
+
+**Before the edge ran**, the Gateway held the edge entity with nothing declared, and a device whose
+driver key the edge does not have — `mqtt`, which the cloud registers and no edge does — was
+**accepted** into it (`POST /api/sites/…/devices` → `201`, `ab71ff25-…`). That is the deliberate
+half: an edge that has not declared is not a wrong edge, and a plant's devices are configured before
+its edge is switched on.
+
+**Then the edge connected, and the declaration arrived.** The edge's own log:
+
+```text
+2026-10-02T15:36:07.811259921Z  Connected to the broker at broker:8883; sending on
+                               scada/edge/plant-7/samples and reading scada/edge/plant-7/config.
+2026-10-02T15:36:07.811259921Z  Declared 2 driver(s) on scada/edge/plant-7/drivers: modbus-tcp, opc-ua.
+```
+
+The cloud, on the connection it already held for configuration — **0.019 s later**:
+
+```text
+2026-10-02T15:36:07.830658633Z  Edge plant-7 declared 2 driver(s): modbus-tcp, opc-ua.
+2026-10-02T15:36:07.830743405Z  Device Plant via mqtt (before the declaration) is assigned to edge
+                               plant-7, which has declared it has no 'mqtt' driver. The device will
+                               not be read, and the assignment is left as it is.
+```
+
+The second line is §8's third rule doing its job on the one device that got in before the
+declaration: named, recorded, and the assignment left alone. Its audit entry
+(`SELECT … FROM audit_log WHERE action='edge.drivers_declared'`) is one row, `actor_user_id` **null**
+(the edge has a certificate, not an account), `detail`:
+
+```text
+drivers              ["modbus-tcp", "opc-ua"]
+unreadableDeviceIds  ["ab71ff25-5056-40df-a37e-e6143bae57d5"]
+occurred_at          2026-10-02 15:36:07.835079+00     (0.0045 s after the cloud read it)
+```
+
+`GET /api/edges` then answered `declaredDriverKeys: ["modbus-tcp","opc-ua"]`,
+`driversDeclaredAtUtc: 2026-10-02T15:36:07.81545+00:00`, where it had answered `null` for both
+before the edge connected.
+
+**And the refusal.** The same save that had been accepted an hour earlier, now that the edge has
+declared:
+
+```text
+POST /api/sites/0f7a1b2c-…/devices  {driverKey: "mqtt", edgeId: plant-7}
+400  {"error":"Edge 'plant-7' has declared it cannot read 'mqtt'; the drivers it has declared are
+      'modbus-tcp', 'opc-ua'."}
+
+POST /api/sites/0f7a1b2c-…/devices  {driverKey: "modbus-tcp", edgeId: plant-7}
+201  93be187a-2cb3-48cf-acfb-c5069fd2bb1b
+```
+
+The message names the edge and the drivers it does have, and the driver it declared it has is
+accepted: the refusal is the driver, not the assignment. The broker's ACL admitted the new topic —
+the Gateway's subscription to `scada/edge/+/drivers` produced no refusal in
+`/mosquitto/audit/refused.log`.
+
+**One finding, and it is the same shape as the one this step closes.** The device assigned before
+the declaration was created with **no tags**, and the configuration the cloud derived from the
+catalogue carried it: the edge refused the **whole** message (`device 'Plant via mqtt (before the
+declaration)' has no tags`) — rightly, since a device with no tags is not a device (ADR-0019 §4),
+but the cloud published it without noticing, exactly as it once published a device whose driver
+nobody had. Nothing was lost: the edge kept reading the last configuration it had accepted. It is
+recorded in `open-work.md` as an open item rather than fixed here, because what to do about it — the
+Gateway refusing a tagless device an edge is assigned, or the derivation skipping it — is a decision
+before any code.
+
 ## What to report
 
 Anything that looks wrong or merely confusing, even where the behaviour is

@@ -16,7 +16,9 @@ using ScadaDarbox.EdgeAgent.Configuration;
 using ScadaDarbox.EdgeAgent.Uplink;
 using ScadaDarbox.Gateway.Contracts;
 using ScadaDarbox.Gateway.Tests.Hosting;
+using ScadaDarbox.Modules.Drivers.Modbus;
 using ScadaDarbox.Modules.Drivers.Mqtt;
+using ScadaDarbox.Modules.Drivers.OpcUa;
 using ScadaDarbox.Persistence.TimescaleDb;
 
 namespace ScadaDarbox.Gateway.Tests;
@@ -308,6 +310,12 @@ public sealed class EdgeIngestionTests : IClassFixture<GatewayTestHost>, IAsyncL
         // This test is about what the cloud does with what arrives; what the edge reads is
         // ConfigurationLinkTests' subject (ADR-0019).
         new EdgeConfigurationConsumer(new EdgeConfigurationSource(), buffer, NullLogger<EdgeConfigurationConsumer>.Instance),
+        // The real driver set: connecting makes this edge declare what it has (ADR-0019 §8), and a
+        // test that started the real service would say exactly this.
+        [
+            new ModbusTcpDriverFactory(TimeProvider.System),
+            new OpcUaDriverFactory(TimeProvider.System),
+        ],
         NullLogger<UplinkService>.Instance,
         clock);
 

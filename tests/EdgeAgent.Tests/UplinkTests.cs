@@ -11,7 +11,9 @@ using ScadaDarbox.Core.Model;
 using ScadaDarbox.EdgeAgent.Buffer;
 using ScadaDarbox.EdgeAgent.Configuration;
 using ScadaDarbox.EdgeAgent.Uplink;
+using ScadaDarbox.Modules.Drivers.Modbus;
 using ScadaDarbox.Modules.Drivers.Mqtt;
+using ScadaDarbox.Modules.Drivers.OpcUa;
 
 namespace ScadaDarbox.EdgeAgent.Tests;
 
@@ -27,6 +29,7 @@ public sealed class UplinkTests : IAsyncLifetime
     private readonly string _path = Path.Combine(Path.GetTempPath(), $"edge-buffer-{Guid.NewGuid():N}.db");
     private readonly int _port = FreePort();
     private readonly ConcurrentQueue<TagReading> _received = new();
+    private readonly ConcurrentQueue<string> _declared = new();
     private MqttServer? _broker;
     private IMqttClient? _cloud;
 
@@ -114,7 +117,58 @@ public sealed class UplinkTests : IAsyncLifetime
         buffer,
         // These tests are about what leaves the edge; what it reads is ConfigurationLinkTests' subject.
         new EdgeConfigurationConsumer(new EdgeConfigurationSource(), buffer, NullLogger<EdgeConfigurationConsumer>.Instance),
+        Drivers,
         NullLogger<UplinkService>.Instance);
+
+    /// <summary>The drivers this build has, as the composition root registers them (ADR-0002).</summary>
+    private static IDeviceDriverFactory[] Drivers =>
+    [
+        new ModbusTcpDriverFactory(TimeProvider.System),
+        new OpcUaDriverFactory(TimeProvider.System),
+    ];
+
+    [Fact]
+    public async Task The_edge_declares_the_drivers_this_build_has_and_a_late_cloud_still_hears_it()
+    {
+        // ADR-0019 §8: the cloud cannot work out which drivers an edge has — its own list is a
+        // different list — so the edge says so, on its own topic, and the declaration is retained
+        // because the cloud may be the one that arrives second.
+        await StartBrokerAsync(refuse: false);
+
+        using var buffer = SampleBuffer.Open(_path, maxPending: 1_000);
+        using var uplink = Uplink(buffer);
+        await uplink.StartAsync(CancellationToken.None);
+
+        await WaitUntilAsync(() => _declared.Count > 0, "the edge to declare its drivers");
+
+        var declared = EdgeDriversPayload.Read(_declared.First());
+        Assert.Null(declared.Refusal);
+        Assert.Equal(["modbus-tcp", "opc-ua"], declared.Drivers);
+
+        await uplink.StopAsync(CancellationToken.None);
+
+        // The cloud that was not there when the edge spoke: it subscribes now, and the broker hands
+        // it the same declaration. Not retained would mean an edge that connected first is an edge
+        // the cloud never learns about.
+        using var late = new MqttClientFactory().CreateMqttClient();
+        var heard = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        late.ApplicationMessageReceivedAsync += message =>
+        {
+            heard.TrySetResult(message.ApplicationMessage.ConvertPayloadToString());
+            return Task.CompletedTask;
+        };
+
+        await late.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _port).Build());
+        await late.SubscribeAsync(new MqttClientSubscribeOptionsBuilder()
+            .WithTopicFilter("scada/edge/plant-7/drivers", MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+
+        var retained = EdgeDriversPayload.Read(await heard.Task.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Null(retained.Refusal);
+        Assert.Equal(["modbus-tcp", "opc-ua"], retained.Drivers);
+
+        await late.DisconnectAsync();
+    }
 
     private async Task StartBrokerAsync(bool refuse)
     {
@@ -142,7 +196,17 @@ public sealed class UplinkTests : IAsyncLifetime
         var tags = new Dictionary<Guid, DriverTag> { [Tag] = new(Tag, "t", TagValueKind.Numeric) };
         _cloud.ApplicationMessageReceivedAsync += message =>
         {
-            var read = SamplePayload.Read(message.ApplicationMessage.ConvertPayloadToString(), tags);
+            var payload = message.ApplicationMessage.ConvertPayloadToString();
+
+            // The edge's declaration travels on its own topic, and the cloud reads it with the
+            // Gateway's own reader (ADR-0019 §8).
+            if (message.ApplicationMessage.Topic.EndsWith("/drivers", StringComparison.Ordinal))
+            {
+                _declared.Enqueue(payload);
+                return Task.CompletedTask;
+            }
+
+            var read = SamplePayload.Read(payload, tags);
             Assert.Null(read.Refusal);
             foreach (var sample in read.Accepted)
             {
@@ -154,6 +218,7 @@ public sealed class UplinkTests : IAsyncLifetime
         await _cloud.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _port).Build());
         await _cloud.SubscribeAsync(new MqttClientSubscribeOptionsBuilder()
             .WithTopicFilter("scada/edge/plant-7/samples", MqttQualityOfServiceLevel.AtLeastOnce)
+            .WithTopicFilter("scada/edge/plant-7/drivers", MqttQualityOfServiceLevel.AtLeastOnce)
             .Build());
     }
 
