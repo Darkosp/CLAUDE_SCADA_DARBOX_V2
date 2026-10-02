@@ -422,6 +422,113 @@ substitute for two hosts and a real link:
   answers on — here WSL's — because a PostgreSQL that already owns
   `localhost:5432` on the Windows side answers first and is not that server.
 
+## Appendix: the walk on two hosts, and two clocks
+
+Everything above runs on one machine. Two claims Phase 7 makes have only ever been tested under
+weaker conditions, and this is the appendix that closes them
+([`open-work.md`](open-work.md) §1.1 and §1.2):
+
+- **a link between two hosts** — a real cable, a real stack, a real name resolution, where the link
+  can half-fail rather than being disconnected instantaneously and totally;
+- **two clocks** — an edge whose clock genuinely disagrees with the cloud's, so a `SourceClockSkew`
+  entry is produced by a walk rather than only by a test.
+
+Steps 1–13 are unchanged. What follows is only what is different when the two ends are two
+machines. **A** is the cloud host, **B** is the edge host — a second machine, at home or on the
+plant floor.
+
+### Before anything: the four traps
+
+**1. The broker's name, not its address.** `certs.sh broker <name> broker` writes **DNS** names into
+the certificate (`subjectAltName=DNS:…`), so an edge that connects to a bare IP will fail TLS
+verification and no amount of port-forwarding will help. Give B a name for A that the certificate
+carries:
+
+```text
+# B: C:\Windows\System32\drivers\etc\hosts  (or /etc/hosts)
+192.0.2.50  mqtt.example.com
+```
+
+That is what DNS would do in a plant, done by hand for one walk. If A's address is not stable, this
+is the first thing to fix before starting. Extending `certs.sh` to issue `IP:` SANs is work this
+walk does not need — but if a plant will have no DNS at all, write that down as a finding, because
+today it cannot be done.
+
+**2. The port has to be reachable from B.** Compose publishes `${SCADA_BROKER_PORT}` on every
+interface of A, so the work is A's firewall and the network between them, not the file. Prove it
+from B **before** starting anything:
+
+```powershell
+Test-NetConnection mqtt.example.com -Port 8883
+```
+
+and look at what the broker actually presents:
+
+```bash
+openssl s_client -connect mqtt.example.com:8883 -servername mqtt.example.com -CAfile ca.crt </dev/null 2>&1 | head -20
+```
+
+`Verify return code: 0 (ok)` is the whole question answered in advance. Do not publish 8884 (the
+Gateway's listener) to do this — see the two listeners above.
+
+**3. Both clocks, before the skew is staged.** Both machines have to be right to begin with, or the
+walk's own numbers mean nothing: `w32tm /resync` on Windows, `Get-Date` on both. Then, for the
+two-clock half, **deliberately** put B's clock past `PushedSources:ClockSkewTolerance` (30 s — the
+Gateway's own setting, so read it from A's configuration rather than assuming): `Set-Date` needs an
+elevated prompt, or use Settings → Time & language → Date & time. +45 s is enough and obvious in the
+journal. Put it back when the check is done, and record both the offset and the fact that it was
+staged on purpose.
+
+**4. The cut is B's network, not a Docker command.** `docker network disconnect` exists only inside
+one host and is exactly the instantaneous, orderly loss this walk is meant to get away from. On B:
+
+```powershell
+Disable-NetAdapter -Name "Wi-Fi"      # or pull the cable; say which, it is a different failure
+Enable-NetAdapter  -Name "Wi-Fi"
+```
+
+Stopping the broker on A is the same outage seen from the other end, and it is the one that shows
+the broker's persistent session holding a queue. Walk both if there is time: a link that fails and
+a broker that is told to stop are not the same event, and the log lines differ.
+
+### The order
+
+1. On **A**: certificates (`certs.sh ca`, `broker <name> broker`, `client scada-gateway`,
+   `client <edge-id>`), then `deploy/build-images.sh HEAD`. Copy `ca.crt`, `<edge-id>.crt` and
+   `<edge-id>.key` to **B** — nothing else, and never `ca.key`.
+2. On **B**: the **edge agent's image**. Either build it there — `deploy/build-images.sh HEAD` on B
+   needs the .NET SDK and Docker, and on an arm64 board it is the only image that machine runs —
+   or move A's: `docker save scada-darbox/edge-agent:<tag> | gzip > edge.tar.gz`, then
+   `docker load < edge.tar.gz` on B. Both are the same tag, and the tag is what `SCADA_IMAGE_TAG`
+   names.
+3. On **A**: the cloud stack up (step 4), with `SCADA_BROKER_PORT` published.
+4. On **B**: the hosts-file entry (trap 1), then `Test-NetConnection` and `openssl s_client`
+   (trap 2). Nothing else until both are clean.
+5. On **B**: `deploy/edge/.env` with `SCADA_BROKER_HOST` set to the **name**, and the edge up
+   (step 6). Its log shows `Connected to the broker at <name>:<port>`; the Gateway's shows the
+   session.
+6. The device, the tag and the baseline (steps 5 and 7) — from whichever machine has the browser;
+   the screen has been walked already, so the API is enough.
+7. The cut (trap 4), the wait (step 9), the reconnect (step 10), the history (step 11).
+8. The clock half (trap 3): with the link up, shift B's clock, watch A's journal for a
+   `SourceClockSkew` entry, confirm the **stored `source_time` is still B's** — the edge's clock is
+   neither trusted nor overwritten, which is the whole claim — and put B's clock back.
+
+### What this walk must answer, beyond the numbers
+
+- **Does a half-open link behave differently from a disconnect?** The edge's publish has no timeout
+  of its own; what the walk sees when the socket is black-holed rather than closed is the finding,
+  whichever way it goes — and if the edge waits forever, that is a defect worth its own item.
+- **Does the session survive a real reconnect?** The broker keeps the queue under the Gateway's
+  client id; a reconnect that mints a new session loses the queue, and only a real link shows it.
+- **Does the edge's reconnect loop keep to its 2 s?** Over a real network it may back off, spin, or
+  hammer; count the attempts in its log for one minute of outage.
+- **Does A's firewall or the NAT drop a *mapping* rather than a connection?** That failure is the one
+  no single-machine walk can produce, and it is why this appendix exists.
+
+Still not measured by any of it: **a real arm64 board** (§1.3 — a Pi is the answer, and its image
+has run only under emulation), and **a browser** on the day of the walk.
+
 ## What to record
 
 Every number below is one the walk produced. None of it is in the repository, and

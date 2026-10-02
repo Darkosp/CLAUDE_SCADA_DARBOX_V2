@@ -34,7 +34,13 @@ conditions weaker than the claim.
   differ on.
 - **Needs:** a second machine (or a second host on a real network).
 - **Detail:** [`phase-7-manual-gate.md`](phase-7-manual-gate.md) step 0 (the two
-  decisions to make before starting) and its *What was not measured*.
+  decisions to make before starting), its *What was not measured*, and — added
+  2026-10-02 —
+  [*Appendix: the walk on two hosts, and two clocks*](phase-7-manual-gate.md#appendix-the-walk-on-two-hosts-and-two-clocks),
+  which is the recipe: the broker's name and not its address (`certs.sh` writes
+  DNS SANs, so the second machine needs a hosts-file entry), the port proved
+  reachable from it first, both clocks right before the skew is staged, and the
+  cut made by disabling that machine's network rather than a Docker disconnect.
 - **When it exists:** walk that procedure on two hosts, and record it as the
   first walk's record does — the numbers, the cut and reconnect times, and
   everything that looked wrong or merely confusing.
@@ -52,6 +58,8 @@ conditions weaker than the claim.
 - **Needs:** two machines whose clocks genuinely disagree.
 - **When it exists:** set one clock past the tolerance, confirm the journal
   records the skew, and confirm the stored `source_time` is still the edge's.
+  The two-host appendix above carries the trap: both clocks have to be right
+  before the offset is staged, or the walk's own numbers mean nothing.
 
 ### 1.3 A real arm64 board
 
