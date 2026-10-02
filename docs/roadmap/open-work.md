@@ -116,7 +116,7 @@ same claim in `HANDOVER-archive.md` and in ADR-0019's own context.
   are in
   [`phase-7-manual-gate.md`](phase-7-manual-gate.md#since-the-walk-the-provisioning-delivered-and-read).
   Nothing on the plant machine named a device, an address or a tag id.
-- **Found by that walk, and closed 2026-10-02** (this repository's PR #10). A device whose
+- **Found by that walk, and closed 2026-10-02** (this repository's PR #11). A device whose
   `driverKey` no edge driver answered to was accepted by the Gateway, derived, published, and
   refused only by the edge (`Device X needs driver 'y', which this edge agent does not have.`) —
   loud at the plant, silent in the cloud. ADR-0019 had left "whether an edge may be sent a device
