@@ -125,6 +125,16 @@ defects and not open questions: the work exists and nothing has been through it 
   cheapest place to watch it: assign a second device to that edge with no tags, confirm the
   edge's configuration is still accepted whole, then add one tag and confirm the edge picks the
   device up without a second edit.
+- **[ADR-0021](../architecture/decisions/0021-edge-reports-what-it-cannot-read.md) — an edge says
+  which assigned devices it cannot read, on its own declaration (version 2).** Decided and
+  implemented 2026-10-02, with its own tests. **What has not happened:** no run has had an edge
+  lose a driver under a live assignment. The state it is about needs a real edge whose build lacks
+  a driver that one of its assigned devices uses — a stripped or rolled-back agent image is the
+  cheapest way — after which the declaration should carry the device, the audit trail should name
+  it, `/api/edges` should report it, and the assignment should be unchanged. **And the version
+  half wants a walk of its own:** this is the project's first payload version bump, so the claim
+  that a version 1 message still reads and a version 3 is refused whole has been tested against
+  this build and never against two builds of different ages on a real link.
 
 ### 2.1 ADR-0019 configuration provisioning, end to end
 
@@ -434,7 +444,6 @@ decided inside an implementation pull request.
 | Alarm flapping — deadband, on-delay | `phase-plan.md`, "Deferred out of Phase 5.5" | **an ADR first**: each changes what an alarm *is* |
 | Filtering the journal (tag, event type, time) | same place | a phase that wants it |
 | Routing a tag write to an edge-assigned device | ADR-0019, Consequences | an ADR — the link is outbound only and the Gateway has no route |
-| A device whose `driverKey` the edge loses after declaring it | ADR-0019 §8, Consequences | the refusal travelling back from the edge — a payload version, and an ADR before it |
 | A link device derived from the edge rather than named | ADR-0019, Consequences | implementation, once decided — it is the last thing an operator types |
 | The Modbus 5 s response bound: driver constant or per-device setting | `phase-plan.md`, Phase 7 note | the design conversation; ADR-0016's pattern points one way |
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |

@@ -51,6 +51,7 @@ they say about it.
 | [0018](0018-edge-agent-runtime-and-buffer.md) | The edge agent runs self-contained on the CLR (Native AOT breaks OPC UA) and buffers in SQLite (amends ADR-0006) |
 | [0019](0019-edge-configuration-provisioning.md) | How an edge is configured: the cloud is the source of truth, delivered over the link it already has |
 | [0020](0020-devices-with-no-tags.md) | A device with no tags is omitted from an edge's configuration — the derivation cannot produce what the reader refuses |
+| [0021](0021-edge-reports-what-it-cannot-read.md) | An edge says which assigned devices it cannot read, on its driver declaration — the project's first payload version bump |
 
 ## Template
 

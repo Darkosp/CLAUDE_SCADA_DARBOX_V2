@@ -44,6 +44,15 @@ device and names it in the Gateway's log. That decision is
 [ADR-0020](0020-devices-with-no-tags.md), and the note at the end of this ADR
 that listed a tagless device as waiting for a decision is no longer open.
 
+*Amended 2026-10-02, a third time.* §8 closes the direction in which the cloud
+refuses a device the edge cannot read. The direction it left open — an edge that
+loses a driver after the assignment, so no save re-examines it — is decided by
+[ADR-0021](0021-edge-reports-what-it-cannot-read.md), which also makes
+`EdgeDriversPayload` version 2: a version 1 message declares drivers and nothing
+about what the edge cannot read, and the cloud reads both versions. The note in
+Consequences that listed this as waiting for a payload version and an ADR is no
+longer open. Nothing else about the decisions below changed.
+
 That leaves two lists a human must keep in agreement:
 
 - the cloud Gateway's MQTT device and its tags, created in the web client;
@@ -235,6 +244,14 @@ write on its own declaration and the Gateway read on all of them.
   that has not declared is shown as having declared nothing, not as having the
   cloud's list. The declaration is a compatibility surface like the two payloads
   beside it, and carries a version from its first message.
+- **A device whose `driverKey` the edge loses after declaring it is reported by the edge.**
+  *Corrected 2026-10-02.* §8 above closes the direction in which the cloud is the one speaking:
+  a device is refused when it is assigned to an edge that has declared it cannot read it. The
+  other direction — an edge that loses a driver *after* the assignment, so nothing re-examines it
+  — is decided by [ADR-0021](0021-edge-reports-what-it-cannot-read.md): the edge's declaration
+  carries the devices it has been assigned and cannot read, version 2, and the cloud records and
+  reports them without touching the assignment. The note in Consequences that listed this as
+  waiting for a payload version and an ADR is no longer open.
 - **Not decided here, and left to implementation:** live reload instead of a
   restart; how a device moving from one edge to another is ordered so that no
   reading is attributed twice; and the link device being derived from the edge
