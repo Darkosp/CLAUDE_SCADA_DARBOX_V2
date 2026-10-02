@@ -57,8 +57,15 @@ public sealed class ScratchDatabase : IAsyncDisposable
     /// <summary>Why it is not reachable, in a sentence a skip message can carry.</summary>
     internal static string Unavailable => AvailabilityProbe.Why;
 
+    /// <remarks>
+    /// <c>Command Timeout=0</c>, for the reason <c>Persistence.Tests</c>' copy of this string
+    /// documents at length: this connection carries <c>CREATE</c>/<c>DROP DATABASE</c> and nothing
+    /// else, and a client-side ten-second deadline made the client give up while the server was
+    /// still working — a failed test that passes on its own. The <c>Timeout=3</c> stays, because
+    /// failing fast on an absent server is what the availability probe needs.
+    /// </remarks>
     private static string ServerConnectionString =>
-        $"Host={ServerHost};Port={ServerPort};Database=postgres;Username=scada;Password=scada;Timeout=3;Command Timeout=10";
+        $"Host={ServerHost};Port={ServerPort};Database=postgres;Username=scada;Password=scada;Timeout=3;Command Timeout=0";
 
     public static async Task<ScratchDatabase> CreateMigratedAsync()
     {

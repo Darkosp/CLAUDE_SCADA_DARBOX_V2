@@ -32,8 +32,20 @@ public sealed class TestDatabase : IAsyncLifetime
     private static readonly string ServerPort =
         Environment.GetEnvironmentVariable("SCADA_TEST_DB_PORT") ?? "5432";
 
+    /// <remarks>
+    /// <c>Command Timeout=0</c>: no client-side deadline on <c>CREATE</c>/<c>DROP DATABASE</c>.
+    /// This connection carries DDL and nothing else, and creating or dropping a database is slow
+    /// on a loaded server — seven assemblies at once, several of them doing the same thing, each
+    /// migration running hundreds of statements. With the ten seconds this string used to carry,
+    /// the <em>client</em> gave up while the server was still working, which surfaced as
+    /// <c>NpgsqlException … TimeoutException: Timeout during reading attempt</c> inside
+    /// <see cref="DropEmptyAsync"/> and as a failed test that passes on its own. Measured
+    /// 2026-10-02: five of eight whole-solution runs, never once in isolation. The
+    /// <c>Timeout=3</c> beside it stays — connecting fast and failing fast is still right, and the
+    /// availability probe depends on it.
+    /// </remarks>
     private static string ServerConnectionString =>
-        $"Host={ServerHost};Port={ServerPort};Database=postgres;Username=scada;Password=scada;Timeout=3;Command Timeout=10";
+        $"Host={ServerHost};Port={ServerPort};Database=postgres;Username=scada;Password=scada;Timeout=3;Command Timeout=0";
 
     /// <summary>
     /// The application role belongs to the whole server, so every run gives it the same

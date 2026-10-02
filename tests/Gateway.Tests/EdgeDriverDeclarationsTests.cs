@@ -57,7 +57,12 @@ public sealed class EdgeDriverDeclarationsTests : IAsyncLifetime
         await StartPublisherAsync(plant);
 
         await PublishAsync("scada/edge/edge-a/drivers", EdgeDriversPayload.Write(["modbus-tcp"]));
+        // Both, in order: the declaration is recorded and the catalogue reloaded *before* the
+        // audit row is appended, so waiting only for the first leaves the assertion below racing
+        // the write it checks. Measured 2026-10-02 — this failed in four of eight whole-solution
+        // runs and never once in isolation.
         await WaitUntilAsync(() => plant.Catalogue.Declarations.Count == 1, "the declaration to be recorded");
+        await WaitUntilAsync(() => plant.Audit.Entries.Count == 1, "the declaration to be audited");
         // The catalogue now holds what the edge said, and the cloud's own list is not involved.
         Assert.Equal(["modbus-tcp"], plant.Catalogue.Declarations[0].Drivers);
         Assert.Equal(["modbus-tcp"], plant.Source.Current.Edges.Single().DeclaredDriverKeys);
@@ -93,6 +98,8 @@ public sealed class EdgeDriverDeclarationsTests : IAsyncLifetime
         // than nothing having arrived yet.
         await PublishAsync("scada/edge/edge-a/drivers", EdgeDriversPayload.Write(["modbus-tcp"]));
         await WaitUntilAsync(() => plant.Catalogue.Declarations.Count == 1, "the known edge's declaration");
+        // The audit row is appended after the reload, so it gets its own wait (see the test above).
+        await WaitUntilAsync(() => plant.Audit.Entries.Count == 1, "the known edge's declaration to be audited");
 
         Assert.Equal(EdgeId, plant.Catalogue.Declarations[0].EdgeId);
         Assert.Single(plant.Audit.Entries);
@@ -113,6 +120,8 @@ public sealed class EdgeDriverDeclarationsTests : IAsyncLifetime
 
         await PublishAsync("scada/edge/edge-a/drivers", EdgeDriversPayload.Write(["modbus-tcp"]));
         await WaitUntilAsync(() => plant.Catalogue.Declarations.Count == 1, "the readable declaration");
+        // The audit row is appended after the reload, so it gets its own wait (see the first test).
+        await WaitUntilAsync(() => plant.Audit.Entries.Count == 1, "the readable declaration to be audited");
 
         Assert.Equal(["modbus-tcp"], plant.Catalogue.Declarations[0].Drivers);
         Assert.Equal(["modbus-tcp"], plant.Source.Current.Edges.Single().DeclaredDriverKeys);
