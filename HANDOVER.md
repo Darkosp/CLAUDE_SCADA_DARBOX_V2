@@ -2,6 +2,12 @@
 
 Written 2026-09-27, on `main` at `886d959`, worktree clean, in sync with `origin/main`.
 
+*Amended 2026-10-02, on `main` at `df191b3`: ADR-0019 §8 (an edge declares its own drivers, and the
+cloud refuses what it cannot read) is built and walked, and §5 gained the section a second machine
+needs — what travels through git and what has to exist again on each machine. The file is worked on
+from a work computer and a home one, so read that section before assuming your checkout is the
+state.*
+
 This is a summary for whoever picks the repository up next: what is finished, what the
 repository is made of, what it is built from, what is left, and what will bite you. It is a
 summary with pointers, not a source of truth — the binding documents remain
@@ -275,8 +281,10 @@ changed by a new ADR that supersedes it, never edited into a different decision.
 
 ### First hour of the next session
 
-1. Read `CLAUDE.md`, the ADR index, `phase-plan.md` (Phase 7's scope and status) and the Phase 7
-   gate record. Everything else follows from those.
+1. Read `CLAUDE.md`, the ADR index, `phase-plan.md` (Phase 7's scope and status), the Phase 7
+   gate record, and [`docs/roadmap/open-work.md`](docs/roadmap/open-work.md) — the register of
+   everything unfinished, each item naming what it waits for. If this is **not** the machine that
+   wrote the last note, read §5's *Two machines* first; it is short and it saves the rest.
 2. Fix the local database/port trap first (§5) or the integration half of the suite will stay
    skipped and "green" will mean less than it looks.
 3. Check `git status` before assuming any document was committed. Design-conversation documents
@@ -289,6 +297,36 @@ changed by a new ADR that supersedes it, never edited into a different decision.
 Nothing in this section is hidden — most of it is already recorded in the phase notes — but a
 new session that does not know it will misread a green test run, break the build scripts, or go
 looking for defects that were fixed months ago.
+
+### Two machines: what travels through git, and what does not (2026-10-02)
+
+This project is worked on from more than one machine (a work computer and a home one), which is
+why `docs/roadmap/open-work.md` exists at all. **The repository is the handover**: everything a
+session needs to know is a file in it, and `git pull` is the whole transfer of state. What follows
+is the short list of things that are *not* in the repository and have to exist again on each
+machine. None of it is project state — all of it is regenerable in minutes.
+
+| Not in git | Why, and what to do on the next machine |
+|---|---|
+| `deploy/.env`, `deploy/cloud/.env`, `deploy/edge/.env` | Ignored, deliberately (they hold passwords). Copy from each `.env.example` and fill in. The values one walk used — `SCADA_HTTP_PORT=8098`, `SCADA_BROKER_PORT=8885`, image tag, cert dir — are in the Phase 7 gate record's walk sections. |
+| `src/Web/node_modules` | Ignored. `npm install` in `src/Web`. The client's `npm test` script compiles `models.ts` with `tsc` first, so it needs them; without them it fails with `'tsc' is not recognized`. |
+| Certificates | Made, never committed, and `ca.key` must stay on the one machine that signs. On a second machine: copy `ca.crt` plus that machine's own certificate and key, or re-run `deploy/cloud/certs.sh client <name>` where the CA is. `certs.sh expiry` lists every date. |
+| Docker images | `deploy/build-images.sh HEAD` on the machine that runs them, or `docker save`/`docker load`. They are tagged with the commit they came from, so a stale image is visible rather than silent. |
+| A database for the suite | A container with `SCADA_TEST_DB_PORT` set to a port the host actually answers on (trap 1 above), or the integration half of the suite skips and "green" means less than it looks. |
+| Running stacks | `docker compose … up -d` per topology; nothing about a running container is remembered anywhere. |
+
+**The workspace's own file permissions are a trap on Windows, measured here 2026-10-02.** A
+confined session can end up unable to write anywhere below the workspace root: the harness reports
+`SetNamedSecurityInfoW failed (Win32 5): grantWrite(C:\…\DEEP_SCADA_DARBOX)` on its first command,
+or commands fail afterwards with `git fetch` → `cannot open '.git/FETCH_HEAD': Permission denied`
+and `dotnet build src/Core` → `Access to the path '…\src\Core\obj' is denied`, while plain file
+reads and edits still work. It is a permissions problem on the *machine*, not in the repository:
+the DSH skill `diagnose-windows-sandbox-acl` repairs the rights that are missing (one command, with
+a backup and a rollback command written beside it), and where the directory it repairs is still not
+enough, the session has to run with **full access** for the work. Symptoms, cause and the two
+recovery commands of the first repair are in this session's record on the work machine
+(`C:\GitProekti\dsh-acl-recovery\`); nothing about it is committed, because nothing about it
+belongs to the project.
 
 ### Traps measured on this machine, 2026-09-27
 

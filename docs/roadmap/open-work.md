@@ -154,7 +154,11 @@ same claim in `HANDOVER-archive.md` and in ADR-0019's own context.
   and `EdgeConfigurationPublishingTests.A_change_is_published_retained_to_that_edges_topic` each
   failed once. Each passed when its class ran alone, and the next whole-project run was green at
   **119 passed, 0 skipped**. Recorded rather than chased, for the reason the flake below is: a test
-  that fails only under load makes "the suite is green" mean less than it looks.
+  that fails only under load makes "the suite is green" mean less than it looks. A fix for exactly
+  this class — the broker's port taken at the bind rather than twenty seconds later — was opened as
+  this repository's **PR #10 and closed without merging** (2026-10-02), so nothing about it is in
+  `main` and the flakes above remain: whoever picks this up should decide whether to port that work
+  or to say why it was closed.
 - **Also found by the walk, 2026-10-02, and open: a device with no tags is derived into a
   configuration the edge refuses whole.** A device assigned to an edge before its tags existed
   travelled in the message, and the edge refused all of it (`device '…' has no tags`) — the reader
