@@ -35,6 +35,15 @@ answered to was accepted by the Gateway, derived into the configuration,
 published, and refused only by the edge — loud on the plant machine, silent in
 the cloud. §8 decides it. Nothing else about the decision changed.
 
+*Amended 2026-10-02, again.* The same walk found a second case, on the other
+axis: a device with **no tags**, assigned before its tags existed, was derived,
+published, and refused by the edge — with the whole message, so the readable
+devices went with it. Clause 3 below says a device's tags travel to the edge and
+did not say what happens when there are none; the derivation now omits such a
+device and names it in the Gateway's log. That decision is
+[ADR-0020](0020-devices-with-no-tags.md), and the note at the end of this ADR
+that listed a tagless device as waiting for a decision is no longer open.
+
 That leaves two lists a human must keep in agreement:
 
 - the cloud Gateway's MQTT device and its tags, created in the web client;
@@ -230,6 +239,11 @@ write on its own declaration and the Gateway read on all of them.
   restart; how a device moving from one edge to another is ordered so that no
   reading is attributed twice; and the link device being derived from the edge
   rather than named, so that nothing about an edge is typed by hand.
+- **A device with no tags was in that list and no longer is.** *Corrected
+  2026-10-02.* The walk found the derivation producing a device the payload reader
+  refuses, which took the edge's whole configuration down with it.
+  [ADR-0020](0020-devices-with-no-tags.md) decides it: the derivation omits such a
+  device and names it in the Gateway's log. The other three above remain open.
 
 ## Verified in review by
 

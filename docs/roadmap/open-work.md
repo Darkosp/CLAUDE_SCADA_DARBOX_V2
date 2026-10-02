@@ -111,6 +111,21 @@ untouched: both hosts that walk used were x64.
 
 ## 2. Built, and walked on 2026-10-01
 
+### 2.0 Written, and not yet walked
+
+Decided, implemented, tested — and waiting only for a run that exercises it. These are not
+defects and not open questions: the work exists and nothing has been through it end to end.
+
+- **[ADR-0020](../architecture/decisions/0020-devices-with-no-tags.md) — a tagless device is
+  omitted from the derivation.** Decided and implemented 2026-10-02 from §2.1's finding, with its
+  own tests. **What has not happened:** no run has had a tagless device assigned to an edge while
+  the new derivation was running, so the path the finding describes — assignment accepted,
+  derivation omits it, the log line is written, and the first tag's save republishes it to the
+  edge — has been tested in unit tests and not watched on a link. The two-host walk is the
+  cheapest place to watch it: assign a second device to that edge with no tags, confirm the
+  edge's configuration is still accepted whole, then add one tag and confirm the edge picks the
+  device up without a second edit.
+
 ### 2.1 ADR-0019 configuration provisioning, end to end
 
 **This is the item that caused this file to exist.** Four documents said, in the
@@ -205,12 +220,17 @@ same claim in `HANDOVER-archive.md` and in ADR-0019's own context.
   this repository's **PR #10 and closed without merging** (2026-10-02), so nothing about it is in
   `main` and the flakes above remain: whoever picks this up should decide whether to port that work
   or to say why it was closed.
-- **Also found by the walk, 2026-10-02, and open: a device with no tags is derived into a
-  configuration the edge refuses whole.** A device assigned to an edge before its tags existed
-  travelled in the message, and the edge refused all of it (`device '…' has no tags`) — the reader
-  is right, since a device with no tags is not a device, but the cloud published it without
-  noticing, which is the shape of the finding this step closed. Nothing was lost: the edge kept
-  reading the last configuration it accepted. It waits for a **decision** (§3), not for a fix.
+- **Also found by the walk, 2026-10-02, and decided the same day:
+  [ADR-0020](../architecture/decisions/0020-devices-with-no-tags.md).** A device with no tags is
+  derived into a configuration the edge refuses whole. A device assigned to an edge before its
+  tags existed travelled in the message, and the edge refused all of it (`device '…' has no
+  tags`) — the reader is right, since a device with no tags is not a device, but the cloud
+  published it without noticing, which is the shape of the finding this step closed. **The
+  decision is that the derivation omits such a device and names it in the Gateway's log**, so
+  the operator's natural order — create the device, assign it, add its tags — keeps working and
+  the device reaches the edge when its first tag is saved. Nothing was lost when the walk met
+  it: the edge kept reading the last configuration it accepted. **This is written but not
+  walked** — see §2.0.
 
 ### 2.2 The database half of the suite, on this machine — **closed 2026-10-01**
 
@@ -335,7 +355,6 @@ decided inside an implementation pull request.
 | Alarm flapping — deadband, on-delay | `phase-plan.md`, "Deferred out of Phase 5.5" | **an ADR first**: each changes what an alarm *is* |
 | Filtering the journal (tag, event type, time) | same place | a phase that wants it |
 | Routing a tag write to an edge-assigned device | ADR-0019, Consequences | an ADR — the link is outbound only and the Gateway has no route |
-| A device with no tags, assigned to an edge | §2.1 above — the walk's finding of 2026-10-02 | a decision first: the Gateway refusing a tagless device that is assigned to an edge, or the derivation leaving it out of the message |
 | A device whose `driverKey` the edge loses after declaring it | ADR-0019 §8, Consequences | the refusal travelling back from the edge — a payload version, and an ADR before it |
 | A link device derived from the edge rather than named | ADR-0019, Consequences | implementation, once decided — it is the last thing an operator types |
 | The Modbus 5 s response bound: driver constant or per-device setting | `phase-plan.md`, Phase 7 note | the design conversation; ADR-0016's pattern points one way |

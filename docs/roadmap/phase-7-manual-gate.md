@@ -1278,6 +1278,12 @@ recorded in `open-work.md` as an open item rather than fixed here, because what 
 Gateway refusing a tagless device an edge is assigned, or the derivation skipping it — is a decision
 before any code.
 
+**Decided the same day: [ADR-0020](../architecture/decisions/0020-devices-with-no-tags.md).** The
+derivation omits a device with no tags and names it in the Gateway's log, so the operator's natural
+order keeps working and the device reaches the edge when its first tag is saved. The reader is not
+weakened: it still refuses an empty tag array. What that ADR has **not** had is a walk of its own —
+`open-work.md` §2.0 says what it waits for.
+
 ## The walk on two hosts, and two clocks (2026-10-02)
 
 The first walk of this gate that crossed a real network boundary, and the first
