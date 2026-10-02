@@ -162,6 +162,29 @@ public sealed class EdgeConfigurationTests
         Assert.Empty(omitted);
     }
 
+    [Fact]
+    public void A_devices_first_tag_is_what_puts_it_into_the_configuration()
+    {
+        // ADR-0020's other half, and the reason omitting a tagless device costs nothing: the
+        // catalogue is rebuilt by the operator's own edit, so the device appears without a second
+        // edit of the device and without anyone re-saving the assignment.
+        var fixture = new ProvisioningFixture();
+        fixture.Assign(fixture.Plc);
+        var tag = fixture.RemoveTags(fixture.Plc);
+
+        Assert.Empty(Derive(fixture, out var omitted));
+        Assert.Equal(new[] { "Discharge PLC" }, omitted);
+
+        fixture.ReplaceTags(fixture.Plc, tag);
+
+        // Back in the configuration, and out of the omitted list — without the assignment being
+        // saved again or the device being edited.
+        var devices = Derive(fixture, out var stillOmitted);
+        Assert.Equal(new[] { "Discharge PLC" }, devices.Select(device => device.Name).ToList());
+        Assert.Single(devices);
+        Assert.Empty(stillOmitted);
+    }
+
     private static IReadOnlyList<EdgeConfigurationDevice> Derive(
         ProvisioningFixture fixture,
         out IReadOnlyList<string> omitted) =>
@@ -274,11 +297,24 @@ public sealed class EdgeConfigurationTests
 
         /// <summary>
         /// Takes every tag off a device, as if none had been added yet — the state ADR-0020 is
-        /// about. The catalogue is rebuilt, which is what an operator's own edit does.
+        /// about — and hands them back so a test can put them back. The catalogue is rebuilt, which
+        /// is what an operator's own edit does.
         /// </summary>
-        internal void RemoveTags(Device device)
+        internal IReadOnlyList<Tag> RemoveTags(Device device)
         {
+            var removed = Tags.Where(tag => tag.DeviceId == device.Id).ToList();
             Tags.RemoveAll(tag => tag.DeviceId == device.Id);
+            Catalog = Rebuild();
+            return removed;
+        }
+
+        /// <summary>
+        /// Puts tags back on a device — the save that makes a device which was omitted for having
+        /// none appear in the derived configuration (ADR-0020).
+        /// </summary>
+        internal void ReplaceTags(Device device, IReadOnlyList<Tag> tags)
+        {
+            Tags.AddRange(tags);
             Catalog = Rebuild();
         }
 

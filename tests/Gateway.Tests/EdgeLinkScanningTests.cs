@@ -1,5 +1,9 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using ScadaDarbox.Core.Configuration;
+using ScadaDarbox.Core.Model;
+using ScadaDarbox.Gateway.Configuration;
 using ScadaDarbox.Gateway.Contracts;
 using ScadaDarbox.Gateway.Tests.Hosting;
 using ScadaDarbox.Persistence.TimescaleDb;
@@ -66,9 +70,18 @@ public sealed class EdgeLinkScanningTests : IClassFixture<GatewayTestHost>
     }
 
     /// <summary>
-    /// Assigns a device to a new edge through the API an operator uses: create the edge naming the
-    /// device that carries its link, then edit the device to name that edge (ADR-0019).
+    /// Assigns a device to a new edge through the API an operator uses: create the edge, then edit
+    /// the device to name that edge (ADR-0019).
     /// </summary>
+    /// <remarks>
+    /// The edge is created through the API and its link is then set **directly**, which no API
+    /// call can do any more: the Gateway derives an edge's link from the edge and the deployment
+    /// (ADR-0022), and what it derives is an MQTT device. This test is about the scan path rather
+    /// than about the derivation, and it needs the stand-in pushing driver — which can emit a
+    /// sample on demand, and which no derivation would ever produce — so it reaches past the API
+    /// to say so. That is the shape of a test using a fixture the product cannot make, and it is
+    /// said here rather than left for a reader to wonder at.
+    /// </remarks>
     private async Task AssignAsync(Guid deviceId, Guid linkDeviceId)
     {
         using var client = _host.CreateClient(await _host.LoginAsAdminAsync());
@@ -77,6 +90,24 @@ public sealed class EdgeLinkScanningTests : IClassFixture<GatewayTestHost>
             "/api/edges", new { name = $"edge-{Guid.NewGuid():N}", linkDeviceId });
         created.EnsureSuccessStatusCode();
         var edgeId = await created.Content.ReadFromJsonAsync<Guid>();
+
+        var edges = _host.Services.GetRequiredService<IEdgeRepository>();
+        var reloader = _host.Services.GetRequiredService<ConfigurationReloader>();
+        var edge = (await edges.GetAllAsync(CancellationToken.None)).Single(candidate => candidate.Id == edgeId);
+
+        await edges.UpdateAsync(
+            new Edge
+            {
+                Id = edge.Id,
+                TenantId = edge.TenantId,
+                Name = edge.Name,
+                LinkDeviceId = linkDeviceId,
+                LinkStaleness = edge.LinkStaleness,
+                LinkSessionExpiry = edge.LinkSessionExpiry,
+            },
+            CancellationToken.None);
+
+        await reloader.ReloadAsync(CancellationToken.None);
 
         // Assigning is an ordinary edit of the device (ADR-0019 §2), so the device is saved whole
         // with the edge it now belongs to — the same request the device form makes.

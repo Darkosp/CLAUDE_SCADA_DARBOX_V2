@@ -92,6 +92,28 @@ public sealed class Edge
     /// </para>
     /// </remarks>
     public IReadOnlyList<EdgeUnreadableDevice>? UnreadableDevices { get; set; }
+
+    /// <summary>
+    /// How long this edge's link may be silent before the tags of the devices it reads go Bad
+    /// (ADR-0016, ADR-0022).
+    /// </summary>
+    /// <remarks>
+    /// On the edge rather than on the link device, because the edge *is* the link: ADR-0019 §5 gives
+    /// the limit to the transport that carries the values, and the Gateway never opens a connection
+    /// to a device an edge reads. The link device the Gateway derives carries this value, and the
+    /// device is not overridable, so this is the only place the limit is chosen.
+    /// </remarks>
+    public TimeSpan LinkStaleness { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// How long the broker queues for this edge while the Gateway is away (ADR-0022).
+    /// </summary>
+    /// <remarks>
+    /// Beside the staleness limit for the same reason: it is a property of the link, not of the
+    /// Gateway. Past it the broker discards what it held, which is why the edge buffers on disk
+    /// first (ADR-0017) — this is the far end's patience, not the near end's memory.
+    /// </remarks>
+    public TimeSpan LinkSessionExpiry { get; set; } = TimeSpan.FromHours(720);
 }
 
 /// <summary>

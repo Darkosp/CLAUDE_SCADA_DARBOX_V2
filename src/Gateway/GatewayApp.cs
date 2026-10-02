@@ -227,6 +227,16 @@ public static class GatewayApp
         });
         services.AddSingleton<EdgeDriverDeclarations>();
         services.AddHostedService<EdgeConfigurationPublisher>();
+
+        // And where each edge's link device is written, so that nothing about an edge is typed by
+        // hand (ADR-0022). Only while provisioning is on: with no broker to subscribe to, a derived
+        // link would be a device that cannot connect.
+        //
+        // Registered as itself as well as a hosted service, because the save that creates an edge
+        // derives that edge's link before it answers — so the DI container has to be able to hand
+        // the same instance to an endpoint as it runs in the background.
+        services.AddSingleton<LinkDeviceProvisioner>();
+        services.AddHostedService(provider => provider.GetRequiredService<LinkDeviceProvisioner>());
     }
 
     private static void RegisterSecurity(

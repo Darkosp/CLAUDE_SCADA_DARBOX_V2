@@ -2,6 +2,7 @@ using ScadaDarbox.Core.Configuration;
 using ScadaDarbox.Core.Model;
 using ScadaDarbox.Core.Tags;
 using ScadaDarbox.Gateway.Contracts;
+using ScadaDarbox.Gateway.Provisioning;
 using ScadaDarbox.Gateway.Security;
 
 namespace ScadaDarbox.Gateway.Configuration;
@@ -47,7 +48,9 @@ internal static class EdgeEndpoints
                         .ToArray(),
                     edge.DeclaredDriverKeys,
                     edge.DriversDeclaredAt,
-                    UnreadableDevices(edge, catalog))));
+                    UnreadableDevices(edge, catalog),
+                    (int)edge.LinkStaleness.TotalSeconds,
+                    (int)edge.LinkSessionExpiry.TotalHours)));
         });
 
         edges.MapPost("", async (
@@ -56,29 +59,78 @@ internal static class EdgeEndpoints
             DriverShapes shapes,
             IEdgeRepository repository,
             ConfigurationReloader reloader,
+            LinkDeviceProvisioner provisioner,
+            ILoggerFactory loggerFactory,
             CancellationToken cancellationToken) =>
         {
             var catalog = catalogSource.Current;
 
-            if (ProblemWithLink(request.LinkDeviceId, catalog, shapes) is { } problem)
-            {
-                return Results.BadRequest(new { error = problem });
-            }
-
+            // LinkDeviceId is deliberately not read from the request (ADR-0022 §6). An edge's link
+            // carries its samples, and a link naming a topic the edge does not publish to is an edge
+            // that is silent — Bad tags, no error, and nothing that says why. That is the failure the
+            // derivation exists to make unrepresentable, so the Gateway writes the link and an
+            // operator does not choose it. The field stays on the request so an older client can
+            // still send one; it is ignored.
             var edge = new Edge
             {
                 Id = Guid.NewGuid(),
                 // The tenant is the ownership scope (ADR-0004), not a field of the form.
                 TenantId = catalog.Tenant.Id,
                 Name = request.Name,
-                LinkDeviceId = request.LinkDeviceId,
+                // One link per edge, never shared: a single subscription carrying every edge would
+                // give one staleness limit to all of them, so one silent plant would mark every
+                // other plant's tags Bad (ADR-0019 §5, ADR-0022 §2).
             };
 
-            return await ConfigurationEndpoints.SaveAsync(
+            // Null means the form did not mention them, which for a new edge is the MQTT driver's
+            // own defaults — so an edge created by an older client behaves as one always has.
+            if (request.LinkStalenessSeconds is { } staleness)
+            {
+                if (ProblemWithStaleness(staleness) is { } stalenessProblem)
+                {
+                    return Results.BadRequest(new { error = stalenessProblem });
+                }
+
+                edge.LinkStaleness = TimeSpan.FromSeconds(staleness);
+            }
+
+            if (request.LinkSessionExpiryHours is { } expiry)
+            {
+                if (ProblemWithSessionExpiry(expiry) is { } expiryProblem)
+                {
+                    return Results.BadRequest(new { error = expiryProblem });
+                }
+
+                edge.LinkSessionExpiry = TimeSpan.FromHours(expiry);
+            }
+
+            // The link is derived **after** SaveAsync, not inside it. Deriving is not part of the
+            // save: if it failed inside the success factory the operator would be told the create
+            // failed while the edge is in the database and valid — a worse lie than a link that
+            // appears a second later. So the create answers for itself, and the derivation is
+            // attempted immediately after and retried by the background pass.
+            var created = await ConfigurationEndpoints.SaveAsync(
                 () => repository.AddAsync(edge, cancellationToken),
                 reloader,
                 cancellationToken,
                 () => Results.Created($"/api/edges/{edge.Id}", edge.Id));
+
+            // As soon as it lands, so the edge the operator has just made already has the thing its
+            // samples arrive through — there is no window in which an assignment is refused for a
+            // link that is coming (ADR-0022).
+            try
+            {
+                await provisioner.ProvisionAsync(edge.Id, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                loggerFactory.CreateLogger(typeof(EdgeEndpoints)).LogWarning(
+                    exception,
+                    "Edge {Edge} was created but its link device could not be derived yet; the background pass will try again (ADR-0022).",
+                    edge.Name);
+            }
+
+            return created;
         }).AdminWrite("edge.create", "edge");
 
         edges.MapPut("/{edgeId:guid}", async (
@@ -90,18 +142,43 @@ internal static class EdgeEndpoints
             ConfigurationReloader reloader,
             CancellationToken cancellationToken) =>
         {
-            if (ProblemWithLink(request.LinkDeviceId, catalogSource.Current, shapes) is { } problem)
-            {
-                return Results.BadRequest(new { error = problem });
-            }
+            // As on create: the link is the Gateway's to write, not the operator's to choose
+            // (ADR-0022 §6). An existing link is carried through unchanged, so a rename or a limit
+            // edit does not disturb it — the guard that refuses to move a link under a live
+            // assignment is then never met by an ordinary save.
+            var existing = catalogSource.Current.Edges.FirstOrDefault(candidate => candidate.Id == edgeId);
 
             var edge = new Edge
             {
                 Id = edgeId,
                 TenantId = catalogSource.Current.Tenant.Id,
                 Name = request.Name,
-                LinkDeviceId = request.LinkDeviceId,
+                LinkDeviceId = existing?.LinkDeviceId,
+                // Null on either means "unchanged", so a form that does not show these cannot reset
+                // them. An unknown edge keeps the defaults and will be refused by the repository.
+                LinkStaleness = existing?.LinkStaleness ?? TimeSpan.FromSeconds(60),
+                LinkSessionExpiry = existing?.LinkSessionExpiry ?? TimeSpan.FromHours(720),
             };
+
+            if (request.LinkStalenessSeconds is { } staleness)
+            {
+                if (ProblemWithStaleness(staleness) is { } stalenessProblem)
+                {
+                    return Results.BadRequest(new { error = stalenessProblem });
+                }
+
+                edge.LinkStaleness = TimeSpan.FromSeconds(staleness);
+            }
+
+            if (request.LinkSessionExpiryHours is { } expiry)
+            {
+                if (ProblemWithSessionExpiry(expiry) is { } expiryProblem)
+                {
+                    return Results.BadRequest(new { error = expiryProblem });
+                }
+
+                edge.LinkSessionExpiry = TimeSpan.FromHours(expiry);
+            }
 
             return await ConfigurationEndpoints.SaveAsync(
                 () => repository.UpdateAsync(edge, cancellationToken),
@@ -173,6 +250,37 @@ internal static class EdgeEndpoints
 
         return unreadable;
     }
+
+    /// <summary>
+    /// Why this staleness limit cannot be used, or null when it can (ADR-0016, ADR-0022).
+    /// </summary>
+    /// <remarks>
+    /// The same bounds the MQTT driver checks, said earlier and by name: the driver's refusal
+    /// arrives as a device that cannot be built, which is a worse thing to hand an operator than a
+    /// 400 on the form they typed it into.
+    /// </remarks>
+    private static string? ProblemWithStaleness(int seconds) =>
+        seconds <= 0
+            ? "The staleness limit must be a positive number of seconds."
+            : seconds > MaxStalenessSeconds
+                ? $"The staleness limit must be at most {MaxStalenessSeconds} seconds (one year)."
+                : null;
+
+    /// <summary>
+    /// Why this session expiry cannot be used, or null when it can (ADR-0022).
+    /// </summary>
+    private static string? ProblemWithSessionExpiry(int hours) =>
+        hours <= 0
+            ? "The session expiry must be a positive number of hours."
+            : hours > MaxSessionExpiryHours
+                ? $"The session expiry must be at most {MaxSessionExpiryHours} hours (ten years)."
+                : null;
+
+    /// <summary>One year: past any publishing rhythm a plant has, and short of a number that is a typo.</summary>
+    private const int MaxStalenessSeconds = 365 * 24 * 60 * 60;
+
+    /// <summary>Ten years, the bound the MQTT driver already applies to this setting.</summary>
+    private const int MaxSessionExpiryHours = 24 * 365 * 10;
 
     /// <summary>
     /// Why this device cannot carry an edge's link, or null when it can (ADR-0016, ADR-0019).

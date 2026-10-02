@@ -66,6 +66,11 @@ public sealed class FakeCatalogue : IConfigurationStore, IEdgeRepository
 
         existing.Name = edge.Name;
         existing.LinkDeviceId = edge.LinkDeviceId;
+        // The two link settings are updatable as well (ADR-0022), and the real repository writes
+        // them: a fake that dropped them would silently reset whatever the caller passed, which is
+        // the kind of difference between a fake and the thing it stands for that hides a defect.
+        existing.LinkStaleness = edge.LinkStaleness;
+        existing.LinkSessionExpiry = edge.LinkSessionExpiry;
         return Task.CompletedTask;
     }
 

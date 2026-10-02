@@ -26,7 +26,7 @@ public sealed class EdgeRepository : IEdgeRepository
 
         var rows = await connection.QueryAsync<EdgeRow>(
             new CommandDefinition(
-                "SELECT id, tenant_id, name, link_device_id, driver_keys, drivers_declared_at, unreadable_devices "
+                "SELECT id, tenant_id, name, link_device_id, driver_keys, drivers_declared_at, unreadable_devices, link_staleness_seconds, link_session_expiry_hours "
                 + "FROM edge_active ORDER BY name",
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
@@ -41,8 +41,19 @@ public sealed class EdgeRepository : IEdgeRepository
         try
         {
             await connection.ExecuteAsync(new CommandDefinition(
-                "INSERT INTO edge (id, tenant_id, name, link_device_id) VALUES (@Id, @TenantId, @Name, @LinkDeviceId)",
-                edge,
+                "INSERT INTO edge (id, tenant_id, name, link_device_id, link_staleness_seconds, link_session_expiry_hours) "
+                + "VALUES (@Id, @TenantId, @Name, @LinkDeviceId, @LinkStalenessSeconds, @LinkSessionExpiryHours)",
+                new
+                {
+                    edge.Id,
+                    edge.TenantId,
+                    edge.Name,
+                    edge.LinkDeviceId,
+                    // The two settings an operator chooses (ADR-0022). Whole seconds and whole hours:
+                    // the MQTT driver takes an integer and a double, and the form offers integers.
+                    LinkStalenessSeconds = (int)edge.LinkStaleness.TotalSeconds,
+                    LinkSessionExpiryHours = (int)edge.LinkSessionExpiry.TotalHours,
+                },
                 cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
         }
@@ -63,15 +74,29 @@ public sealed class EdgeRepository : IEdgeRepository
         // all, and nothing would say so. The guard is part of the statement, so an assignment
         // landing at the same moment cannot slip past it, and setting the link to what it already
         // is stays allowed.
+        // The two link settings are ordinary edits: changing how long silence may last, or how long
+        // the broker queues, moves nothing and reads nothing, so neither is guarded the way the link
+        // itself is (ADR-0022).
         const string sql = """
             UPDATE edge
             SET name = @Name,
-                link_device_id = @LinkDeviceId
+                link_device_id = @LinkDeviceId,
+                link_staleness_seconds = @LinkStalenessSeconds,
+                link_session_expiry_hours = @LinkSessionExpiryHours
             WHERE id = @Id
               AND deleted_at IS NULL
               AND (link_device_id IS NOT DISTINCT FROM @LinkDeviceId
                    OR NOT EXISTS (SELECT 1 FROM device_active WHERE edge_id = @Id))
             """;
+
+        var parameters = new
+        {
+            edge.Id,
+            edge.Name,
+            edge.LinkDeviceId,
+            LinkStalenessSeconds = (int)edge.LinkStaleness.TotalSeconds,
+            LinkSessionExpiryHours = (int)edge.LinkSessionExpiry.TotalHours,
+        };
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
@@ -79,7 +104,7 @@ public sealed class EdgeRepository : IEdgeRepository
         try
         {
             updated = await connection.ExecuteAsync(
-                new CommandDefinition(sql, edge, cancellationToken: cancellationToken))
+                new CommandDefinition(sql, parameters, cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
         }
         catch (PostgresException exception) when (UniqueNames.IsNameClash(exception))

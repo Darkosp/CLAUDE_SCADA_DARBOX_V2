@@ -73,7 +73,9 @@ internal static class ConfigurationRows
         Guid? LinkDeviceId,
         Array? DriverKeys,
         DateTime? DriversDeclaredAt,
-        string? UnreadableDevices)
+        string? UnreadableDevices,
+        int LinkStalenessSeconds,
+        int LinkSessionExpiryHours)
     {
         internal Edge ToDomain() => new()
         {
@@ -90,6 +92,10 @@ internal static class ConfigurationRows
             // And again for ADR-0021: null is "nothing was said about what this edge cannot read"
             // and empty is "it said it can read everything assigned to it".
             UnreadableDevices = UnreadableDevicesJson.Deserialize(UnreadableDevices),
+            // Not nullable, and no state they could be missing from (ADR-0022): every edge has a
+            // link, and a link always has a limit.
+            LinkStaleness = TimeSpan.FromSeconds(LinkStalenessSeconds),
+            LinkSessionExpiry = TimeSpan.FromHours(LinkSessionExpiryHours),
         };
     }
 

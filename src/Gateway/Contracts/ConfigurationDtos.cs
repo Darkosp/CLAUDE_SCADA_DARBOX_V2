@@ -92,6 +92,15 @@ public sealed record SiteDto(Guid Id, string Name, string TimeZoneId);
 /// never changed by either: an edge must not be able to rewrite a plant's configuration by failing
 /// to read it.
 /// </param>
+/// <param name="LinkStalenessSeconds">
+/// How long this edge's link may be silent before the tags of the devices it reads go Bad
+/// (ADR-0016, ADR-0022). The edge's own setting rather than the link device's, because the edge is
+/// the link, and the device the Gateway derives is not overridable.
+/// </param>
+/// <param name="LinkSessionExpiryHours">
+/// How long the broker queues for this edge while the Gateway is away (ADR-0022). Past it the queue
+/// is discarded; the edge's own disk buffer is what makes that survivable (ADR-0017).
+/// </param>
 public sealed record EdgeDto(
     Guid Id,
     string Name,
@@ -99,7 +108,9 @@ public sealed record EdgeDto(
     IReadOnlyList<Guid> DeviceIds,
     IReadOnlyList<string>? DeclaredDriverKeys = null,
     DateTimeOffset? DriversDeclaredAtUtc = null,
-    IReadOnlyList<UnreadableDeviceDto>? UnreadableDevices = null);
+    IReadOnlyList<UnreadableDeviceDto>? UnreadableDevices = null,
+    int LinkStalenessSeconds = 0,
+    int LinkSessionExpiryHours = 0);
 
 /// <summary>A device an edge is assigned and is not reading, and the driver it needs (ADR-0021).</summary>
 /// <param name="DeviceId">
@@ -145,7 +156,20 @@ public sealed record SaveDeviceRequest(
 /// edge publishes under (ADR-0016, ADR-0017). Null while the edge has none, which is allowed
 /// until a device is assigned to it.
 /// </param>
-public sealed record SaveEdgeRequest(string Name, Guid? LinkDeviceId);
+/// <param name="LinkStalenessSeconds">
+/// How long this edge's link may be silent before the tags of the devices it reads go Bad
+/// (ADR-0022). Null leaves the current value, which for a new edge is 60 seconds — the MQTT
+/// driver's own default, so an edge that never mentions this behaves as one always has.
+/// </param>
+/// <param name="LinkSessionExpiryHours">
+/// How long the broker queues for this edge while the Gateway is away (ADR-0022). Null leaves the
+/// current value, which for a new edge is 720 hours.
+/// </param>
+public sealed record SaveEdgeRequest(
+    string Name,
+    Guid? LinkDeviceId,
+    int? LinkStalenessSeconds = null,
+    int? LinkSessionExpiryHours = null);
 
 public sealed record SaveTagRequest(
     string Name,
