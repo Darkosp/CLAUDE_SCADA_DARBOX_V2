@@ -115,9 +115,13 @@ public sealed class AcquisitionTests : IAsyncLifetime
             "the configuration in force is still being read");
     }
 
-    private AcquisitionService Acquisition(EdgeConfigurationSource configuration, SampleBuffer buffer) => new(
+    private AcquisitionService Acquisition(
+        EdgeConfigurationSource configuration,
+        SampleBuffer buffer,
+        ScadaDarbox.EdgeAgent.Uplink.EdgeUnreadableDevices? unreadable = null) => new(
         configuration,
         buffer,
+        unreadable ?? new ScadaDarbox.EdgeAgent.Uplink.EdgeUnreadableDevices(),
         new IDeviceDriverFactory[] { new OpcUaDriverFactory(TimeProvider.System), new ModbusTcpDriverFactory(TimeProvider.System) },
         NullLogger<AcquisitionService>.Instance);
 
@@ -141,6 +145,69 @@ public sealed class AcquisitionTests : IAsyncLifetime
             ["host"] = "127.0.0.1",
             ["port"] = FreePort().ToString(CultureInfo.InvariantCulture),
         },
+        [new EdgeConfigurationTag(Unreachable, "holding:0", TagValueKind.Numeric)]);
+
+    [Fact]
+    public async Task A_device_whose_driver_this_build_lacks_is_said_to_be_unreadable()
+    {
+        // ADR-0021. The cloud has to be able to see this, and before this it was only ever in this
+        // machine's own log: a device assigned before the edge lost its driver is never re-examined
+        // by any save, so nothing else in the system can notice.
+        using var buffer = SampleBuffer.Open(_path, maxPending: 10_000);
+
+        var configuration = new EdgeConfigurationSource();
+        configuration.Replace([Pump(Pressure), NeedsADriverThisBuildLacks()], "sha256:test");
+
+        var unreadable = new ScadaDarbox.EdgeAgent.Uplink.EdgeUnreadableDevices();
+
+        using var acquisition = Acquisition(configuration, buffer, unreadable);
+        await acquisition.StartAsync(CancellationToken.None);
+
+        await WaitUntilAsync(() => unreadable.Current.Count == 1, "the device to be reported unreadable");
+
+        var reported = Assert.Single(unreadable.Current);
+        Assert.Equal("Retired PLC", reported.Device);
+        Assert.Equal("no-such-driver", reported.Driver);
+
+        // And the device it *can* reach is unaffected: one unreadable device does not stop the rest,
+        // which is the other half of why this is a report rather than a refusal.
+        await WaitUntilAsync(() => Samples(buffer).Count > 0, "the readable device to be read");
+
+        await acquisition.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task A_device_whose_driver_comes_back_leaves_the_report()
+    {
+        // The set is computed from the configuration that was just accepted, so a device that is
+        // readable again leaves it by not being named — which is why "the driver is back" needs no
+        // message of its own (ADR-0021 §4).
+        using var buffer = SampleBuffer.Open(_path, maxPending: 10_000);
+
+        var configuration = new EdgeConfigurationSource();
+        configuration.Replace([NeedsADriverThisBuildLacks()], "sha256:first");
+
+        var unreadable = new ScadaDarbox.EdgeAgent.Uplink.EdgeUnreadableDevices();
+
+        using var acquisition = Acquisition(configuration, buffer, unreadable);
+        await acquisition.StartAsync(CancellationToken.None);
+
+        await WaitUntilAsync(() => unreadable.Current.Count == 1, "the device to be reported unreadable");
+
+        // A configuration in which the same device is read by a driver this build has.
+        configuration.Replace([Pump(Pressure)], "sha256:second");
+        await WaitUntilAsync(() => unreadable.Current.Count == 0, "the report to be withdrawn");
+
+        Assert.Empty(unreadable.Current);
+
+        await acquisition.StopAsync(CancellationToken.None);
+    }
+
+    private static EdgeConfigurationDevice NeedsADriverThisBuildLacks() => new(
+        "Retired PLC",
+        "no-such-driver",
+        1000,
+        new Dictionary<string, string> { ["host"] = "127.0.0.1" },
         [new EdgeConfigurationTag(Unreachable, "holding:0", TagValueKind.Numeric)]);
 
     private static List<BufferedSample> Samples(SampleBuffer buffer) => buffer.Peek(int.MaxValue).ToList();

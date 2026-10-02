@@ -4,7 +4,9 @@ using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Model;
 using ScadaDarbox.EdgeAgent.Buffer;
 using ScadaDarbox.EdgeAgent.Configuration;
+using ScadaDarbox.EdgeAgent.Uplink;
 using ScadaDarbox.Modules.Drivers.Mqtt;
+using EdgeUnreadableDevice = ScadaDarbox.Modules.Drivers.Mqtt.EdgeUnreadableDevice;
 
 namespace ScadaDarbox.EdgeAgent.Acquisition;
 
@@ -30,17 +32,20 @@ public sealed class AcquisitionService : BackgroundService
 {
     private readonly EdgeConfigurationSource _configuration;
     private readonly SampleBuffer _buffer;
+    private readonly EdgeUnreadableDevices _unreadable;
     private readonly IReadOnlyDictionary<string, IDeviceDriverFactory> _factories;
     private readonly ILogger<AcquisitionService> _logger;
 
     public AcquisitionService(
         EdgeConfigurationSource configuration,
         SampleBuffer buffer,
+        EdgeUnreadableDevices unreadable,
         IEnumerable<IDeviceDriverFactory> factories,
         ILogger<AcquisitionService> logger)
     {
         _configuration = configuration;
         _buffer = buffer;
+        _unreadable = unreadable;
         _factories = factories.ToDictionary(factory => factory.DriverKey, StringComparer.OrdinalIgnoreCase);
         _logger = logger;
     }
@@ -61,6 +66,7 @@ public sealed class AcquisitionService : BackgroundService
 
             using var generation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             var loops = new List<Task>();
+            var unreadable = new List<EdgeUnreadableDevice>();
 
             foreach (var device in devices)
             {
@@ -70,11 +76,21 @@ public sealed class AcquisitionService : BackgroundService
                         "Device {Device} needs driver '{Driver}', which this edge agent does not have.",
                         device.Name,
                         device.Driver);
+
+                    // Collected rather than only logged: the cloud has to be able to see this, and
+                    // until ADR-0021 the only place it was said was this machine's own log. A
+                    // device assigned before the edge lost its driver is never re-examined by any
+                    // save, so nothing else in the system can notice.
+                    unreadable.Add(new EdgeUnreadableDevice(device.Name, device.Driver));
                     continue;
                 }
 
                 loops.Add(Task.Run(() => ScanAsync(device, factory, generation.Token), CancellationToken.None));
             }
+
+            // Replaced whole, and computed from the configuration that was just accepted, so a
+            // device whose driver is back leaves the set by not being named here (ADR-0021).
+            _unreadable.Replace(unreadable);
 
             try
             {

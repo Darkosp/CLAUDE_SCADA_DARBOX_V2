@@ -310,6 +310,8 @@ public sealed class EdgeIngestionTests : IClassFixture<GatewayTestHost>, IAsyncL
         // This test is about what the cloud does with what arrives; what the edge reads is
         // ConfigurationLinkTests' subject (ADR-0019).
         new EdgeConfigurationConsumer(new EdgeConfigurationSource(), buffer, NullLogger<EdgeConfigurationConsumer>.Instance),
+        // What this edge cannot read, empty until a configuration says otherwise (ADR-0021).
+        new EdgeUnreadableDevices(),
         // The real driver set: connecting makes this edge declare what it has (ADR-0019 §8), and a
         // test that started the real service would say exactly this.
         [

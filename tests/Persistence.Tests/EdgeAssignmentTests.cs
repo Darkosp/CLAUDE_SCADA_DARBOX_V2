@@ -263,7 +263,7 @@ public sealed class EdgeAssignmentTests : IClassFixture<TestDatabase>
 
         var declaredAt = new DateTimeOffset(2026, 10, 2, 9, 30, 0, TimeSpan.Zero);
         Assert.True(await edges.RecordDriversAsync(
-            edge.Id, ["modbus-tcp", "opc-ua"], declaredAt, CancellationToken.None));
+            edge.Id, ["modbus-tcp", "opc-ua"], null, declaredAt, CancellationToken.None));
 
         var stored = Assert.Single(await edges.GetAllAsync(CancellationToken.None), e => e.Id == edge.Id);
         Assert.Equal(["modbus-tcp", "opc-ua"], stored.DeclaredDriverKeys);
@@ -272,7 +272,7 @@ public sealed class EdgeAssignmentTests : IClassFixture<TestDatabase>
         // A second declaration replaces the first: a build that lost a driver has to be able to say
         // so, or the cloud would keep refusing a device the edge can no longer read.
         Assert.True(await edges.RecordDriversAsync(
-            edge.Id, ["modbus-tcp"], declaredAt.AddHours(1), CancellationToken.None));
+            edge.Id, ["modbus-tcp"], null, declaredAt.AddHours(1), CancellationToken.None));
 
         var replaced = Assert.Single(await edges.GetAllAsync(CancellationToken.None), e => e.Id == edge.Id);
         Assert.Equal(["modbus-tcp"], replaced.DeclaredDriverKeys);
@@ -292,7 +292,7 @@ public sealed class EdgeAssignmentTests : IClassFixture<TestDatabase>
         await edges.AddAsync(silent, CancellationToken.None);
         await edges.AddAsync(empty, CancellationToken.None);
 
-        Assert.True(await edges.RecordDriversAsync(empty.Id, [], DateTimeOffset.UtcNow, CancellationToken.None));
+        Assert.True(await edges.RecordDriversAsync(empty.Id, [], null, DateTimeOffset.UtcNow, CancellationToken.None));
 
         var all = await edges.GetAllAsync(CancellationToken.None);
         Assert.Null(Assert.Single(all, e => e.Id == silent.Id).DeclaredDriverKeys);
@@ -312,9 +312,9 @@ public sealed class EdgeAssignmentTests : IClassFixture<TestDatabase>
         await edges.DeleteAsync(edge.Id, CancellationToken.None);
 
         Assert.False(await edges.RecordDriversAsync(
-            edge.Id, ["modbus-tcp"], DateTimeOffset.UtcNow, CancellationToken.None));
+            edge.Id, ["modbus-tcp"], null, DateTimeOffset.UtcNow, CancellationToken.None));
         Assert.False(await edges.RecordDriversAsync(
-            Guid.NewGuid(), ["modbus-tcp"], DateTimeOffset.UtcNow, CancellationToken.None));
+            Guid.NewGuid(), ["modbus-tcp"], null, DateTimeOffset.UtcNow, CancellationToken.None));
     }
 
     private static Edge NewEdge(World world, string name) => new()

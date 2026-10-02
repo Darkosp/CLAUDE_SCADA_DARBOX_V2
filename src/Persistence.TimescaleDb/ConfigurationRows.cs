@@ -72,7 +72,8 @@ internal static class ConfigurationRows
         string Name,
         Guid? LinkDeviceId,
         Array? DriverKeys,
-        DateTime? DriversDeclaredAt)
+        DateTime? DriversDeclaredAt,
+        string? UnreadableDevices)
     {
         internal Edge ToDomain() => new()
         {
@@ -86,6 +87,9 @@ internal static class ConfigurationRows
             DriversDeclaredAt = DriversDeclaredAt is { } declaredAt
                 ? new DateTimeOffset(DateTime.SpecifyKind(declaredAt, DateTimeKind.Utc))
                 : null,
+            // And again for ADR-0021: null is "nothing was said about what this edge cannot read"
+            // and empty is "it said it can read everything assigned to it".
+            UnreadableDevices = UnreadableDevicesJson.Deserialize(UnreadableDevices),
         };
     }
 

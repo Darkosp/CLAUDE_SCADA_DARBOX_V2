@@ -26,7 +26,7 @@ public sealed class EdgeRepository : IEdgeRepository
 
         var rows = await connection.QueryAsync<EdgeRow>(
             new CommandDefinition(
-                "SELECT id, tenant_id, name, link_device_id, driver_keys, drivers_declared_at "
+                "SELECT id, tenant_id, name, link_device_id, driver_keys, drivers_declared_at, unreadable_devices "
                 + "FROM edge_active ORDER BY name",
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
@@ -113,16 +113,20 @@ public sealed class EdgeRepository : IEdgeRepository
     public async Task<bool> RecordDriversAsync(
         Guid edgeId,
         IReadOnlyList<string> driverKeys,
+        IReadOnlyList<EdgeUnreadableDevice>? unreadable,
         DateTimeOffset declaredAtUtc,
         CancellationToken cancellationToken)
     {
         // Only the declaration is touched. It is not an edit of the edge: a declaration arriving
         // must not be able to rewrite a name or a link, and it must not be refused because a link
-        // is being repointed at that instant — the two have nothing to do with each other.
+        // is being repointed at that instant — the two have nothing to do with each other. The same
+        // rule keeps an edge's report of what it cannot read (ADR-0021) from changing anything: no
+        // statement here writes device.edge_id, so a report can never reassign a device.
         const string sql = """
             UPDATE edge
             SET driver_keys = @driver_keys,
-                drivers_declared_at = @declared_at
+                drivers_declared_at = @declared_at,
+                unreadable_devices = @unreadable_devices
             WHERE id = @edge_id
               AND deleted_at IS NULL
             """;
@@ -135,6 +139,13 @@ public sealed class EdgeRepository : IEdgeRepository
         command.Parameters.AddWithValue("edge_id", NpgsqlDbType.Uuid, edgeId);
         command.Parameters.AddWithValue("driver_keys", NpgsqlDbType.Array | NpgsqlDbType.Text, driverKeys.ToArray());
         command.Parameters.AddWithValue("declared_at", NpgsqlDbType.TimestampTz, declaredAtUtc);
+
+        // jsonb, and null stays null rather than becoming "[]": a declaration that said nothing
+        // about this must not read back as one that said the edge can read everything (ADR-0021).
+        command.Parameters.Add(new NpgsqlParameter("unreadable_devices", NpgsqlDbType.Jsonb)
+        {
+            Value = (object?)UnreadableDevicesJson.Serialize(unreadable) ?? DBNull.Value,
+        });
 
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
     }

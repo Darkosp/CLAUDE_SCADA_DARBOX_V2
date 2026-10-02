@@ -12,6 +12,9 @@ using ScadaDarbox.Gateway.Configuration;
 using ScadaDarbox.Gateway.Provisioning;
 using ScadaDarbox.Gateway.Tests.Hosting;
 using ScadaDarbox.Modules.Drivers.Mqtt;
+// The domain's own pair and the wire's pair are deliberately separate types (ADR-0002: Core cannot
+// reference a module). This file is about the wire.
+using EdgeUnreadableDevice = ScadaDarbox.Modules.Drivers.Mqtt.EdgeUnreadableDevice;
 
 namespace ScadaDarbox.Gateway.Tests;
 
@@ -126,6 +129,94 @@ public sealed class EdgeDriverDeclarationsTests : IAsyncLifetime
         Assert.Equal(["modbus-tcp"], plant.Catalogue.Declarations[0].Drivers);
         Assert.Equal(["modbus-tcp"], plant.Source.Current.Edges.Single().DeclaredDriverKeys);
         Assert.Single(plant.Audit.Entries);
+
+        await publisher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task An_edge_says_it_cannot_read_a_device_and_the_cloud_records_it_without_touching_the_assignment()
+    {
+        // ADR-0021. The case §8 cannot see: the device was assigned long ago, the edge's build has
+        // since lost the driver, and no save re-examines anything. Without this the cloud holds a
+        // device it believes is being read while nothing reads it.
+        var plant = Provisioning();
+        using var publisher = plant.Publisher;
+        await StartPublisherAsync(plant);
+
+        var before = plant.Catalogue.Devices.Single(device => device.Id == UnreadableId).EdgeId;
+
+        await PublishAsync(
+            "scada/edge/edge-a/drivers",
+            EdgeDriversPayload.Write(
+                ["modbus-tcp"],
+                [new EdgeUnreadableDevice("Compressor", "opc-ua")]));
+
+        await WaitUntilAsync(() => plant.Catalogue.Declarations.Count == 1, "the declaration to be recorded");
+        await WaitUntilAsync(() => plant.Audit.Entries.Count == 1, "the declaration to be audited");
+
+        var entry = Assert.Single(plant.Audit.Entries);
+        Assert.Equal(["modbus-tcp"], (List<string>)entry.Detail!["drivers"]!);
+        Assert.True((bool)entry.Detail!["unreadableReported"]!);
+        // Named by the edge, and recorded as it said it — the report is the edge's, not a deduction.
+        var reportedNames = (List<string>)entry.Detail!["reportedUnreadableByEdge"]!;
+        Assert.Equal(["Compressor"], reportedNames);
+        // And the cloud's own reading of the same declaration agrees, by id.
+        var unreadableIds = (List<Guid>)entry.Detail!["unreadableDeviceIds"]!;
+        Assert.Equal([UnreadableId], unreadableIds);
+
+        // Stored, so a Gateway restart does not lose the only record that anything is wrong.
+        var stored = Assert.Single(plant.Source.Current.Edges);
+        var reported = Assert.Single(stored.UnreadableDevices!);
+        Assert.Equal("Compressor", reported.Device);
+        Assert.Equal("opc-ua", reported.Driver);
+
+        // And the assignment is untouched. An edge must not be able to rewrite a plant's
+        // configuration by failing to read it.
+        Assert.Equal(before, plant.Catalogue.Devices.Single(device => device.Id == UnreadableId).EdgeId);
+
+        await publisher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task A_version_1_declaration_records_no_unreadable_devices_at_all()
+    {
+        // Absent is not empty (ADR-0021 §2). A version 1 message makes no claim about what the edge
+        // cannot read, so the stored value stays null — which is a different fact from an edge that
+        // said it can read everything, and must not read back as one.
+        var plant = Provisioning();
+        using var publisher = plant.Publisher;
+        await StartPublisherAsync(plant);
+
+        await PublishAsync("scada/edge/edge-a/drivers", """{"version":1,"drivers":["modbus-tcp"]}""");
+
+        await WaitUntilAsync(() => plant.Catalogue.Declarations.Count == 1, "the declaration to be recorded");
+        await WaitUntilAsync(() => plant.Audit.Entries.Count == 1, "the declaration to be audited");
+
+        var entry = Assert.Single(plant.Audit.Entries);
+        Assert.False((bool)entry.Detail!["unreadableReported"]!);
+        Assert.Null(Assert.Single(plant.Source.Current.Edges).UnreadableDevices);
+
+        await publisher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task A_version_2_declaration_that_reports_nothing_says_so()
+    {
+        // The other half of the pair: the edge has looked and can read everything assigned to it.
+        var plant = Provisioning();
+        using var publisher = plant.Publisher;
+        await StartPublisherAsync(plant);
+
+        await PublishAsync("scada/edge/edge-a/drivers", EdgeDriversPayload.Write(["modbus-tcp", "opc-ua"], []));
+
+        await WaitUntilAsync(() => plant.Catalogue.Declarations.Count == 1, "the declaration to be recorded");
+        await WaitUntilAsync(() => plant.Audit.Entries.Count == 1, "the declaration to be audited");
+
+        var entry = Assert.Single(plant.Audit.Entries);
+        Assert.True((bool)entry.Detail!["unreadableReported"]!);
+        var reportedNames = (List<string>)entry.Detail!["reportedUnreadableByEdge"]!;
+        Assert.Empty(reportedNames);
+        Assert.Empty(Assert.Single(plant.Source.Current.Edges).UnreadableDevices!);
 
         await publisher.StopAsync(CancellationToken.None);
     }

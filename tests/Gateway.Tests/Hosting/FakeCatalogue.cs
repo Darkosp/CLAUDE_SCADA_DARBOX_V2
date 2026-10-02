@@ -78,6 +78,7 @@ public sealed class FakeCatalogue : IConfigurationStore, IEdgeRepository
     public Task<bool> RecordDriversAsync(
         Guid edgeId,
         IReadOnlyList<string> driverKeys,
+        IReadOnlyList<EdgeUnreadableDevice>? unreadable,
         DateTimeOffset declaredAtUtc,
         CancellationToken cancellationToken)
     {
@@ -88,6 +89,10 @@ public sealed class FakeCatalogue : IConfigurationStore, IEdgeRepository
 
         edge.DeclaredDriverKeys = driverKeys;
         edge.DriversDeclaredAt = declaredAtUtc;
+        // Null is "the message said nothing about this" and empty is "the edge said it can read
+        // everything assigned to it" (ADR-0021), so it is stored as it arrived rather than
+        // flattened into one of the two.
+        edge.UnreadableDevices = unreadable;
         Declarations.Add((edgeId, driverKeys, declaredAtUtc));
         return Task.FromResult(true);
     }

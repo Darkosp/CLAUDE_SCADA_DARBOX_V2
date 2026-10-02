@@ -14,6 +14,9 @@ using ScadaDarbox.EdgeAgent.Uplink;
 using ScadaDarbox.Modules.Drivers.Modbus;
 using ScadaDarbox.Modules.Drivers.Mqtt;
 using ScadaDarbox.Modules.Drivers.OpcUa;
+// The domain's own pair and the wire's pair are deliberately separate types (ADR-0002: Core cannot
+// reference a module). This file is about the wire.
+using EdgeUnreadableDevice = ScadaDarbox.Modules.Drivers.Mqtt.EdgeUnreadableDevice;
 
 namespace ScadaDarbox.EdgeAgent.Tests;
 
@@ -107,7 +110,7 @@ public sealed class UplinkTests : IAsyncLifetime
         Assert.Single(buffer.UnsentLosses());
     }
 
-    private UplinkService Uplink(SampleBuffer buffer) => new(
+    private UplinkService Uplink(SampleBuffer buffer, EdgeUnreadableDevices? unreadable = null) => new(
         Options.Create(new EdgeOptions
         {
             Id = "plant-7",
@@ -117,6 +120,8 @@ public sealed class UplinkTests : IAsyncLifetime
         buffer,
         // These tests are about what leaves the edge; what it reads is ConfigurationLinkTests' subject.
         new EdgeConfigurationConsumer(new EdgeConfigurationSource(), buffer, NullLogger<EdgeConfigurationConsumer>.Instance),
+        // And nothing is unreadable until a configuration says so (ADR-0021).
+        unreadable ?? new EdgeUnreadableDevices(),
         Drivers,
         NullLogger<UplinkService>.Instance);
 
@@ -168,6 +173,67 @@ public sealed class UplinkTests : IAsyncLifetime
         Assert.Equal(["modbus-tcp", "opc-ua"], retained.Drivers);
 
         await late.DisconnectAsync();
+    }
+
+    [Fact]
+    public async Task A_device_the_edge_cannot_read_is_carried_on_the_declaration_it_already_sends()
+    {
+        // ADR-0021. Nothing new is published to say this: the declaration is already the edge's
+        // account of itself, and "which drivers this build has" and "what it currently cannot open"
+        // are the same fact at the same moment.
+        await StartBrokerAsync(refuse: false);
+
+        var unreadable = new EdgeUnreadableDevices();
+        unreadable.Replace([new EdgeUnreadableDevice("Retired PLC", "no-such-driver")]);
+
+        using var buffer = SampleBuffer.Open(_path, maxPending: 1_000);
+        using var uplink = Uplink(buffer, unreadable);
+        await uplink.StartAsync(CancellationToken.None);
+
+        await WaitUntilAsync(() => _declared.Count > 0, "the edge to declare itself");
+
+        var declared = EdgeDriversPayload.Read(_declared.First());
+        Assert.Null(declared.Refusal);
+        Assert.Equal(["modbus-tcp", "opc-ua"], declared.Drivers);
+        Assert.True(declared.UnreadableReported);
+        var reported = Assert.Single(declared.Unreadable);
+        Assert.Equal("Retired PLC", reported.Device);
+        Assert.Equal("no-such-driver", reported.Driver);
+
+        await uplink.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task A_device_that_becomes_readable_is_declared_again_without_it()
+    {
+        // The republish is triggered by the set changing, not by a timer or a second message kind
+        // (ADR-0021 §4). Sending only on a change is also what stops this topic being rewritten
+        // every couple of hundred milliseconds.
+        await StartBrokerAsync(refuse: false);
+
+        var unreadable = new EdgeUnreadableDevices();
+        unreadable.Replace([new EdgeUnreadableDevice("Retired PLC", "no-such-driver")]);
+
+        using var buffer = SampleBuffer.Open(_path, maxPending: 1_000);
+        using var uplink = Uplink(buffer, unreadable);
+        await uplink.StartAsync(CancellationToken.None);
+
+        await WaitUntilAsync(() => _declared.Count > 0, "the edge to declare the unreadable device");
+
+        // The driver is back: the same device is now read by one this build has, so the set is
+        // computed again from the accepted configuration and comes out empty.
+        unreadable.Replace([]);
+
+        await WaitUntilAsync(
+            () => _declared.Any(payload => EdgeDriversPayload.Read(payload).Unreadable.Count == 0),
+            "a declaration without the device");
+
+        var latest = EdgeDriversPayload.Read(_declared.Last());
+        Assert.Null(latest.Refusal);
+        Assert.Empty(latest.Unreadable);
+        Assert.True(latest.UnreadableReported);
+
+        await uplink.StopAsync(CancellationToken.None);
     }
 
     private async Task StartBrokerAsync(bool refuse)

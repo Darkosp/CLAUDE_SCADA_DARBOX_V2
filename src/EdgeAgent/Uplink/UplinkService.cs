@@ -47,14 +47,22 @@ public sealed class UplinkService : BackgroundService
     private readonly EdgeOptions _options;
     private readonly SampleBuffer _buffer;
     private readonly EdgeConfigurationConsumer _configuration;
+    private readonly EdgeUnreadableDevices _unreadable;
     private readonly IReadOnlyList<string> _driverKeys;
     private readonly ILogger<UplinkService> _logger;
     private readonly TimeProvider _clock;
+
+    /// <summary>
+    /// What the last declaration this edge sent said about the devices it cannot read, so the same
+    /// one is not sent again on every pass (ADR-0021).
+    /// </summary>
+    private string _declaredUnreadable = string.Empty;
 
     public UplinkService(
         IOptions<EdgeOptions> options,
         SampleBuffer buffer,
         EdgeConfigurationConsumer configuration,
+        EdgeUnreadableDevices unreadable,
         IEnumerable<IDeviceDriverFactory> factories,
         ILogger<UplinkService> logger,
         TimeProvider? clock = null)
@@ -62,6 +70,7 @@ public sealed class UplinkService : BackgroundService
         _options = options.Value;
         _buffer = buffer;
         _configuration = configuration;
+        _unreadable = unreadable;
         // The drivers this build has, asked of the same factories the acquisition service scans
         // through, so what this edge declares and what it can actually read cannot disagree.
         _driverKeys = factories.Select(factory => factory.DriverKey).ToList();
@@ -148,6 +157,15 @@ public sealed class UplinkService : BackgroundService
                     }
                 }
 
+                // The set of devices this edge cannot read is decided when a configuration is
+                // accepted, and the cloud has to be told when it changes (ADR-0021). Sent only on a
+                // change: an unchanged set is a declaration the cloud already holds, and the topic
+                // is retained, so there is nothing to refresh.
+                if (Signature() != _declaredUnreadable)
+                {
+                    await DeclareDriversAsync(client, stoppingToken).ConfigureAwait(false);
+                }
+
                 var batch = _buffer.Peek(BatchSize);
                 var losses = _buffer.TakeLossesToSend();
                 if (batch.Count == 0 && losses.Count == 0)
@@ -190,12 +208,15 @@ public sealed class UplinkService : BackgroundService
     }
 
     /// <summary>
-    /// Says which drivers this build has, retained, on this edge's own topic (ADR-0019 §8). False
-    /// when the broker did not take it; the caller carries on sending samples regardless.
+    /// Says which drivers this build has, and which assigned devices it cannot read, retained, on
+    /// this edge's own topic (ADR-0019 §8, ADR-0021). False when the broker did not take it; the
+    /// caller carries on sending samples regardless.
     /// </summary>
     private async Task<bool> DeclareDriversAsync(IMqttClient client, CancellationToken cancellationToken)
     {
-        var payload = EdgeDriversPayload.Write(_driverKeys);
+        var unreadable = _unreadable.Current;
+        var signature = Signature();
+        var payload = EdgeDriversPayload.Write(_driverKeys, unreadable);
 
         try
         {
@@ -213,11 +234,25 @@ public sealed class UplinkService : BackgroundService
 
             if (result.IsSuccess)
             {
+                // Recorded only after the broker took it: a declaration that failed has not been
+                // sent, so the next pass must try again rather than decide it is unchanged.
+                _declaredUnreadable = signature;
+
                 _logger.LogInformation(
                     "Declared {Count} driver(s) on {DriversTopic}: {Drivers}.",
                     _driverKeys.Count,
                     _options.DriversTopic,
                     string.Join(", ", _driverKeys));
+
+                if (unreadable.Count > 0)
+                {
+                    _logger.LogWarning(
+                        "This edge cannot read {Count} device(s) assigned to it, and has said so on {DriversTopic}: {Devices}.",
+                        unreadable.Count,
+                        _options.DriversTopic,
+                        string.Join(", ", unreadable.Select(device => $"{device.Device} (needs '{device.Driver}')")));
+                }
+
                 return true;
             }
 
@@ -236,6 +271,15 @@ public sealed class UplinkService : BackgroundService
             return false;
         }
     }
+
+    /// <summary>
+    /// What the current set of unreadable devices would say, as one string, so a pass can tell
+    /// whether the declaration the cloud holds is still the current one (ADR-0021).
+    /// </summary>
+    private string Signature() =>
+        string.Join(
+            "\n",
+            _unreadable.Current.Select(device => $"{device.Device}\u0000{device.Driver}"));
 
     /// <summary>Publishes one batch at QoS 1; true only when the broker acknowledged it.</summary>
     private async Task<bool> SendAsync(

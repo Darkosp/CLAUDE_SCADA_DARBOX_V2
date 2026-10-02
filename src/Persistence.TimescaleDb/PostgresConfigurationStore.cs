@@ -82,7 +82,7 @@ public sealed class PostgresConfigurationStore : IConfigurationStore
 
         var rows = await connection.QueryAsync<EdgeRow>(
             new CommandDefinition(
-                "SELECT id, tenant_id, name, link_device_id, driver_keys, drivers_declared_at "
+                "SELECT id, tenant_id, name, link_device_id, driver_keys, drivers_declared_at, unreadable_devices "
                 + "FROM edge_active ORDER BY name",
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);

@@ -65,7 +65,7 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
         using var buffer = SampleBuffer.Open(_path, maxPending: 1_000);
         var configuration = new EdgeConfigurationSource();
         var consumer = new EdgeConfigurationConsumer(configuration, buffer, NullLogger<EdgeConfigurationConsumer>.Instance);
-        using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, Drivers, NullLogger<UplinkService>.Instance);
+        using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, new EdgeUnreadableDevices(), Drivers, NullLogger<UplinkService>.Instance);
 
         Assert.Null(configuration.Revision);
 
@@ -91,7 +91,7 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
         using var buffer = SampleBuffer.Open(_path, maxPending: 1_000);
         var configuration = new EdgeConfigurationSource();
         var consumer = new EdgeConfigurationConsumer(configuration, buffer, NullLogger<EdgeConfigurationConsumer>.Instance);
-        using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, Drivers, NullLogger<UplinkService>.Instance);
+        using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, new EdgeUnreadableDevices(), Drivers, NullLogger<UplinkService>.Instance);
 
         await uplink.StartAsync(CancellationToken.None);
         await PublishAsync(EdgeConfigurationPayload.Write(Devices(Pressure), Derived));

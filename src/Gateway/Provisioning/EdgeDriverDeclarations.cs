@@ -99,7 +99,16 @@ public sealed class EdgeDriverDeclarations
         // one (ADR-0017).
         var declaredAt = _clock.GetUtcNow();
 
-        if (!await _edges.RecordDriversAsync(edge.Id, declared.Drivers, declaredAt, cancellationToken).ConfigureAwait(false))
+        // Null when the message said nothing about what the edge cannot read — a version 1
+        // declaration, or one from a build that predates the field — and null is not the empty
+        // list: "not reported" is a different statement from "it can read everything" (ADR-0021).
+        var reportedUnreadable = declared.UnreadableReported
+            ? declared.Unreadable
+                .Select(device => new Core.Model.EdgeUnreadableDevice(device.Device, device.Driver))
+                .ToList()
+            : null;
+
+        if (!await _edges.RecordDriversAsync(edge.Id, declared.Drivers, reportedUnreadable, declaredAt, cancellationToken).ConfigureAwait(false))
         {
             _logger.LogWarning(
                 "Edge {Edge} declared its drivers, but it is no longer in the catalogue. Nothing is recorded.",
@@ -115,11 +124,13 @@ public sealed class EdgeDriverDeclarations
             declared.Drivers.Count,
             declared.Drivers.Count == 0 ? "(none)" : string.Join(", ", declared.Drivers));
 
-        // What the declaration says about the assignment that already exists. A device assigned to
-        // this edge whose driver the edge has just said it does not have is a state in which
-        // nothing reads that device's tags, and until now only the edge knew. It is recorded and
-        // named, and the assignment is left alone: what an edge reads must not change because the
-        // edge answered (ADR-0019 §8).
+        // What the declaration says about the assignment that already exists, in the two shapes it
+        // can take. **From the assignment**: a device assigned to this edge whose driver the edge
+        // has just said it does not have — ADR-0019 §8's case, where a save is not what made the
+        // assignment. **From the edge (ADR-0021)**: a device the edge itself named as unreadable,
+        // which is the case §8 cannot see at all, because an edge redeployed without a driver
+        // re-examines nothing. Both are recorded and named, and the assignment is left alone: what
+        // an edge reads must not change because the edge answered.
         var unreadable = _catalogSource.Current.Devices
             .Where(device => device.EdgeId == edge.Id && !declared.Drivers.Contains(device.DriverKey, StringComparer.OrdinalIgnoreCase))
             .ToList();
@@ -131,6 +142,15 @@ public sealed class EdgeDriverDeclarations
                 device.Name,
                 name,
                 device.DriverKey);
+        }
+
+        foreach (var device in reportedUnreadable ?? [])
+        {
+            _logger.LogWarning(
+                "Edge {Edge} reports it cannot read device {Device}, which needs driver '{Driver}' and is still assigned to it. The assignment is left as it is.",
+                name,
+                device.Device,
+                device.Driver);
         }
 
         await _audit.AppendAsync(
@@ -145,7 +165,11 @@ public sealed class EdgeDriverDeclarations
                     ("edge", name),
                     ("drivers", declared.Drivers),
                     ("declaredAtUtc", declaredAt),
-                    ("unreadableDeviceIds", unreadable.Select(device => device.Id).ToList()))),
+                    ("unreadableDeviceIds", unreadable.Select(device => device.Id).ToList()),
+                    // The edge's own report, by name rather than by id: it is what the edge said,
+                    // and a name the catalogue no longer knows must still be recorded (ADR-0021).
+                    ("reportedUnreadableByEdge", (reportedUnreadable ?? []).Select(device => device.Device).ToList()),
+                    ("unreadableReported", declared.UnreadableReported))),
             cancellationToken).ConfigureAwait(false);
     }
 

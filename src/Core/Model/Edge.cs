@@ -69,4 +69,36 @@ public sealed class Edge
     /// cloud's own time: an edge's clock is neither trusted nor overwritten (ADR-0017).
     /// </summary>
     public DateTimeOffset? DriversDeclaredAt { get; set; }
+
+    /// <summary>
+    /// The devices this edge has been assigned and has said it cannot read, or null when it has
+    /// never said (ADR-0021).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The direction ADR-0019 §8 could not see. That clause refuses a device at the save that
+    /// assigns it to an edge which has declared it lacks the driver — but a device assigned months
+    /// ago is never re-examined, so an edge redeployed without a driver it used to have reads
+    /// nothing from that device, its tags go Bad by the staleness rule (ADR-0016), and no screen or
+    /// journal explains why. The edge reports it on the declaration it already makes.
+    /// </para>
+    /// <para>
+    /// Null and empty are different facts here too, for the reason <see cref="DeclaredDriverKeys"/>
+    /// gives. Null means no declaration has said anything about it — an edge that has never
+    /// connected, or one running a build whose message predates this field — and empty means the
+    /// edge has said it can read everything assigned to it. Neither is a fault: it is a report, and
+    /// the assignment is deliberately left alone, because an edge must not be able to rewrite a
+    /// plant's configuration by failing to read it.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<EdgeUnreadableDevice>? UnreadableDevices { get; set; }
 }
+
+/// <summary>
+/// A device an edge has been assigned and cannot open because its build has no driver for it
+/// (ADR-0021). Named rather than identified: the operator reading the log, the audit row or the
+/// screen is reading names, and the cloud resolves the name to the device it assigned.
+/// </summary>
+/// <param name="Device">The device's name, as the cloud gave it to the edge.</param>
+/// <param name="Driver">The driver key the device needs and the edge's build does not have.</param>
+public sealed record EdgeUnreadableDevice(string Device, string Driver);

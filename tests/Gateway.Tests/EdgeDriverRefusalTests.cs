@@ -108,7 +108,7 @@ public sealed class EdgeDriverRefusalTests : IClassFixture<GatewayTestHost>
     private async Task DeclareAsync(Guid edgeId, IReadOnlyList<string> driverKeys)
     {
         await _host.Services.GetRequiredService<IEdgeRepository>()
-            .RecordDriversAsync(edgeId, driverKeys, DateTimeOffset.UtcNow, CancellationToken.None);
+            .RecordDriversAsync(edgeId, driverKeys, null, DateTimeOffset.UtcNow, CancellationToken.None);
         await _host.Services.GetRequiredService<ConfigurationReloader>().ReloadAsync(CancellationToken.None);
     }
 

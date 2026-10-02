@@ -46,7 +46,8 @@ internal static class EdgeEndpoints
                         .Select(device => device.Id)
                         .ToArray(),
                     edge.DeclaredDriverKeys,
-                    edge.DriversDeclaredAt)));
+                    edge.DriversDeclaredAt,
+                    UnreadableDevices(edge, catalog))));
         });
 
         edges.MapPost("", async (
@@ -118,6 +119,59 @@ internal static class EdgeEndpoints
                 reloader,
                 cancellationToken,
                 Results.NoContent)).AdminWrite("edge.delete", "edge", "edgeId");
+    }
+
+    /// <summary>
+    /// The devices this edge is assigned and is not reading, from both places that can say so
+    /// (ADR-0019 §8, ADR-0021).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// **From the assignment**: a device assigned to this edge whose driver the edge's declaration
+    /// does not list. §8's case — the cloud can work this out by itself, and a save is not what
+    /// made the assignment.
+    /// </para>
+    /// <para>
+    /// **From the edge**: a device the edge itself named as unreadable. This is the case §8 cannot
+    /// see at all, because an edge redeployed without a driver re-examines nothing — no save
+    /// happens, the device stays assigned, and until ADR-0021 nothing in the cloud knew.
+    /// </para>
+    /// <para>
+    /// A device named by both appears once, marked as reported by the edge, which is the stronger
+    /// of the two facts: the edge attempted it. A name that no longer resolves is still listed with
+    /// a null id — it is what the edge said, and hiding it would hide the one case where an
+    /// operator most needs to look.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<UnreadableDeviceDto> UnreadableDevices(Edge edge, TagCatalog catalog)
+    {
+        var assigned = catalog.Devices.Where(device => device.EdgeId == edge.Id).ToList();
+        var unreadable = new List<UnreadableDeviceDto>();
+
+        if (edge.DeclaredDriverKeys is { } declared)
+        {
+            unreadable.AddRange(assigned
+                .Where(device => !declared.Contains(device.DriverKey, StringComparer.OrdinalIgnoreCase))
+                .Select(device => new UnreadableDeviceDto(device.Id, device.Name, device.DriverKey, ReportedByEdge: false)));
+        }
+
+        foreach (var reported in edge.UnreadableDevices ?? [])
+        {
+            var match = assigned.FirstOrDefault(device =>
+                string.Equals(device.Name, reported.Device, StringComparison.OrdinalIgnoreCase));
+
+            // The edge's own report replaces the cloud's inference for the same device: it is the
+            // stronger statement, and a device the edge named must not be shown as a deduction.
+            unreadable.RemoveAll(device => match is not null && device.DeviceId == match.Id);
+
+            unreadable.Add(new UnreadableDeviceDto(
+                match?.Id,
+                match?.Name ?? reported.Device,
+                reported.Driver,
+                ReportedByEdge: true));
+        }
+
+        return unreadable;
     }
 
     /// <summary>

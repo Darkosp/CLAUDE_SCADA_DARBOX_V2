@@ -59,6 +59,11 @@ builder.Services.AddSingleton(provider => EdgeConfigurationSource.From(
 
 builder.Services.AddSingleton<EdgeConfigurationConsumer>();
 
+// What this edge cannot read, shared by the two services that need it: acquisition finds it out,
+// the uplink says so on the declaration it already publishes (ADR-0021). Neither depends on the
+// other, which is why it is a third thing rather than a method on either.
+builder.Services.AddSingleton<EdgeUnreadableDevices>();
+
 builder.Services.AddHostedService<AcquisitionService>();
 builder.Services.AddHostedService<UplinkService>();
 

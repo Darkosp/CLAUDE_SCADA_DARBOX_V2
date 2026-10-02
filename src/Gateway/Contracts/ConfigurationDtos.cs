@@ -83,13 +83,40 @@ public sealed record SiteDto(Guid Id, string Name, string TimeZoneId);
 /// <param name="DriversDeclaredAtUtc">
 /// When the cloud read that declaration, in the cloud's own time, or null when it never has.
 /// </param>
+/// <param name="UnreadableDevices">
+/// The devices assigned to this edge that are not being read, each with the driver it needs
+/// (ADR-0021). Two facts are gathered here because an operator has one question — "is this device
+/// being read?" — and it has two causes: a device assigned to an edge that declared it lacks the
+/// driver (ADR-0019 §8), and a device the edge itself reported it cannot open (ADR-0021), which is
+/// the case no save re-examines. Empty means every assigned device is being read. The assignment is
+/// never changed by either: an edge must not be able to rewrite a plant's configuration by failing
+/// to read it.
+/// </param>
 public sealed record EdgeDto(
     Guid Id,
     string Name,
     Guid? LinkDeviceId,
     IReadOnlyList<Guid> DeviceIds,
     IReadOnlyList<string>? DeclaredDriverKeys = null,
-    DateTimeOffset? DriversDeclaredAtUtc = null);
+    DateTimeOffset? DriversDeclaredAtUtc = null,
+    IReadOnlyList<UnreadableDeviceDto>? UnreadableDevices = null);
+
+/// <summary>A device an edge is assigned and is not reading, and the driver it needs (ADR-0021).</summary>
+/// <param name="DeviceId">
+/// The cloud's own device, resolved from the name the edge reported. Null when the name no longer
+/// resolves — the report is still shown, because it is what the edge said.
+/// </param>
+/// <param name="Device">The device's name, as the edge reported it.</param>
+/// <param name="Driver">The driver key the device needs and the edge says it does not have.</param>
+/// <param name="ReportedByEdge">
+/// True when the edge itself named this device (ADR-0021), false when the cloud worked it out from
+/// the assignment and the declared driver keys (ADR-0019 §8). Both mean the device is not read.
+/// </param>
+public sealed record UnreadableDeviceDto(
+    Guid? DeviceId,
+    string Device,
+    string Driver,
+    bool ReportedByEdge);
 
 // ---- request bodies -------------------------------------------------------
 
