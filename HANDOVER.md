@@ -481,7 +481,12 @@ The defects that were already found and fixed are listed in [`HANDOVER-archive.m
   three prerequisites (database, `docker version`, `docker compose version`) were actually
   available, and say which. **The current baseline is `open-work.md` §2.4, 2026-10-02: 425 passed
   and 0 skipped** with `SCADA_TEST_DB_PORT=5433`, plus the client's 60 passed — measured after
-  ADR-0019 §8 added its tests, and the first run in which nothing was skipped.
+  ADR-0019 §8 added its tests, and the first run in which nothing was skipped. **But that run was
+  a lucky one, and §2.4 says so:** six further whole-solution runs the same evening, three of them
+  with no change applied at all, each produced one or two failures in database-heavy and
+  audit-writing tests, never the same pair twice, every one of them passing in isolation. A
+  whole-solution run on this machine is **not currently green**, and "the suite passes" is not
+  evidence until it is.
 - **The historian grows continuously** — the seeded device scans every 1000 ms and every reading
   is written, so a row count is a snapshot at that instant, not a stable figure. The Phase 7 gate
   record is careful about this ("`rows` equal to `distinct_times`", "all within one instant"); a

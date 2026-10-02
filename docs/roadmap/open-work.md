@@ -311,6 +311,38 @@ green run, not a fix: none of the three has been made deterministic, and PR #10 
 port taken at the bind rather than twenty seconds later) is still closed. Treat this as a
 baseline that a future red run can be compared against, not as evidence the flakes are gone.
 
+**Corrected the same evening: the 425 was a lucky run, and this is not the baseline to trust.**
+Six further whole-solution runs on the same code — three with a change, three on the commit
+without it, same machine, the same test database, the same loaded stack beside them — produced
+**one or two failures in every one of them**, and never the same pair twice:
+
+| Test | Seen |
+|---|---|
+| `Persistence.Tests.EmbeddedScriptsTests.The_gateway_check_refuses_a_build_without_scripts_against_a_database_never_migrated` | 5 of 8, failing in `TestDatabase.DropEmptyAsync` with `NpgsqlException … TimeoutException: Timeout during reading attempt` |
+| `Persistence.Tests.DuplicateNameMigrationTests.Duplicates_already_in_the_database_are_renamed_audited_and_then_indexed` | 3 of 8, on the runs where the change was not applied |
+| `Gateway.Tests.EdgeDriverDeclarationsTests` — three different tests across runs | 6 of 8, `Assert.Single() Failure: The collection was empty` on the audit row |
+| `Gateway.Tests.EdgeConfigurationPublishingTests.An_edge_that_is_deleted_has_its_configuration_emptied` | 1 of 8 |
+| `EdgeAgent.Tests.ConfigurationLinkTests.A_configuration_the_edge_cannot_read_is_refused_whole_and_changes_nothing` | 1 of 8 — in the one assembly no change touched at all, which is the clearest evidence that this is the load and not the code |
+
+Every one of them passes when its project is run alone: each of the classes above was run in
+isolation, three or four times each, and never failed once.
+
+**No claim about the code follows from this, and one claim about the suite does.** The failures
+are not caused by the change measured beside them: the same tests fail on `6c373c6` with none of
+it applied, and the pair that fails moves between runs. What they show is that **a whole-solution
+run on this machine is not currently green**, so "the suite passes" is not evidence anyone can
+use until it is — which is the same conclusion §2.1 reaches about its own two flakes, now with a
+reproduction rate behind it. The load is the variable that was not there before: seven assemblies
+in parallel, the cloud stack, the walk's simulator, and a test database all on one host.
+
+**What to do about it is not decided, and it is not ADR-0020's business.** The candidates are the
+three this file already carries: make the deadlines signals rather than wall-clock waits (PR #10's
+shape, closed without merging), give the database-heavy tests their own database rather than one
+shared one they create and drop under each other, or serialise the assemblies. Whoever picks it up
+should start from the reproduction above — and should note that a *skipped* test proves nothing,
+so this is not fixed by making the database unreachable.
+
+
 What this run does **not** say: nothing above needed TimescaleDB, so the
 database-enforced guarantees (append-only tables, the unique-name indexes, the
 migrator's lock) were **skipped**, not verified. Only a run with a reachable
