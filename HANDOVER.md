@@ -8,6 +8,11 @@ needs — what travels through git and what has to exist again on each machine. 
 from a work computer and a home one, so read that section before assuming your checkout is the
 state.*
 
+*Amended again 2026-10-02, on `main` at `a40b457`: a session that began by walking Phase 7's gate on
+**two hosts** went on to close three decisions. Read §6 before doing anything — it is the shortest
+route to what is true now and what is next, and this file's own structural inventory is the part of
+the repository most likely to be stale.*
+
 This is a summary for whoever picks the repository up next: what is finished, what the
 repository is made of, what it is built from, what is left, and what will bite you. It is a
 summary with pointers, not a source of truth — the binding documents remain
@@ -54,13 +59,15 @@ src/
                             ISecurityStore, IAuditLog (ADR-0011)
   Persistence.TimescaleDb/   Npgsql historian, Dapper configuration repositories,
                             DbUp migration runner, embedded migrations
-    migrations/0001…0014     0001 initial schema, 0002 nullable value kind, 0003 folders,
+    migrations/0001…0016     0001 initial schema, 0002 nullable value kind, 0003 folders,
                             0004 soft delete, 0005 active tag needs a live device,
                             0006 alarm definition, 0007 device templates,
                             0008 users/sessions/audit, 0009 alarm event,
                             0010 names unique within parent, 0011 edge ingestion,
                             0012 edge assignment, 0013 edge link device,
-                            0014 the edge's declared driver keys (ADR-0019 §8)
+                            0014 the edge's declared driver keys (ADR-0019 §8),
+                            0015 the devices an edge cannot read (ADR-0021),
+                            0016 an edge's link limits (ADR-0022)
   Gateway/                  ASP.NET host: Web API, SignalR hub, scanning service, security,
                             alarm and configuration endpoints; serves the built Angular client
   Migrator/                 one-shot privileged step that applies the migrations and gives
@@ -94,7 +101,7 @@ deploy/
                             and published on the edge's own topic (ADR-0019)
 docs/
   architecture/phase-0-architecture.md      components, topologies, data flow, stack
-  architecture/decisions/                   ADR-0001…0019 plus the index
+  architecture/decisions/                   ADR-0001…0022 plus the index
   roadmap/phase-plan.md                     the plan, each phase's scope, gate and status
   roadmap/phase-1-running.md                how to run the stack locally
   roadmap/phase-5.5-manual-gate.md          the alarm-journal hand walk
@@ -191,6 +198,10 @@ simulator), 4840 (OPC UA simulator), 8883 (Mosquitto over TLS).
 ## 4. What is next
 
 ### Phase 7's own remainder
+
+**Read §6 first: it is the state at `a40b457` and it supersedes what follows where they disagree.**
+The decisions that were open when this section was written — ADR-0020, ADR-0021 and ADR-0022 — are
+now decided, implemented and verified; `open-work.md` §3 is the register that was kept current.
 
 The plan's step 6 is "the hand walk, with the link cut for real". It has been walked by hand,
 on one machine, and it now has its own record — including a separate walk of the screen half
@@ -508,3 +519,69 @@ The defects that were already found and fixed are listed in [`HANDOVER-archive.m
 
 
 The exact commands behind the measurements are in [`HANDOVER-archive.md`](HANDOVER-archive.md).
+
+## 6. Where the 2026-10-02 session stopped, and what to do next
+
+Read this first. It is the state of the tree at `a40b457`, and everything below it in this file is
+still true unless this section says otherwise.
+
+### What that session closed
+
+| What | Outcome |
+|---|---|
+| **Phase 7's gate, on two hosts** | `open-work.md` §1.1 and §1.2 — a real network boundary and two clocks. Recorded in [`phase-7-manual-gate.md`](docs/roadmap/phase-7-manual-gate.md#the-walk-on-two-hosts-and-two-clocks-2026-10-02). |
+| **The suite was not green** | §2.5: two load-induced flakes, diagnosed and fixed. 8 of 8 runs red before, 10 of 10 green after. One cause is a proven race, the other is read off the failure and recorded as such. |
+| **ADR-0020** | A device with no tags is omitted from an edge's configuration. Decided, implemented, mutation-verified. |
+| **ADR-0021** | An edge reports the devices it cannot read, on its declaration (**payload version 2**, the project's first). Decided, implemented, mutation-verified, shown in the client. |
+| **ADR-0022** | An edge's link device is derived, is not overridable, and the edge names its two limits. Decided, implemented, mutation-verified, form updated. |
+
+**Test baseline: 457 .NET across seven projects, 0 skipped, plus the client's 63.** Measured with
+`SCADA_TEST_DB_PORT=5433` (§2.4–§2.5).
+
+**The environment that produced it** is written down in §5, under "Left running on this machine
+after that walk". Short version: the `scada-darbox-cloud` stack and a Modbus simulator are up, a
+test database sits on **5433**, and `C:\Users\darko\scada-certs` is the active CA. The WSL copy of
+this repository and its separate CA are **gone** — do not go looking for them, and if a container
+reports a certificate it should trust, check which CA signed the file it was handed.
+
+### What ADR-0022 changed that a reader of older notes will get wrong
+
+- **An operator no longer creates an edge's link device, and the API ignores a `linkDeviceId` it is
+  sent.** `LinkDeviceProvisioner` writes it from the edge's name and the deployment's settings.
+- **The "a link has to be pushing, and still configured" refusal is gone.** It is replaced by an
+  invariant: the only thing that sets a link derives an MQTT device.
+- **`Edge.LinkStaleness` and `Edge.LinkSessionExpiry` are new**, stored as
+  `link_staleness_seconds` (60) and `link_session_expiry_hours` (720) by migration **0016**, and they
+  are the only thing about a link an operator chooses.
+- **Multiple edges means multiple link devices on purpose.** One shared subscription would give one
+  staleness limit to every edge, so one silent plant would mark every other plant's tags Bad.
+
+### What to do next, in order
+
+1. **`open-work.md` §3 has nine decisions left.** The next one by the order the project states them
+   is **routing a tag write to an edge-assigned device** — an **ADR before any code**, because the
+   link is outbound only and the Gateway has no route. Today such a write is refused by name and
+   audited; §3's row says what is owed.
+2. **Then the two items §2.0 records as written-but-not-walked** — ADR-0020's and ADR-0021's paths
+   on a real link, and ADR-0022's derived link actually subscribing. All three want a broker and an
+   edge, so they belong to the **same two hosts** the gate was walked on, and the recipe is the
+   gate record's two-host appendix.
+3. **`open-work.md` §1.3 — a real arm64 board — is untouched.** It is the one item in §1 that no
+   amount of software closes; it needs the hardware.
+
+### How to work here, as that session learned it
+
+- **The design conversation decides, this session implements.** When a decision is missing, write
+  the ADR first and mark it `Proposed` if it is asking rather than stating — the session that wrote
+  ADR-0022 did exactly that, and the answer that came back tightened decision 6 beyond what the
+  proposal had.
+- **A fake that differs from the real repository hides defects.** `FakeCatalogue.UpdateAsync` was
+  dropping the two new link settings and a test caught it only because it asserted on them.
+- **Verify by mutation, and say what the mutation proved.** Three ADRs in that session each have a
+  mutation recorded in its commit message; one of them (ADR-0021's edge-side report) initially
+  proved **nothing**, because the Gateway's tests publish declarations directly to the broker rather
+  than through the edge — the gap was found by watching the mutation fail to fail.
+- **Rebuild after restoring a mutation**, and check the restored file rather than trusting the edit.
+- **When a test asserts behaviour a new ADR removes, rewrite the test to assert the new behaviour
+  and say what it replaced.** `EdgeApiTests` keeps its old test's story in a comment for exactly
+  that reason.

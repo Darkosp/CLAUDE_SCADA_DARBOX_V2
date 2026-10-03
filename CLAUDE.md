@@ -207,6 +207,30 @@ not happened is the walk** — no run has yet had a real broker and a real edge
 accept a derived configuration end to end. Every unfinished item, with what it
 waits for, is in `docs/roadmap/open-work.md`.
 
+**Three decisions beside it were closed on 2026-10-02**, in the session that
+walked Phase 7's gate on two hosts. Every one is decided, implemented and
+verified by mutation, and each has a section in `open-work.md` §2.0 recording
+what it has **not** had — a walk on a real link:
+
+- **ADR-0020** — the cloud omits a device with no tags from an edge's
+  configuration, rather than deriving one its own payload reader refuses (which
+  took the edge's whole configuration down with it).
+- **ADR-0021** — an edge reports the devices it has been assigned and cannot
+  read, on the declaration it already publishes. `EdgeDriversPayload` is now
+  **version 2 — the project's first payload version bump** — and the cloud reads
+  versions 1 and 2, because the cloud is upgraded first and a version 1 message
+  must keep working.
+- **ADR-0022** — an edge's link device is derived from the edge and the
+  deployment, is **not overridable**, and the two settings that can vary move
+  onto the edge (`link_staleness_seconds`, `link_session_expiry_hours`). An
+  operator no longer creates a link device, and the API ignores a
+  `linkDeviceId` it is sent.
+
+**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 457 .NET
+across seven projects with 0 skipped, and the client's 63.** It was *not* green
+earlier that day — §2.5 diagnoses the two load-induced flakes and separates the
+one that is a proven race from the one that is read off the failure.
+
 ## When Phase 1 (or any phase) begins
 
 - Build only what that phase's entry in `docs/roadmap/phase-plan.md` scopes
