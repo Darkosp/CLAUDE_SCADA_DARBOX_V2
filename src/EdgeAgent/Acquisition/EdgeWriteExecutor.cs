@@ -58,6 +58,15 @@ public sealed class EdgeWriteExecutor
     /// something: a write that could not be attempted is reported as failed with the reason, never
     /// left unanswered.
     /// </summary>
+    /// <remarks>
+    /// <b>This never returns <see cref="WriteResultResult.Refused"/>.</b> A refusal in that type
+    /// means the *message* could not be read, which is the reader's problem and leaves nothing to
+    /// answer — it carries no write id, so the uplink has nothing to address a reply to and stays
+    /// silent. Everything this method can fail at is a request that was understood perfectly well
+    /// and could not be carried out, which is a **result**: it carries the request's id back with
+    /// the edge's reason, so the cloud gets an answer instead of waiting out its deadline and
+    /// telling an operator "not confirmed" about a write the edge knew had failed.
+    /// </remarks>
     public async Task<WriteResultResult> ExecuteAsync(WriteRequestResult request, CancellationToken cancellationToken)
     {
         var (device, tag) = Find(request.TagId);
@@ -68,7 +77,7 @@ public sealed class EdgeWriteExecutor
                 "A write arrived for tag {Tag}, which is not in the configuration this edge reads; refusing it.",
                 request.TagId);
 
-            return WriteResultResult.Refused($"this edge does not read tag {request.TagId}");
+            return Failed(request, $"this edge does not read tag {request.TagId}");
         }
 
         if (!_factories.TryGetValue(device.Driver, out var factory))
@@ -79,7 +88,7 @@ public sealed class EdgeWriteExecutor
                 device.Name,
                 device.Driver);
 
-            return WriteResultResult.Refused($"this edge has no '{device.Driver}' driver");
+            return Failed(request, $"this edge has no '{device.Driver}' driver");
         }
 
         var target = ToDevice(device);
@@ -126,14 +135,15 @@ public sealed class EdgeWriteExecutor
                 request.TagId,
                 device.Name);
 
-            return new WriteResultResult(
-                request.WriteId,
-                request.TagId,
-                Written: false,
-                exception.Message,
-                Refusal: null);
+            return Failed(request, exception.Message);
         }
     }
+
+    /// <summary>
+    /// A request the edge understood and could not carry out: the id comes back with the reason.
+    /// </summary>
+    private static WriteResultResult Failed(WriteRequestResult request, string reason) =>
+        new(request.WriteId, request.TagId, Written: false, reason, Refusal: null);
 
     /// <summary>The device and the tag it holds, from the configuration in force, or nothing.</summary>
     private (EdgeConfigurationDevice? Device, EdgeConfigurationTag? Tag) Find(Guid tagId)
