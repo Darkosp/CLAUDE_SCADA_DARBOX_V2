@@ -526,8 +526,20 @@ The exact commands behind the measurements are in [`HANDOVER-archive.md`](HANDOV
 
 ## 6. Where the 2026-10-02 and 2026-10-03 sessions stopped, and what to do next
 
-Read this first. It is the state of the tree at `75845c9`, and everything below it in this file is
+Read this first. It is the state of the tree at `bec4120`, and everything below it in this file is
 still true unless this section says otherwise.
+
+**Where the 2026-10-03 session stopped.** Nothing is in flight and nothing is half-done: the work is
+committed, pushed, and `main` is level with `origin/main`. The last four commits are ADR-0023 and the
+two rounds of tests it gained afterwards — `ea26cea` (the edge's half, against a real Modbus slave),
+`231d459` (the write ACL and the retain rule, against a real Mosquitto), and `bec4120` (this file and
+`CLAUDE.md` brought up to 498). The tree is clean; the only thing left running that this work started
+is the test database on **5433**, which now carries `--restart unless-stopped` so a stopped container
+cannot make a later run look green when it is not.
+
+**The one thing to do next is unchanged and is written out in "What to do next, in order" below:**
+walk ADR-0023's write path end to end. Every joint is tested and no run has crossed all of them at
+once, and it needs the hardware (§1.3).
 
 ### What the 2026-10-02 session closed
 
