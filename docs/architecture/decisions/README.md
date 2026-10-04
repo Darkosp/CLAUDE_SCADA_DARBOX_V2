@@ -53,6 +53,7 @@ they say about it.
 | [0020](0020-devices-with-no-tags.md) | A device with no tags is omitted from an edge's configuration — the derivation cannot produce what the reader refuses |
 | [0021](0021-edge-reports-what-it-cannot-read.md) | An edge says which assigned devices it cannot read, on its driver declaration — the project's first payload version bump |
 | [0022](0022-derived-link-device.md) | An edge's link device is derived from the edge, is not overridable, and the edge names its staleness limit |
+| [0023](0023-routing-writes-to-an-edge.md) | *(Proposed)* A tag write is routed to the edge that reads the device, and is never queued or retained |
 
 ## Template
 
