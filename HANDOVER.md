@@ -13,6 +13,10 @@ state.*
 route to what is true now and what is next, and this file's own structural inventory is the part of
 the repository most likely to be stale.*
 
+*Amended again 2026-10-03, on `main` at `75845c9`: a later session closed **ADR-0023** — the write
+path — which is the first thing in this project that lets the cloud change a plant. §6 carries it,
+and §2's structure list now ends at migration 0016 and ADR-0023.*
+
 This is a summary for whoever picks the repository up next: what is finished, what the
 repository is made of, what it is built from, what is left, and what will bite you. It is a
 summary with pointers, not a source of truth — the binding documents remain
@@ -520,12 +524,12 @@ The defects that were already found and fixed are listed in [`HANDOVER-archive.m
 
 The exact commands behind the measurements are in [`HANDOVER-archive.md`](HANDOVER-archive.md).
 
-## 6. Where the 2026-10-02 session stopped, and what to do next
+## 6. Where the 2026-10-02 and 2026-10-03 sessions stopped, and what to do next
 
-Read this first. It is the state of the tree at `a40b457`, and everything below it in this file is
+Read this first. It is the state of the tree at `75845c9`, and everything below it in this file is
 still true unless this section says otherwise.
 
-### What that session closed
+### What the 2026-10-02 session closed
 
 | What | Outcome |
 |---|---|
@@ -535,7 +539,33 @@ still true unless this section says otherwise.
 | **ADR-0021** | An edge reports the devices it cannot read, on its declaration (**payload version 2**, the project's first). Decided, implemented, mutation-verified, shown in the client. |
 | **ADR-0022** | An edge's link device is derived, is not overridable, and the edge names its two limits. Decided, implemented, mutation-verified, form updated. |
 
-**Test baseline: 457 .NET across seven projects, 0 skipped, plus the client's 63.** Measured with
+### What the 2026-10-03 session closed
+
+| What | Outcome |
+|---|---|
+| **ADR-0023** | A tag write to a device an edge reads is **routed to that edge** over the link. Decided, implemented, mutation-verified twice. |
+
+**That one is different in kind, and it is the thing to understand before touching the write path.**
+Every other payload on the link carries a measurement or a fact backwards, or configuration forwards.
+This is the first that travels from the cloud to a plant **to ask for something**, so it is the first
+thing in this project that lets the cloud change a plant. Three guardrails hold it, and each has a
+reason that must be read before one is relaxed (ADR-0023 §3–§4):
+
+- the write topic is **not retained** — a write an edge receives the moment it reconnects is a
+  command to change a plant after the reason for it has passed;
+- a write is **not buffered**, for the same reason: a late sample is still true of its moment, and a
+  late command is not;
+- a write is **never reported as done before it is** — five seconds or a **504 saying "not
+  confirmed"**, because 202 would be the untrue answer.
+
+A reply is matched to its call by a **`writeId`**, which is the whole mechanism: several writes may
+be in flight to one edge and an edge may answer out of order, so a reply naming an id that is not in
+flight is ignored rather than attributed. The journal keeps the three outcomes apart —
+`tag.write`, `tag.write_failed` (with the edge's own reason), and `tag.write_unconfirmed` — and
+`tag.write_refused` when a deployment has turned writing over the link off
+(`EdgeProvisioning:WritesEnabled`, on by default).
+
+**Test baseline: 465 .NET across seven projects, 0 skipped, plus the client's 63.** Measured with
 `SCADA_TEST_DB_PORT=5433` (§2.4–§2.5).
 
 **The environment that produced it** is written down in §5, under "Left running on this machine
@@ -558,30 +588,39 @@ reports a certificate it should trust, check which CA signed the file it was han
 
 ### What to do next, in order
 
-1. **`open-work.md` §3 has nine decisions left.** The next one by the order the project states them
-   is **routing a tag write to an edge-assigned device** — an **ADR before any code**, because the
-   link is outbound only and the Gateway has no route. Today such a write is refused by name and
-   audited; §3's row says what is owed.
-2. **Then the two items §2.0 records as written-but-not-walked** — ADR-0020's and ADR-0021's paths
-   on a real link, and ADR-0022's derived link actually subscribing. All three want a broker and an
-   edge, so they belong to the **same two hosts** the gate was walked on, and the recipe is the
-   gate record's two-host appendix.
-3. **`open-work.md` §1.3 — a real arm64 board — is untouched.** It is the one item in §1 that no
+1. **Walk ADR-0023's write path.** `open-work.md` §2.0 now records four things written,
+   implemented and tested that have never been through a real link, and **the write is the one to
+   do first**: it is the only one where being wrong means a plant was changed or an operator was
+   told it was. What it needs is a real edge, a real device, and a write that is read back — plus
+   the two things no test here can reach: that a write is genuinely **not** delivered to an edge
+   that was offline, and that the ACL actually refuses one edge reading another's write requests.
+2. **Then the other three items in `open-work.md` §2.0** — ADR-0020's omission, ADR-0021's
+   reporting and its payload version (two builds of different ages on one link), and ADR-0022's
+   derived link actually subscribing. All want a broker and an edge, so they belong to the **same
+   two hosts** the gate was walked on, and the recipe is the gate record's two-host appendix.
+3. **`open-work.md` §3 has nine decisions left.** None is as consequential as the last four were.
+4. **`open-work.md` §1.3 — a real arm64 board — is untouched.** It is the one item in §1 that no
    amount of software closes; it needs the hardware.
 
-### How to work here, as that session learned it
+### How to work here, as those sessions learned it
 
 - **The design conversation decides, this session implements.** When a decision is missing, write
-  the ADR first and mark it `Proposed` if it is asking rather than stating — the session that wrote
-  ADR-0022 did exactly that, and the answer that came back tightened decision 6 beyond what the
-  proposal had.
+  the ADR first and mark it `Proposed` if it is asking rather than stating. ADR-0022 came back with
+  its decision 6 tightened beyond what the proposal had; ADR-0023 came back with a decision 8 added
+  (a deployment may refuse writes over the link) that the proposal had raised as a question.
 - **A fake that differs from the real repository hides defects.** `FakeCatalogue.UpdateAsync` was
   dropping the two new link settings and a test caught it only because it asserted on them.
-- **Verify by mutation, and say what the mutation proved.** Three ADRs in that session each have a
-  mutation recorded in its commit message; one of them (ADR-0021's edge-side report) initially
-  proved **nothing**, because the Gateway's tests publish declarations directly to the broker rather
-  than through the edge — the gap was found by watching the mutation fail to fail.
+- **Verify by mutation, and say what the mutation proved.** ADR-0023's two are a good model: with a
+  reply accepted without matching its id, the out-of-order test fails and its six controls stay
+  green; with a timeout reported as written, the honesty test fails and its six stay green. And
+  ADR-0021's edge-side report initially proved **nothing**, because the Gateway's tests publish
+  declarations directly to the broker rather than through the edge — the gap was found by watching
+  the mutation fail to fail, and is why `UplinkTests` now covers it.
 - **Rebuild after restoring a mutation**, and check the restored file rather than trusting the edit.
+  A mutation that does not compile is not a failed mutation; it is a broken experiment.
 - **When a test asserts behaviour a new ADR removes, rewrite the test to assert the new behaviour
-  and say what it replaced.** `EdgeApiTests` keeps its old test's story in a comment for exactly
-  that reason.
+  and say what it replaced.** `EdgeApiTests` and `EdgeOwnedDeviceWriteTests` both keep their old
+  test's story in a comment for exactly that reason.
+- **Run the database-backed suite before believing a count.** A stopped test container produced
+  `Passed: 5, Skipped: 70` in one project during this work, which looks like a green run and is not
+  one. It now carries `--restart unless-stopped`.

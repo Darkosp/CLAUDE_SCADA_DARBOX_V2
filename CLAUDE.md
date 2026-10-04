@@ -226,10 +226,30 @@ what it has **not** had — a walk on a real link:
   operator no longer creates a link device, and the API ignores a
   `linkDeviceId` it is sent.
 
-**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 457 .NET
+**A fourth was closed on 2026-10-03**, the most consequential of them:
+
+- **ADR-0023** — a tag write to a device an edge reads is **routed to that edge**
+  over the link, and is **never retained, never buffered, and never reported as
+  done before it is**: five seconds or a 504 saying "not confirmed". A reply is
+  matched to its call by a `writeId`, which is the whole mechanism.
+  `EdgeProvisioning:WritesEnabled` (on by default) lets a deployment refuse
+  writes over the link outright. **This is the first thing in the project that
+  lets the cloud change a plant**, so read decision 3's three guardrails in the
+  ADR before relaxing any of them — a late sample is still true of its moment,
+  and a late command is a request to change a plant after the reason for it has
+  passed.
+
+**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 465 .NET
 across seven projects with 0 skipped, and the client's 63.** It was *not* green
-earlier that day — §2.5 diagnoses the two load-induced flakes and separates the
-one that is a proven race from the one that is read off the failure.
+earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
+the one that is a proven race from the one that is read off the failure.
+
+**What 2026-10-03 left is a walk, not a decision.** `open-work.md` §2.0 records
+four things written, implemented and tested that have never been through a real
+link: ADR-0020's omission, ADR-0021's reporting and its payload version,
+ADR-0022's derived link, and ADR-0023's write. **The write is the one to walk
+first**, because it is the only one where being wrong means a plant was changed
+or an operator was told it was.
 
 ## When Phase 1 (or any phase) begins
 
