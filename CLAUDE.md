@@ -239,17 +239,22 @@ what it has **not** had — a walk on a real link:
   and a late command is a request to change a plant after the reason for it has
   passed.
 
-**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 465 .NET
+**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 498 .NET
 across seven projects with 0 skipped, and the client's 63.** It was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
-the one that is a proven race from the one that is read off the failure.
+the one that is a proven race from the one that is read off the failure. One more
+flake was seen on 2026-10-03 and recorded there as a **sighting, not a diagnosis**:
+its name was not captured, and the project passed twice afterwards.
 
 **What 2026-10-03 left is a walk, not a decision.** `open-work.md` §2.0 records
 four things written, implemented and tested that have never been through a real
 link: ADR-0020's omission, ADR-0021's reporting and its payload version,
 ADR-0022's derived link, and ADR-0023's write. **The write is the one to walk
 first**, because it is the only one where being wrong means a plant was changed
-or an operator was told it was.
+or an operator was told it was. ADR-0023's own entry lists what its tests *do*
+cover — the cloud's half, the wire format, the edge's half against a real Modbus
+slave, the retain rule and the ACL against a real broker — so it is not read as
+"nothing is tested". What no run has done is cross all of them at once.
 
 ## When Phase 1 (or any phase) begins
 

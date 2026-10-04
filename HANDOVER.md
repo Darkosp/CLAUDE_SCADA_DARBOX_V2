@@ -543,7 +543,8 @@ still true unless this section says otherwise.
 
 | What | Outcome |
 |---|---|
-| **ADR-0023** | A tag write to a device an edge reads is **routed to that edge** over the link. Decided, implemented, mutation-verified twice. |
+| **ADR-0023** | A tag write to a device an edge reads is **routed to that edge** over the link. Decided, implemented, mutation-verified four times. |
+| **Its edge half, and the broker's rules** | After the change, the half that had only been *compiled* was tested against a real Modbus slave, and the write ACL and retain rule against a real Mosquitto. That found a defect. |
 
 **That one is different in kind, and it is the thing to understand before touching the write path.**
 Every other payload on the link carries a measurement or a fact backwards, or configuration forwards.
@@ -565,8 +566,27 @@ flight is ignored rather than attributed. The journal keeps the three outcomes a
 `tag.write_refused` when a deployment has turned writing over the link off
 (`EdgeProvisioning:WritesEnabled`, on by default).
 
-**Test baseline: 465 .NET across seven projects, 0 skipped, plus the client's 63.** Measured with
-`SCADA_TEST_DB_PORT=5433` (§2.4–§2.5).
+### The defect that only running the edge's half found
+
+`EdgeWriteExecutor` returned `WriteResultResult.Refused` for every way it could fail. A refusal in
+that type means **the message could not be read** — it carries no write id and a null reason — so the
+uplink treated a perfectly well-formed request as unreadable, logged, and **sent nothing back**. The
+cloud would have waited out its five seconds and told an operator "not confirmed" about a write the
+edge knew had failed. That is precisely the untruth ADR-0023 §4 exists to prevent, and it came from
+using a type for the wrong thing.
+
+Every failure the executor can produce is a request **understood and not carried out**, which is a
+*result*: the id comes back with the edge's reason. It is now one `Failed` helper, the method
+documents that it never returns `Refused`, and restoring the defect fails four named tests while
+three controls stay green.
+
+**The lesson is the one this project keeps relearning: compiling is not running.** The cloud's half
+had a broker, the wire format had a test, and the edge's half had neither — and that was where the
+bug was.
+
+**Test baseline: 498 .NET across seven projects, 0 skipped, plus the client's 63.** Measured with
+`SCADA_TEST_DB_PORT=5433` (§2.4–§2.5). One flake was seen and is recorded there as a sighting, not a
+diagnosis — its name was not captured and the project passed twice afterwards.
 
 **The environment that produced it** is written down in §5, under "Left running on this machine
 after that walk". Short version: the `scada-darbox-cloud` stack and a Modbus simulator are up, a
@@ -588,17 +608,21 @@ reports a certificate it should trust, check which CA signed the file it was han
 
 ### What to do next, in order
 
-1. **Walk ADR-0023's write path.** `open-work.md` §2.0 now records four things written,
-   implemented and tested that have never been through a real link, and **the write is the one to
-   do first**: it is the only one where being wrong means a plant was changed or an operator was
-   told it was. What it needs is a real edge, a real device, and a write that is read back — plus
-   the two things no test here can reach: that a write is genuinely **not** delivered to an edge
-   that was offline, and that the ACL actually refuses one edge reading another's write requests.
+1. **Walk ADR-0023's write path end to end.** `open-work.md` §2.0 records four things written,
+   implemented and tested that have never been through a real link, and **the write is the one to do
+   first**: it is the only one where being wrong means a plant was changed or an operator was told it
+   was. Every *joint* is now tested — the API's answer, the router's matching, the payload, the
+   executor against a real Modbus slave, the retain rule and the ACL against a real broker — and no
+   run has crossed all of them at once. That is what the walk is for: a browser asking, the router
+   publishing, a real edge taking it off a real broker, a real device changing, and the result
+   reaching the operator's screen. Two things in that list are still unrun and worth naming: a device
+   that accepts a connection and then stops answering, so the executor's ten-second bound is never
+   exercised; and the uplink's own handling of a write message off a broker.
 2. **Then the other three items in `open-work.md` §2.0** — ADR-0020's omission, ADR-0021's
    reporting and its payload version (two builds of different ages on one link), and ADR-0022's
    derived link actually subscribing. All want a broker and an edge, so they belong to the **same
    two hosts** the gate was walked on, and the recipe is the gate record's two-host appendix.
-3. **`open-work.md` §3 has nine decisions left.** None is as consequential as the last four were.
+3. **`open-work.md` §3 has eight decisions left.** None is as consequential as the last four were.
 4. **`open-work.md` §1.3 — a real arm64 board — is untouched.** It is the one item in §1 that no
    amount of software closes; it needs the hardware.
 
@@ -610,14 +634,24 @@ reports a certificate it should trust, check which CA signed the file it was han
   (a deployment may refuse writes over the link) that the proposal had raised as a question.
 - **A fake that differs from the real repository hides defects.** `FakeCatalogue.UpdateAsync` was
   dropping the two new link settings and a test caught it only because it asserted on them.
-- **Verify by mutation, and say what the mutation proved.** ADR-0023's two are a good model: with a
-  reply accepted without matching its id, the out-of-order test fails and its six controls stay
-  green; with a timeout reported as written, the honesty test fails and its six stay green. And
-  ADR-0021's edge-side report initially proved **nothing**, because the Gateway's tests publish
-  declarations directly to the broker rather than through the edge — the gap was found by watching
-  the mutation fail to fail, and is why `UplinkTests` now covers it.
+- **Verify by mutation, and say what the mutation proved.** ADR-0023's four are the model, and two
+  of them taught something. With a reply accepted without matching its id, the out-of-order test
+  fails and its six controls stay green; with a timeout reported as written, the honesty test fails
+  and its six stay green; removing the Gateway's ACL permission fails three broker tests with eleven
+  controls green. And **a test that passes under a mutation is not a test**: the first version of the
+  "an edge cannot read another edge's write requests" test asserted only that nothing arrived, which
+  an ACL refusing everything satisfies just as well — it passed under a mutation that removed the
+  rule. It needed a positive control (read your own, then fail to read another's) before it meant
+  anything. ADR-0021's edge-side report had the same shape and was fixed the same way.
+- **Don't write a test whose name claims more than its assertions.** A broker test for "the write is
+  not retained" was drafted that published *with* the retain flag and watched the broker honour it.
+  It would have passed while proving nothing about this product, and its name would have said
+  otherwise; it was replaced by two tests of the real guarantee — the publisher's write is not
+  retained, and a configuration from the same publisher is.
 - **Rebuild after restoring a mutation**, and check the restored file rather than trusting the edit.
-  A mutation that does not compile is not a failed mutation; it is a broken experiment.
+  A mutation that does not compile is not a failed mutation; it is a broken experiment. And a
+  `Select-String` check for "is it restored" can match a *comment* about the mutation rather than the
+  code — read the line, not the match.
 - **When a test asserts behaviour a new ADR removes, rewrite the test to assert the new behaviour
   and say what it replaced.** `EdgeApiTests` and `EdgeOwnedDeviceWriteTests` both keep their old
   test's story in a comment for exactly that reason.
