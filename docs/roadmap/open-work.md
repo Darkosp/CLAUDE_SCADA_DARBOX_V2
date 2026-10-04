@@ -150,6 +150,20 @@ defects and not open questions: the work exists and nothing has been through it 
   **And one thing an upgrade exercises that nothing here does:** an existing deployment's
   hand-made link devices are reused rather than replaced, which is what keeps the broker's session
   — and the queue under it — from being dropped by the change.
+- **[ADR-0023](../architecture/decisions/0023-routing-writes-to-an-edge.md) — a tag write is routed
+  to the edge that reads the device, and is never queued or retained.** Decided and implemented
+  2026-10-03, with its own tests and two mutations recorded. **What has not happened: a write that
+  actually reaches a device.** Every test here is a half of the conversation — the cloud's half
+  (the router matching a result to the call waiting for it, the API answering 504 when nothing
+  answers) and the wire format's (the payload round trips) — and the edge's half is covered by
+  compilation and by the executor's own shape, not by a run. **Nothing has asked a real edge to
+  write a real register and read it back.** That is the walk this owes, and it is the one to do
+  first of the three here, because it is the only one where being wrong means a plant was changed
+  or an operator was told it was. **Also not walked:** that a write is genuinely not delivered to
+  an edge that was offline when it was published — the retain flag's absence is asserted in the
+  code and has never been watched over a real broker; and the ACL for the two new topics has never
+  been exercised against Mosquitto, so the rule that an edge cannot read another edge's write
+  requests is tested by inspection rather than by a refusal in the audit file.
 
 ### 2.1 ADR-0019 configuration provisioning, end to end
 
@@ -462,7 +476,7 @@ decided inside an implementation pull request.
 |---|---|---|
 | Alarm flapping — deadband, on-delay | `phase-plan.md`, "Deferred out of Phase 5.5" | **an ADR first**: each changes what an alarm *is* |
 | Filtering the journal (tag, event type, time) | same place | a phase that wants it |
-| Routing a tag write to an edge-assigned device | ADR-0019, Consequences | an ADR — the link is outbound only and the Gateway has no route |
+| Routing a tag write to an edge-assigned device | ADR-0019, Consequences | **closed 2026-10-03 by [ADR-0023](../architecture/decisions/0023-routing-writes-to-an-edge.md)** — see §2.0 for what it still owes a walk |
 | The Modbus 5 s response bound: driver constant or per-device setting | `phase-plan.md`, Phase 7 note | the design conversation; ADR-0016's pattern points one way |
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
 | TimescaleDB continuous aggregates and native compression | ADR-0006 | the legal review ADR-0006 asks for; the code deliberately does not use them |
