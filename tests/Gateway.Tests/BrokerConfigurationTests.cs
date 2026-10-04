@@ -283,6 +283,189 @@ public sealed class BrokerConfigurationTests : IClassFixture<BrokerFixture>
         Assert.False(forged.IsSuccess, "an edge must not be able to declare another edge's drivers");
     }
 
+    [RequiresDockerFact]
+    public async Task The_Gateway_asks_an_edge_to_write_and_that_edge_answers_it()
+    {
+        // The write conversation (ADR-0023 §1-§2): the cloud publishes a request on the edge's own
+        // topic, and the edge publishes its result back. Two new topics, and the ACL has to allow
+        // both or the path is dead in the water — which is what this test is for, the two rules
+        // having been written by inspection and never exercised until now.
+        using var gateway = await ConnectAsync(_broker.Gateway($"scada-darbox-{_run}-provisioning"));
+        using var edge = await ConnectAsync(_broker.Edge("edge-a"));
+
+        var received = new ConcurrentQueue<string>();
+        edge.ApplicationMessageReceivedAsync += message =>
+        {
+            received.Enqueue(message.ApplicationMessage.ConvertPayloadToString());
+            return Task.CompletedTask;
+        };
+        await edge.SubscribeAsync(new MqttClientSubscribeOptionsBuilder()
+            .WithTopicFilter("scada/edge/edge-a/writes", MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+
+        var asked = await gateway.PublishAsync(new MqttApplicationMessageBuilder()
+            .WithTopic("scada/edge/edge-a/writes")
+            .WithPayload($"{_run}:write")
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+        Assert.True(asked.IsSuccess, $"the Gateway must be able to ask: {asked.ReasonCode}");
+
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (received.IsEmpty && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+        }
+
+        Assert.Equal($"{_run}:write", received.SingleOrDefault());
+
+        // The answer travels the other way, and the Gateway reads every edge's results on one
+        // subscription — matched by the id in the payload, not by the topic.
+        using var reader = await ConnectAsync(_broker.Gateway($"scada-darbox-{_run}-results"));
+        var results = new ConcurrentQueue<string>();
+        reader.ApplicationMessageReceivedAsync += message =>
+        {
+            results.Enqueue(message.ApplicationMessage.ConvertPayloadToString());
+            return Task.CompletedTask;
+        };
+        await reader.SubscribeAsync(new MqttClientSubscribeOptionsBuilder()
+            .WithTopicFilter("scada/edge/+/write-results", MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+
+        var answered = await edge.PublishAsync(new MqttApplicationMessageBuilder()
+            .WithTopic("scada/edge/edge-a/write-results")
+            .WithPayload($"{_run}:written")
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+        Assert.True(answered.IsSuccess, $"the edge must be able to answer: {answered.ReasonCode}");
+
+        deadline = DateTime.UtcNow.AddSeconds(10);
+        while (results.IsEmpty && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+        }
+
+        Assert.Equal($"{_run}:written", results.SingleOrDefault());
+    }
+
+    [RequiresDockerFact]
+    public async Task An_edge_cannot_read_another_edges_write_requests()
+    {
+        // ADR-0023's confinement, and the one that matters most on this path: a write request is a
+        // command to change a plant, so a plant being able to read another plant's commands would
+        // be an operator's action leaking across sites — and, worse, an edge that acted on one.
+        using var gateway = await ConnectAsync(_broker.Gateway($"scada-darbox-{_run}-provisioning"));
+        using var edge = await ConnectAsync(_broker.Edge("edge-a"));
+
+        var received = new ConcurrentQueue<string>();
+        edge.ApplicationMessageReceivedAsync += message =>
+        {
+            received.Enqueue(message.ApplicationMessage.ConvertPayloadToString());
+            return Task.CompletedTask;
+        };
+
+        // The positive control first, and it is not optional: an ACL that refused *everything* would
+        // satisfy the assertion below just as well, and would be a broken deployment rather than a
+        // confined one. Subscribing to this edge's own topic delivers, so the mechanism works.
+        await edge.SubscribeAsync(new MqttClientSubscribeOptionsBuilder()
+            .WithTopicFilter("scada/edge/edge-a/writes", MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+        await PublishAndAwaitOne(gateway, "scada/edge/edge-a/writes", $"{_run}:own", received);
+
+        // Now the same edge asks for another edge's requests.
+        await edge.SubscribeAsync(new MqttClientSubscribeOptionsBuilder()
+            .WithTopicFilter("scada/edge/edge-b/writes", MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+        await PublishAndAwaitOne(gateway, "scada/edge/edge-b/writes", $"{_run}:forbidden", received);
+
+        // It was given its own and not the other's: the count says the second publish delivered
+        // nothing, and the contents say which one arrived.
+        Assert.Equal([$"{_run}:own"], received);
+    }
+
+    /// <summary>
+    /// Publishes, waits for it to arrive, and gives the assertion something to be wrong about — a
+    /// subscription that silently failed and a topic that carried nothing look identical otherwise.
+    /// </summary>
+    private static async Task PublishAndAwaitOne(
+        IMqttClient publisher,
+        string topic,
+        string payload,
+        ConcurrentQueue<string> received)
+    {
+        var before = received.Count;
+
+        Assert.True((await publisher.PublishAsync(new MqttApplicationMessageBuilder()
+            .WithTopic(topic)
+            .WithPayload(payload)
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build())).IsSuccess, $"the Gateway must be able to publish to {topic}");
+
+        var deadline = DateTime.UtcNow.AddSeconds(3);
+        while (received.Count == before && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+        }
+    }
+
+    [RequiresDockerFact]
+    public async Task An_edge_cannot_answer_another_edges_write()
+    {
+        // The mirror of the declaration rule (ADR-0021): a result is this edge's own statement
+        // about its own plant, so an edge that could publish under another edge's name could tell
+        // the cloud a write succeeded that never happened here — the untruth the whole path is
+        // built to avoid.
+        using var edge = await ConnectAsync(_broker.Edge("edge-a"));
+
+        var forged = await edge.PublishAsync(new MqttApplicationMessageBuilder()
+            .WithTopic("scada/edge/edge-b/write-results")
+            .WithPayload($"{_run}:forged")
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+
+        Assert.False(forged.IsSuccess, "an edge must not be able to answer another edge's write");
+    }
+
+    [RequiresDockerFact]
+    public async Task A_write_request_the_broker_holds_is_not_given_to_an_edge_that_asks_later()
+    {
+        // ADR-0023 §3, and the reason it is a decision rather than a detail: a retained write is one
+        // an edge receives the moment it reconnects, having missed the moment. A late sample is
+        // still true of its own moment; a late command is a request to change a plant after the
+        // reason for it has passed.
+        //
+        // This watches the broker's half — that a request published **without** the flag leaves
+        // nothing behind for a later connection, which is what an edge arriving after the fact
+        // would find. The other half is that the Gateway's own publisher never sets the flag, and
+        // that is asserted where that publisher is tested.
+        using var gateway = await ConnectAsync(_broker.Gateway($"scada-darbox-{_run}-provisioning"));
+
+        Assert.True((await gateway.PublishAsync(new MqttApplicationMessageBuilder()
+            .WithTopic("scada/edge/edge-a/writes")
+            .WithPayload($"{_run}:stale-command")
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            // Deliberately NOT .WithRetainFlag(): this is how the product publishes a write.
+            .Build())).IsSuccess);
+
+        // A fresh connection, as an edge that was offline would make.
+        using var edge = await ConnectAsync(_broker.Edge("edge-a"));
+        var received = new ConcurrentQueue<string>();
+        edge.ApplicationMessageReceivedAsync += message =>
+        {
+            received.Enqueue(message.ApplicationMessage.ConvertPayloadToString());
+            return Task.CompletedTask;
+        };
+        await edge.SubscribeAsync(new MqttClientSubscribeOptionsBuilder()
+            .WithTopicFilter("scada/edge/edge-a/writes", MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build());
+
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        // Nothing waited for it. The control that this topic is otherwise live is the first test in
+        // this pair: the same topic, the same ACL, and a message that does arrive when it is sent
+        // while somebody is listening.
+        Assert.Empty(received);
+    }
+
     private async Task<GatewaySession> GatewayAsync(string? clientId = null)
     {
         var client = new MqttClientFactory().CreateMqttClient();

@@ -97,6 +97,13 @@ public sealed class EdgeWriteRouter : IEdgeWriteRouter
     /// <summary>Whether a deployment lets a write to an edge-assigned device through at all.</summary>
     internal bool Enabled => _options.Enabled && _options.WritesEnabled;
 
+    /// <summary>
+    /// Whether the router has a connection to publish on yet. False until the publisher has
+    /// connected, and false again if the connection is rebuilt — a caller that asks is told the
+    /// truth rather than left to guess at a delay.
+    /// </summary>
+    public bool CanPublish => _send is not null;
+
     public async Task<EdgeWriteOutcome> WriteAsync(
         string edgeName,
         Guid tagId,

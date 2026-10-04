@@ -152,18 +152,36 @@ defects and not open questions: the work exists and nothing has been through it 
   — and the queue under it — from being dropped by the change.
 - **[ADR-0023](../architecture/decisions/0023-routing-writes-to-an-edge.md) — a tag write is routed
   to the edge that reads the device, and is never queued or retained.** Decided and implemented
-  2026-10-03, with its own tests and two mutations recorded. **What has not happened: a write that
-  actually reaches a device.** Every test here is a half of the conversation — the cloud's half
-  (the router matching a result to the call waiting for it, the API answering 504 when nothing
-  answers) and the wire format's (the payload round trips) — and the edge's half is covered by
-  compilation and by the executor's own shape, not by a run. **Nothing has asked a real edge to
-  write a real register and read it back.** That is the walk this owes, and it is the one to do
-  first of the three here, because it is the only one where being wrong means a plant was changed
-  or an operator was told it was. **Also not walked:** that a write is genuinely not delivered to
-  an edge that was offline when it was published — the retain flag's absence is asserted in the
-  code and has never been watched over a real broker; and the ACL for the two new topics has never
-  been exercised against Mosquitto, so the rule that an edge cannot read another edge's write
-  requests is tested by inspection rather than by a refusal in the audit file.
+  2026-10-03, with its own tests and four mutations recorded. **What has not happened: a write that
+  travels the whole way.** Every joint is now tested and no run has crossed all of them at once — a
+  browser asking the API, the router publishing, a real edge taking it off a real broker, a real
+  device changing, and the result coming back to the operator's screen. That is the walk this owes,
+  and it is the one to do first of the four here, because it is the only one where being wrong means
+  a plant was changed or an operator was told it was.
+
+  **What the tests now do cover**, so this entry is not read as "nothing is tested":
+  - the cloud's half — the router matching a result to the call waiting for it, the API answering
+    504 when nothing answers, the journal keeping `written` / `failed` / `unconfirmed` apart;
+  - the wire format — a request and a result round-tripping, and every unreadable one refused whole;
+  - **the edge's half, against a real Modbus slave on a real port** — a write reaching the right
+    register through the configuration's address and the read path's own scale, and each of the four
+    ways it can fail coming back with its own reason. Running this found a defect compiling had not:
+    the executor returned a *refusal* (the type for a message that could not be read) where it owed a
+    *result*, which carries no write id, so the uplink stayed silent and the cloud would have
+    reported "not confirmed" about a write the edge knew had failed;
+  - **the retain rule over a real broker** — a write the Gateway publishes is not retained, beside a
+    configuration from the same publisher that is, so the difference is the write alone;
+  - **the ACL, against Mosquitto** — the Gateway may ask any edge and read any edge's answer; an edge
+    reads its own requests and not another's; and an edge cannot answer under another's name. Both
+    rules were confirmed to fail when broken, which is what makes them tested rather than inspected.
+    The confinement test needed a positive control before it meant anything: an ACL refusing
+    everything satisfied it just as well, and the first version of that test passed under a mutation
+    that removed the rule.
+
+  **Still unrun, and worth naming:** a device that accepts a connection and then stops answering, so
+  the executor's own ten-second bound is never exercised; and the uplink's own handling of a write
+  message off a broker — the executor is tested where it is called, and nothing publishes a request
+  and watches that edge answer it.
 
 ### 2.1 ADR-0019 configuration provisioning, end to end
 
@@ -424,12 +442,27 @@ with the client's 60 passed beside them. The count is 425 plus the four ADR-0020
 green, at **447 passed, 0 skipped**, with the client's 63. The two flakes above have not been seen
 since the fix.
 
+**Measured again 2026-10-03, after ADR-0023 and its edge-side tests: 498 passed, 0 skipped across
+seven projects**, with the client's 63. Two whole-solution runs produced it: **465** before the
+edge-side tests, which is the baseline above plus ADR-0023's cloud and wire halves (21 payload tests
+in the MQTT module and 7 router tests in the Gateway, one existing Gateway test rewritten to assert
+the routing instead of the refusal it replaced); then **492** after the edge's half went in (7
+executor tests against a real Modbus slave); then **498** after the broker rules (6 more: 4 write-ACL
+tests against a real Mosquitto, and 2 for the retain rule). The last three numbers are what the runs
+printed; an attempt to reconcile them by adding up per-project deltas came out six high, which is
+recorded rather than smoothed over.
+
+**One flake was seen and is recorded rather than dismissed.** `ScadaDarbox.Gateway.Tests` failed once
+in a whole-solution run and the failing test's name was not captured before the output scrolled; its
+project then passed 143 of 143 on its own and 149 of 149 in the next whole-solution run. Cause is not
+established, so this is a sighting and not a diagnosis — the two diagnosed flakes above stay fixed
+and a third, unidentified, is possible.
+
 **Not claimed:** that no flake remains anywhere, and not that both changes are individually
 necessary. What is claimed is that the diagnosed race is fixed, that the timeout was wrong on its
 own terms whatever its share of the blame, and that the reproduction rate went from 8 of 8 red to
 7 of 7 green on the same machine, the same stack and the same test database. The third candidate
-above — one shared database that several classes create and drop under each other — is still the
-shape of the design, and a deadline that is a wall clock rather than a signal is still how
+above — one shared database that several classes create and drop under each other — is still theshape of the design, and a deadline that is a wall clock rather than a signal is still how
 `WaitUntilAsync` is written.
 
 
