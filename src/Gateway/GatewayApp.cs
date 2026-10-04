@@ -221,11 +221,21 @@ public static class GatewayApp
             Port = provisioning.GetValue("Port", 8884),
             UsesTls = provisioning.GetValue("UsesTls", true),
             TopicPrefix = provisioning.GetValue("TopicPrefix", "scada/edge") ?? "scada/edge",
+            // On by default, which is today's behaviour for a polled device extended to the ones
+            // behind an edge; off is for a plant that must not be commanded from a cloud
+            // (ADR-0023 §8).
+            WritesEnabled = provisioning.GetValue("WritesEnabled", true),
             CaFile = provisioning.GetValue("CaFile", "/app/mqtt/ca.crt") ?? "/app/mqtt/ca.crt",
             CertFile = provisioning.GetValue("CertFile", "/app/mqtt/scada-gateway.crt") ?? "/app/mqtt/scada-gateway.crt",
             KeyFile = provisioning.GetValue("KeyFile", "/app/mqtt/scada-gateway.key") ?? "/app/mqtt/scada-gateway.key",
         });
         services.AddSingleton<EdgeDriverDeclarations>();
+
+        // The cloud's half of the write conversation (ADR-0023): it is handed the way to publish by
+        // the publisher, because that is the type owning the one MQTT connection.
+        services.AddSingleton<EdgeWriteRouter>();
+        services.AddSingleton<IEdgeWriteRouter>(provider => provider.GetRequiredService<EdgeWriteRouter>());
+
         services.AddHostedService<EdgeConfigurationPublisher>();
 
         // And where each edge's link device is written, so that nothing about an edge is typed by

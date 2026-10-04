@@ -1,12 +1,18 @@
 # ADR-0023 — A tag write is routed to the edge that reads the device, and is never queued
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-03
 **Complements:** ADR-0019 (§3 the Gateway stops polling a device an edge reads — this is the
 Consequences entry it left open), ADR-0017 (the link: outbound only, our own payload, TLS per
 edge, and the buffer that makes store-and-forward work), ADR-0016 (a driver declares what it can
 do), ADR-0011 (the audit trail), ADR-0003 (a value that has no honest reading is not invented —
 here, a result that was never reported is not success), ADR-0002 (Core names no protocol).
+
+*Accepted 2026-10-03, having been put as a proposal first, and accepted with one thing added
+rather than settled: decision 4's bound is five seconds, and decision 8 is new — a deployment may
+turn writing over the link off entirely. That switch is the answer to the concern this ADR raises
+about itself: a plant that must not be commanded from the cloud can say so, and the default is
+today's behaviour rather than a new one.*
 
 ## Context
 
@@ -86,15 +92,16 @@ that connects a minute later does not receive a command from a minute ago. The e
 write in its disk buffer: the buffer exists to carry measurements across an outage (ADR-0017), and
 there is no honest way to carry a command across one.
 
-**4. The API waits for an answer within a bound, and says it did not get one.**
+**4. The API waits for an answer within five seconds, and says it did not get one.**
 
 A write succeeds, or it is reported as failed with the edge's reason, or the deadline passes and the
 caller is told exactly that. It is never answered before the edge has answered, and it is never
 answered as though it had.
 
-The bound is a few seconds — a MQTT round trip over one link, not a device's own scan interval.
-**504**, not 202: a write is a request for something to have happened, so "accepted" would be the
-untrue answer this ADR exists to avoid.
+Five seconds: one MQTT round trip over one link, with room for a device that answers slowly, and
+short enough that an operator who has asked a plant to do something is not left guessing. **504**,
+not 202 — a write is a request for something to have happened, so "accepted" would be the untrue
+answer this ADR exists to avoid.
 
 A write whose edge is silent therefore ends in a timeout that names the edge, and the read path's
 own staleness rule is what says whether that edge was there at all (ADR-0016) — the write path does
@@ -119,6 +126,20 @@ This adds a topic in the cloud-to-edge direction and a reply topic in the other.
 declarations and configurations are untouched, and `tag.write_refused` disappears only because
 there is nothing left to refuse — an assigned device is now reachable, through the edge that reads
 it.
+
+**8. A deployment may turn writing over the link off, and the default is that it is on.**
+
+`EdgeProvisioning:WritesEnabled`, off meaning a write to an edge-assigned device is refused exactly
+as it is today — by name, and audited. It is the one control this ADR adds beyond the three
+guardrails above, and it exists because for some plants commanding equipment from a cloud is not a
+capability that should be reachable by configuration drift: it is a decision the deployment makes,
+and this is how it makes it.
+
+Defaulting to on is deliberate rather than incidental. It is what today's behaviour is for a device
+the Gateway polls — an Operator may write one, and always could — so a deployment that upgrades
+gains nothing it did not already have; what it gains is the same ability extended to the devices it
+put behind an edge. Off is available to anyone who does not want that, and the refusal it produces
+names the setting rather than leaving an operator to wonder why the write is rejected.
 
 ## Consequences
 
@@ -162,5 +183,7 @@ it.
   a write nor fail one.
 - The permission and `IsWritable` checks still happen **before** anything is published, so an
   unpermitted or read-only write never reaches an edge.
+- With writing over the link off, a write to an edge-assigned device is refused by name, audited,
+  and **nothing is published** — the setting is a refusal and not a filter applied after the fact.
 - No Core type mentions MQTT, a topic or a broker (ADR-0002), and the edge writes through the same
   `IDeviceDriver.WriteAsync` the Gateway uses.

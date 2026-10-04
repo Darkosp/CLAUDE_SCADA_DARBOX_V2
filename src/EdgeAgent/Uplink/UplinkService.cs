@@ -5,6 +5,7 @@ using MQTTnet;
 using MQTTnet.Formatter;
 using MQTTnet.Protocol;
 using ScadaDarbox.Core.Drivers;
+using ScadaDarbox.EdgeAgent.Acquisition;
 using ScadaDarbox.EdgeAgent.Buffer;
 using ScadaDarbox.EdgeAgent.Configuration;
 using ScadaDarbox.Modules.Drivers.Mqtt;
@@ -48,6 +49,7 @@ public sealed class UplinkService : BackgroundService
     private readonly SampleBuffer _buffer;
     private readonly EdgeConfigurationConsumer _configuration;
     private readonly EdgeUnreadableDevices _unreadable;
+    private readonly EdgeWriteExecutor _writes;
     private readonly IReadOnlyList<string> _driverKeys;
     private readonly ILogger<UplinkService> _logger;
     private readonly TimeProvider _clock;
@@ -63,6 +65,7 @@ public sealed class UplinkService : BackgroundService
         SampleBuffer buffer,
         EdgeConfigurationConsumer configuration,
         EdgeUnreadableDevices unreadable,
+        EdgeWriteExecutor writes,
         IEnumerable<IDeviceDriverFactory> factories,
         ILogger<UplinkService> logger,
         TimeProvider? clock = null)
@@ -71,6 +74,7 @@ public sealed class UplinkService : BackgroundService
         _buffer = buffer;
         _configuration = configuration;
         _unreadable = unreadable;
+        _writes = writes;
         // The drivers this build has, asked of the same factories the acquisition service scans
         // through, so what this edge declares and what it can actually read cannot disagree.
         _driverKeys = factories.Select(factory => factory.DriverKey).ToList();
@@ -96,22 +100,30 @@ public sealed class UplinkService : BackgroundService
 
         var connection = builder.Build();
 
-        // This edge's configuration, as the cloud publishes it (ADR-0019 §4). Handled on the
-        // client's own thread and applied before the next message is read: it is a few kilobytes of
-        // JSON and one row in SQLite, and a queue between the two would only be somewhere for an
-        // accepted configuration to wait.
-        client.ApplicationMessageReceivedAsync += message =>
+        // Two things arrive on this connection, told apart by their topic: the configuration the
+        // cloud derived for this edge (ADR-0019 §4), and a write it is asking for (ADR-0023). Both
+        // are handled on the client's own thread and finished before the next message is read: a
+        // configuration is a few kilobytes of JSON and one row in SQLite, and a write is one
+        // operator's action that the cloud is waiting on.
+        client.ApplicationMessageReceivedAsync += async message =>
         {
             var topic = message.ApplicationMessage.Topic;
+
+            if (topic == _options.WritesTopic)
+            {
+                await HandleWriteAsync(client, message.ApplicationMessage.ConvertPayloadToString(), stoppingToken)
+                    .ConfigureAwait(false);
+
+                return;
+            }
 
             if (topic != _options.ConfigurationTopic)
             {
                 _logger.LogWarning("Ignoring a message on {Topic}, which is not this edge's topic.", topic);
-                return Task.CompletedTask;
+                return;
             }
 
             _configuration.Accept(message.ApplicationMessage.ConvertPayloadToString());
-            return Task.CompletedTask;
         };
 
         try
@@ -127,6 +139,10 @@ public sealed class UplinkService : BackgroundService
                         await client.SubscribeAsync(
                             new MqttClientSubscribeOptionsBuilder()
                                 .WithTopicFilter(_options.ConfigurationTopic, MqttQualityOfServiceLevel.AtLeastOnce)
+                                // The write topic too, and subscribing to something that is not
+                                // retained is the point: a write an edge receives the moment it
+                                // reconnects is one whose moment has passed (ADR-0023 §3).
+                                .WithTopicFilter(_options.WritesTopic, MqttQualityOfServiceLevel.AtLeastOnce)
                                 .Build(),
                             stoppingToken).ConfigureAwait(false);
 
@@ -280,6 +296,58 @@ public sealed class UplinkService : BackgroundService
         string.Join(
             "\n",
             _unreadable.Current.Select(device => $"{device.Device}\u0000{device.Driver}"));
+
+    /// <summary>
+    /// Carries out one write the cloud asked for and publishes the result (ADR-0023).
+    /// </summary>
+    /// <remarks>
+    /// <b>An answer is always sent when the request could be read at all</b>, including when the
+    /// write failed: a request that is understood and then left unanswered would have the cloud
+    /// wait out its deadline and tell an operator "not confirmed" about a write the edge knows
+    /// perfectly well did not happen. The one case with no answer is a request that could not be
+    /// read — there is no id to answer with, so nothing is sent and the cloud's deadline is the
+    /// only true thing to report.
+    /// </remarks>
+    private async Task HandleWriteAsync(IMqttClient client, string payload, CancellationToken cancellationToken)
+    {
+        var request = WritePayload.ReadRequest(payload);
+
+        if (request.Refusal is not null)
+        {
+            _logger.LogWarning("A write from the cloud could not be read and is ignored: {Refusal}", request.Refusal);
+            return;
+        }
+
+        var result = await _writes.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+        var reply = WritePayload.WriteResult(request.WriteId, request.TagId, result.Written, result.Reason);
+
+        try
+        {
+            // Not retained, for the reason the request is not: the cloud is waiting for this now,
+            // and an answer nobody is waiting for is not worth keeping (ADR-0023 §3).
+            var published = await client.PublishAsync(
+                new MqttApplicationMessageBuilder()
+                    .WithTopic(_options.WriteResultsTopic)
+                    .WithPayload(reply)
+                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                    .Build(),
+                cancellationToken).ConfigureAwait(false);
+
+            if (!published.IsSuccess)
+            {
+                _logger.LogWarning(
+                    "The broker refused this edge's answer to write {Write}; the cloud will report it as not confirmed.",
+                    request.WriteId);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                exception,
+                "Publishing the answer to write {Write} failed; the cloud will report it as not confirmed.",
+                request.WriteId);
+        }
+    }
 
     /// <summary>Publishes one batch at QoS 1; true only when the broker acknowledged it.</summary>
     private async Task<bool> SendAsync(

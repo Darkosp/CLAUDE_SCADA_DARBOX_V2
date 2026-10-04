@@ -8,6 +8,7 @@ using MQTTnet.Protocol;
 using MQTTnet.Server;
 using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Model;
+using ScadaDarbox.EdgeAgent.Acquisition;
 using ScadaDarbox.EdgeAgent.Buffer;
 using ScadaDarbox.EdgeAgent.Configuration;
 using ScadaDarbox.EdgeAgent.Uplink;
@@ -122,6 +123,8 @@ public sealed class UplinkTests : IAsyncLifetime
         new EdgeConfigurationConsumer(new EdgeConfigurationSource(), buffer, NullLogger<EdgeConfigurationConsumer>.Instance),
         // And nothing is unreadable until a configuration says so (ADR-0021).
         unreadable ?? new EdgeUnreadableDevices(),
+        // Nothing is written unless the cloud asks (ADR-0023), and these tests never do.
+        new EdgeWriteExecutor(new EdgeConfigurationSource(), Drivers, NullLogger<EdgeWriteExecutor>.Instance),
         Drivers,
         NullLogger<UplinkService>.Instance);
 

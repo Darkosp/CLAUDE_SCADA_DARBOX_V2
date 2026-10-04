@@ -229,14 +229,10 @@ public static class SamplePayload
         return HasOffset(text) ? null : SampleProblem.TimestampWithoutOffset;
     }
 
-    private static JsonObject WriteValue(TagValue? value) => value switch
-    {
-        TagValue.Numeric numeric => new JsonObject { ["kind"] = "numeric", ["numeric"] = numeric.Value },
-        TagValue.Boolean boolean => new JsonObject { ["kind"] = "boolean", ["boolean"] = boolean.Value },
-        TagValue.Text text => new JsonObject { ["kind"] = "text", ["text"] = text.Value },
-        TagValue.Discrete discrete => new JsonObject { ["kind"] = "discrete", ["code"] = discrete.Code, ["label"] = discrete.Label },
-        _ => new JsonObject { ["kind"] = "none" },
-    };
+    // The value encoding is shared with the write payload rather than repeated (TagValueJson): the
+    // two must agree about what a value of each kind looks like down to the field, and two copies
+    // of that agreement is two places for it to drift.
+    private static JsonObject WriteValue(TagValue? value) => TagValueJson.Write(value);
 
     private enum SampleProblem
     {
@@ -313,42 +309,8 @@ public static class SamplePayload
         return clock.EndsWith('Z') || clock.EndsWith('z') || clock.Contains('+') || clock.Contains('-');
     }
 
-    private static bool TryReadValue(JsonNode? node, out TagValue? value)
-    {
-        value = null;
-
-        if (node is not JsonObject body || body["kind"]?.GetValueKind() != JsonValueKind.String)
-        {
-            return false;
-        }
-
-        switch (body["kind"]!.GetValue<string>())
-        {
-            case "none":
-                return true;
-            case "numeric" when body["numeric"]?.GetValueKind() == JsonValueKind.Number:
-                var number = body["numeric"]!.GetValue<double>();
-                if (!double.IsFinite(number))
-                {
-                    return false;
-                }
-
-                value = new TagValue.Numeric(number);
-                return true;
-            case "boolean" when body["boolean"]?.GetValueKind() is JsonValueKind.True or JsonValueKind.False:
-                value = new TagValue.Boolean(body["boolean"]!.GetValue<bool>());
-                return true;
-            case "text" when body["text"]?.GetValueKind() == JsonValueKind.String:
-                value = new TagValue.Text(body["text"]!.GetValue<string>());
-                return true;
-            case "discrete" when body["code"] is JsonValue codeNode && codeNode.TryGetValue<int>(out var code):
-                var label = body["label"]?.GetValueKind() == JsonValueKind.String ? body["label"]!.GetValue<string>() : null;
-                value = new TagValue.Discrete(code, label);
-                return true;
-            default:
-                return false;
-        }
-    }
+    // Shared with the write payload, for the reason WriteValue gives above.
+    private static bool TryReadValue(JsonNode? node, out TagValue? value) => TagValueJson.TryRead(node, out value);
 
     private static string Describe(SampleProblem problem) => problem switch
     {

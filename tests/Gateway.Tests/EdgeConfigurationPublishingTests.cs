@@ -139,6 +139,9 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
                 new RecordingAuditLog(),
                 options,
                 NullLogger<EdgeDriverDeclarations>.Instance),
+            // The write conversation shares this connection (ADR-0023). Nothing here writes, so the
+            // router is only present because the publisher is what hands it the way to publish.
+            new EdgeWriteRouter(options, NullLogger<EdgeWriteRouter>.Instance),
             options,
             NullLogger<EdgeConfigurationPublisher>.Instance);
     }

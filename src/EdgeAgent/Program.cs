@@ -64,6 +64,11 @@ builder.Services.AddSingleton<EdgeConfigurationConsumer>();
 // other, which is why it is a third thing rather than a method on either.
 builder.Services.AddSingleton<EdgeUnreadableDevices>();
 
+// Carries out a write the cloud asks for, through the same driver module that reads the device
+// (ADR-0023). The uplink owns the connection the request arrives on; this is what turns one into a
+// driver call, and it is separate so that neither has to know about the other.
+builder.Services.AddSingleton<EdgeWriteExecutor>();
+
 builder.Services.AddHostedService<AcquisitionService>();
 builder.Services.AddHostedService<UplinkService>();
 

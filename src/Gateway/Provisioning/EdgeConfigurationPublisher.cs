@@ -65,15 +65,22 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
     /// <summary>Raised whenever the catalogue is replaced, to wake the loop.</summary>
     private readonly SemaphoreSlim _changed = new(0);
 
+    /// <summary>The cloud's half of the write conversation (ADR-0023): it matches a result to the
+    /// call waiting for it, and it is given the way to publish here because this is the type that
+    /// owns the one MQTT connection the Gateway holds.</summary>
+    private readonly EdgeWriteRouter _writes;
+
     public EdgeConfigurationPublisher(
         TagCatalogSource catalogSource,
         EdgeDriverDeclarations declarations,
+        EdgeWriteRouter writes,
         IOptions<EdgeProvisioningOptions> options,
         ILogger<EdgeConfigurationPublisher> logger,
         TimeProvider? clock = null)
     {
         _catalogSource = catalogSource;
         _declarations = declarations;
+        _writes = writes;
         _options = options.Value;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
@@ -127,6 +134,16 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
 
             try
             {
+                // Two conversations arrive on this connection, told apart by their topic: a
+                // declaration (ADR-0019 §8) and the result of a write the cloud asked for
+                // (ADR-0023). The router ignores anything whose id it is not waiting for, so an
+                // edge's result on the declaration topic cannot complete a write.
+                if (application.Topic.EndsWith("/write-results", StringComparison.Ordinal))
+                {
+                    _writes.HandleResult(application.ConvertPayloadToString());
+                    return;
+                }
+
                 await _declarations.HandleAsync(
                     application.Topic,
                     application.ConvertPayloadToString(),
@@ -156,8 +173,16 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
                         await client.SubscribeAsync(
                             new MqttClientSubscribeOptionsBuilder()
                                 .WithTopicFilter(_options.DriversTopicFilter, MqttQualityOfServiceLevel.AtLeastOnce)
+                                .WithTopicFilter(_options.WriteResultsTopicFilter, MqttQualityOfServiceLevel.AtLeastOnce)
                                 .Build(),
                             stoppingToken).ConfigureAwait(false);
+
+                        // Given the live client through a closure, and again after every reconnect: a
+                        // sender that captured a dead one would fail silently for the life of the
+                        // process, and ADR-0023's deadline would turn that into "the edge did not
+                        // answer" — a wrong reason rather than a missing one.
+                        _writes.UseSender((topic, payload, token) =>
+                            PublishRawAsync(client, topic, payload, token));
 
                         _published.Clear();
                         _logger.LogInformation(
@@ -347,6 +372,33 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
         {
             _logger.LogWarning("Publishing the configuration for {Topic} failed ({Reason}).", topic, exception.Message);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Publishes one write request, **not retained** (ADR-0023 §3). Throws when the broker refuses
+    /// it, because a write that did not leave is one the router must report as unconfirmed rather
+    /// than wait out its deadline for.
+    /// </summary>
+    /// <remarks>
+    /// The opposite of <see cref="PublishAsync"/> in the one way that matters: no retain flag. A
+    /// retained write is one an edge receives the moment it reconnects, having missed the moment —
+    /// a late sample is still true of its own moment, and a late command is a request to change a
+    /// plant after the reason for it has passed.
+    /// </remarks>
+    private async Task PublishRawAsync(IMqttClient client, string topic, string payload, CancellationToken cancellationToken)
+    {
+        var result = await client.PublishAsync(
+            new MqttApplicationMessageBuilder()
+                .WithTopic(topic)
+                .WithPayload(payload)
+                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                .Build(),
+            cancellationToken).ConfigureAwait(false);
+
+        if (!result.IsSuccess)
+        {
+            throw new InvalidOperationException($"the broker refused it: {result.ReasonCode}");
         }
     }
 

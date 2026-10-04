@@ -266,7 +266,14 @@ public sealed class EdgeDriverDeclarationsTests : IAsyncLifetime
             source,
             audit,
             logs,
-            new EdgeConfigurationPublisher(source, declarations, options, factory.CreateLogger<EdgeConfigurationPublisher>()));
+            new EdgeConfigurationPublisher(
+                source,
+                declarations,
+                // The write conversation shares this connection (ADR-0023); these tests are about
+                // declarations arriving, so the router only has to exist.
+                new EdgeWriteRouter(options, NullLogger<EdgeWriteRouter>.Instance),
+                options,
+                factory.CreateLogger<EdgeConfigurationPublisher>()));
     }
 
     private static Device Device(Guid id, Guid siteId, string name, string driverKey) => new()

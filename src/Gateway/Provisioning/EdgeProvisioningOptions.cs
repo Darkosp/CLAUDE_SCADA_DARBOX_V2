@@ -35,6 +35,18 @@ public sealed class EdgeProvisioningOptions
     /// <summary>The prefix edge topics sit under, e.g. <c>scada/edge</c>.</summary>
     public string TopicPrefix { get; init; } = "scada/edge";
 
+    /// <summary>
+    /// Whether a tag whose device an edge reads may be written over the link at all (ADR-0023 §8).
+    /// </summary>
+    /// <remarks>
+    /// On by default, which is what today's behaviour is for a device the Gateway polls: an Operator
+    /// may write one and always could. This extends the same ability to the devices behind an edge.
+    /// **Off** makes a write to such a tag a refusal by name, exactly as it was before ADR-0023 —
+    /// for a plant where commanding equipment from a cloud is not a capability that should be
+    /// reachable, and should have to be turned on deliberately rather than inherited.
+    /// </remarks>
+    public bool WritesEnabled { get; init; } = true;
+
     public string CaFile { get; init; } = "/app/mqtt/ca.crt";
 
     public string CertFile { get; init; } = "/app/mqtt/scada-gateway.crt";
@@ -62,6 +74,18 @@ public sealed class EdgeProvisioningOptions
     /// a subscription created from the catalogue could never hear from it.
     /// </summary>
     public string DriversTopicFilter => $"{TopicPrefix}/+/drivers";
+
+    /// <summary>
+    /// Where one edge is told to write a tag (ADR-0023). Published by the Gateway, read by that one
+    /// edge, and **never retained**: a command an edge receives the moment it reconnects is one
+    /// whose moment has passed.
+    /// </summary>
+    public string WritesTopic(string edgeName) => $"{TopicPrefix}/{edgeName}/writes";
+
+    /// <summary>
+    /// Every edge's write result at once, for the reason <see cref="DriversTopicFilter"/> exists.
+    /// </summary>
+    public string WriteResultsTopicFilter => $"{TopicPrefix}/+/write-results";
 
     /// <summary>Why these settings cannot be used, or nothing.</summary>
     public IReadOnlyList<string> Problems() =>

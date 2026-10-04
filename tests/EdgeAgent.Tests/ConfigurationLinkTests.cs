@@ -7,6 +7,7 @@ using MQTTnet.Protocol;
 using MQTTnet.Server;
 using ScadaDarbox.Core.Drivers;
 using ScadaDarbox.Core.Model;
+using ScadaDarbox.EdgeAgent.Acquisition;
 using ScadaDarbox.EdgeAgent.Buffer;
 using ScadaDarbox.EdgeAgent.Configuration;
 using ScadaDarbox.EdgeAgent.Uplink;
@@ -65,7 +66,7 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
         using var buffer = SampleBuffer.Open(_path, maxPending: 1_000);
         var configuration = new EdgeConfigurationSource();
         var consumer = new EdgeConfigurationConsumer(configuration, buffer, NullLogger<EdgeConfigurationConsumer>.Instance);
-        using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, new EdgeUnreadableDevices(), Drivers, NullLogger<UplinkService>.Instance);
+        using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, new EdgeUnreadableDevices(), new EdgeWriteExecutor(configuration, Drivers, NullLogger<EdgeWriteExecutor>.Instance), Drivers, NullLogger<UplinkService>.Instance);
 
         Assert.Null(configuration.Revision);
 
@@ -91,7 +92,7 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
         using var buffer = SampleBuffer.Open(_path, maxPending: 1_000);
         var configuration = new EdgeConfigurationSource();
         var consumer = new EdgeConfigurationConsumer(configuration, buffer, NullLogger<EdgeConfigurationConsumer>.Instance);
-        using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, new EdgeUnreadableDevices(), Drivers, NullLogger<UplinkService>.Instance);
+        using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, new EdgeUnreadableDevices(), new EdgeWriteExecutor(configuration, Drivers, NullLogger<EdgeWriteExecutor>.Instance), Drivers, NullLogger<UplinkService>.Instance);
 
         await uplink.StartAsync(CancellationToken.None);
         await PublishAsync(EdgeConfigurationPayload.Write(Devices(Pressure), Derived));

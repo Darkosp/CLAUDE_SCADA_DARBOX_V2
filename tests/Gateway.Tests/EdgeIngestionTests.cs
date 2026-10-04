@@ -13,6 +13,7 @@ using ScadaDarbox.Core.Model;
 using ScadaDarbox.EdgeAgent;
 using ScadaDarbox.EdgeAgent.Buffer;
 using ScadaDarbox.EdgeAgent.Configuration;
+using ScadaDarbox.EdgeAgent.Acquisition;
 using ScadaDarbox.EdgeAgent.Uplink;
 using ScadaDarbox.Gateway.Contracts;
 using ScadaDarbox.Gateway.Tests.Hosting;
@@ -312,6 +313,11 @@ public sealed class EdgeIngestionTests : IClassFixture<GatewayTestHost>, IAsyncL
         new EdgeConfigurationConsumer(new EdgeConfigurationSource(), buffer, NullLogger<EdgeConfigurationConsumer>.Instance),
         // What this edge cannot read, empty until a configuration says otherwise (ADR-0021).
         new EdgeUnreadableDevices(),
+        // Nothing is written unless the cloud asks (ADR-0023), and this test only reads.
+        new EdgeWriteExecutor(
+            new EdgeConfigurationSource(),
+            [new ModbusTcpDriverFactory(TimeProvider.System), new OpcUaDriverFactory(TimeProvider.System)],
+            NullLogger<EdgeWriteExecutor>.Instance),
         // The real driver set: connecting makes this edge declare what it has (ADR-0019 §8), and a
         // test that started the real service would say exactly this.
         [

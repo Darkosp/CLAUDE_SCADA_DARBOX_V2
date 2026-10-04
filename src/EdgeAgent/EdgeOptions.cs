@@ -39,6 +39,20 @@ public sealed class EdgeOptions
     /// </summary>
     public string DriversTopic => $"{Broker.TopicPrefix.TrimEnd('/')}/{Id}/drivers";
 
+    /// <summary>
+    /// Where the cloud asks this edge to write a tag: <c>{TopicPrefix}/{Id}/writes</c> (ADR-0023).
+    /// **Not retained**, and that is load-bearing: a write an edge receives the moment it
+    /// reconnects is a command to change a plant after the reason for it has passed.
+    /// </summary>
+    public string WritesTopic => $"{Broker.TopicPrefix.TrimEnd('/')}/{Id}/writes";
+
+    /// <summary>
+    /// Where this edge answers a write: <c>{TopicPrefix}/{Id}/write-results</c>, not retained for
+    /// the same reason — the cloud is waiting for it now, and an answer nobody is waiting for is
+    /// not worth keeping.
+    /// </summary>
+    public string WriteResultsTopic => $"{Broker.TopicPrefix.TrimEnd('/')}/{Id}/write-results";
+
     /// <summary>Why this configuration cannot run, or nothing.</summary>
     public IReadOnlyList<string> Problems()
     {

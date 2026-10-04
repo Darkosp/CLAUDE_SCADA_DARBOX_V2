@@ -5,6 +5,7 @@ using ScadaDarbox.Core.Model;
 using ScadaDarbox.Core.Security;
 using ScadaDarbox.Core.Tags;
 using ScadaDarbox.Gateway.Contracts;
+using ScadaDarbox.Gateway.Provisioning;
 using ScadaDarbox.Gateway.Security;
 
 namespace ScadaDarbox.Gateway.Operations;
@@ -22,6 +23,7 @@ internal static class TagWriteEndpoints
             Caller caller,
             TagCatalogSource catalogSource,
             TagWriter writer,
+            EdgeWriteRouter edgeWrites,
             IAuditLog audit,
             CancellationToken cancellationToken) =>
         {
@@ -46,35 +48,27 @@ internal static class TagWriteEndpoints
                 return Results.BadRequest(new { error = "This tag is not writable." });
             }
 
-            // A device an edge acquires is not reachable from here (ADR-0019 §3). The link is
-            // outbound only, so the write below would open a connection that cannot be made and
-            // then report a device error that never happened — an untrue refusal, the class
-            // ADR-0003 exists to prevent. Refused by name instead, and recorded: an operator
-            // deserves to know which edge holds the device. Routing the write to that edge is a
-            // decision of its own and is not taken here.
-            if (catalog.EdgeOfDevice(device.Id) is { } edge)
-            {
-                await audit.AppendAsync(
-                    new AuditEntry(
-                        caller.UserId,
-                        "tag.write_refused",
-                        "tag",
-                        tag.Id,
-                        Audit.Detail(
-                            ("siteId", device.SiteId),
-                            ("deviceId", device.Id),
-                            ("edgeId", edge.Id))),
-                    CancellationToken.None);
-
-                return Results.Conflict(new
-                {
-                    error = $"This tag is read by edge '{edge.Name}', which the Gateway cannot reach.",
-                });
-            }
-
             if (!TryReadValue(request.Value, tag.ValueKind, out var value))
             {
                 return Results.BadRequest(new { error = $"This tag takes a {tag.ValueKind.ToString().ToLowerInvariant()} value." });
+            }
+
+            // A device an edge acquires is not reachable from here (ADR-0019 §3): the link is
+            // outbound only, so the write below would open a connection that cannot be made and then
+            // report a device error that never happened — an untrue refusal, the class ADR-0003
+            // exists to prevent. It is routed to the edge that reads the device instead (ADR-0023),
+            // and a deployment may refuse that outright (§8) rather than route it.
+            if (catalog.EdgeOfDevice(device.Id) is { } edge)
+            {
+                return await WriteThroughEdgeAsync(
+                    edge,
+                    tag,
+                    device,
+                    value,
+                    caller,
+                    edgeWrites,
+                    audit,
+                    cancellationToken).ConfigureAwait(false);
             }
 
             var detail = Audit.Detail(
@@ -97,7 +91,6 @@ internal static class TagWriteEndpoints
                     new { error = $"The device did not accept the write: {exception.Message}" },
                     statusCode: StatusCodes.Status502BadGateway);
             }
-
             await audit.AppendAsync(new AuditEntry(caller.UserId, "tag.write", "tag", tag.Id, detail), CancellationToken.None);
             return Results.NoContent();
         });
@@ -118,6 +111,87 @@ internal static class TagWriteEndpoints
         };
 
         return value is not null;
+    }
+
+    /// <summary>
+    /// Hands one write to the edge that reads the device, and turns its answer into the caller's
+    /// (ADR-0023).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Nothing is published while writing over the link is off: the setting is a refusal, not a
+    /// filter applied after the fact, so a deployment that has turned it off has not asked a plant
+    /// to do anything (ADR-0023 §8).
+    /// </para>
+    /// <para>
+    /// The three outcomes are kept apart because they are three different facts: the edge wrote it,
+    /// the edge tried and the device refused, and the edge never answered. Collapsing the third into
+    /// either of the others would be the untrue answer this path exists to avoid — so it is a
+    /// gateway timeout that says the write is **not confirmed**, and no audit row claims otherwise.
+    /// </para>
+    /// </remarks>
+    private static async Task<IResult> WriteThroughEdgeAsync(
+        Edge edge,
+        Tag tag,
+        Device device,
+        TagValue value,
+        Caller caller,
+        EdgeWriteRouter edgeWrites,
+        IAuditLog audit,
+        CancellationToken cancellationToken)
+    {
+        var detail = Audit.Detail(
+            ("siteId", device.SiteId),
+            ("deviceId", device.Id),
+            ("edgeId", edge.Id),
+            ("value", TagValueDto.From(value)));
+
+        if (!edgeWrites.Enabled)
+        {
+            await audit.AppendAsync(
+                new AuditEntry(caller.UserId, "tag.write_refused", "tag", tag.Id, detail),
+                CancellationToken.None);
+
+            return Results.Conflict(new
+            {
+                error = $"Writing to a device an edge reads is turned off on this deployment, so this tag cannot be written.",
+            });
+        }
+
+        var outcome = await edgeWrites.WriteAsync(edge.Name, tag.Id, value, cancellationToken).ConfigureAwait(false);
+
+        if (!outcome.Confirmed)
+        {
+            detail["edge"] = edge.Name;
+            await audit.AppendAsync(
+                new AuditEntry(caller.UserId, "tag.write_unconfirmed", "tag", tag.Id, detail),
+                CancellationToken.None);
+
+            return Results.Json(
+                new
+                {
+                    error = $"Edge '{edge.Name}' did not answer in time, so the write is not confirmed. "
+                        + "It may or may not have reached the device.",
+                },
+                statusCode: StatusCodes.Status504GatewayTimeout);
+        }
+
+        if (!outcome.Written)
+        {
+            detail["edge"] = edge.Name;
+            detail["error"] = outcome.Reason;
+            await audit.AppendAsync(
+                new AuditEntry(caller.UserId, "tag.write_failed", "tag", tag.Id, detail),
+                CancellationToken.None);
+
+            return Results.Json(
+                new { error = $"Edge '{edge.Name}' could not write it: {outcome.Reason}" },
+                statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        detail["edge"] = edge.Name;
+        await audit.AppendAsync(new AuditEntry(caller.UserId, "tag.write", "tag", tag.Id, detail), CancellationToken.None);
+        return Results.NoContent();
     }
 }
 
