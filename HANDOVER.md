@@ -526,16 +526,24 @@ The exact commands behind the measurements are in [`HANDOVER-archive.md`](HANDOV
 
 ## 6. Where the 2026-10-02 and 2026-10-03 sessions stopped, and what to do next
 
-Read this first. It is the state of the tree at `bec4120`, and everything below it in this file is
-still true unless this section says otherwise.
+Read this first. It is the state of the tree after the 2026-10-03 session's last commit, and
+everything below it in this file is still true unless this section says otherwise.
 
 **Where the 2026-10-03 session stopped.** Nothing is in flight and nothing is half-done: the work is
-committed, pushed, and `main` is level with `origin/main`. The last four commits are ADR-0023 and the
-two rounds of tests it gained afterwards — `ea26cea` (the edge's half, against a real Modbus slave),
-`231d459` (the write ACL and the retain rule, against a real Mosquitto), and `bec4120` (this file and
-`CLAUDE.md` brought up to 498). The tree is clean; the only thing left running that this work started
-is the test database on **5433**, which now carries `--restart unless-stopped` so a stopped container
-cannot make a later run look green when it is not.
+committed, pushed, and `main` is level with `origin/main`. The session produced ADR-0023 and then
+three rounds of tests closing the gaps it had left — `ea26cea` (the edge's executor, against a real
+Modbus slave), `231d459` (the write ACL and the retain rule, against a real Mosquitto), and a third
+(the uplink taking a write off a real broker), each finding or proving something the round before it
+had not. `bec4120` and `5371bfc` bring this file and `CLAUDE.md` up to date; the run that closed the
+session reported **501 passed, 0 skipped**. The tree is clean; the only thing left running that this
+work started is the test database on **5433**, which now carries `--restart unless-stopped` so a
+stopped container cannot make a later run look green when it is not.
+
+**The one thing to do next is unchanged and is written out in "What to do next, in order" below:**
+walk ADR-0023's write path end to end. Every joint is now executed by something — the API's answer,
+the router's matching, the payload, the executor against a real device, the uplink off a real broker,
+the retain rule and the ACL against a real broker — and no run has crossed all of them at once. That
+last sentence is the whole reason the walk is still owed, and it needs the hardware (§1.3).
 
 **The one thing to do next is unchanged and is written out in "What to do next, in order" below:**
 walk ADR-0023's write path end to end. Every joint is tested and no run has crossed all of them at
@@ -555,8 +563,8 @@ once, and it needs the hardware (§1.3).
 
 | What | Outcome |
 |---|---|
-| **ADR-0023** | A tag write to a device an edge reads is **routed to that edge** over the link. Decided, implemented, mutation-verified four times. |
-| **Its edge half, and the broker's rules** | After the change, the half that had only been *compiled* was tested against a real Modbus slave, and the write ACL and retain rule against a real Mosquitto. That found a defect. |
+| **ADR-0023** | A tag write to a device an edge reads is **routed to that edge** over the link. Decided, implemented, mutation-verified five times. |
+| **Its whole path, one joint at a time** | After the change, the halves that had only been *compiled* were executed: the edge's executor against a real Modbus slave, the uplink taking a write off a real broker, the retain rule and the ACL against a real Mosquitto. That found a defect. |
 
 **That one is different in kind, and it is the thing to understand before touching the write path.**
 Every other payload on the link carries a measurement or a fact backwards, or configuration forwards.
@@ -596,7 +604,7 @@ three controls stay green.
 had a broker, the wire format had a test, and the edge's half had neither — and that was where the
 bug was.
 
-**Test baseline: 498 .NET across seven projects, 0 skipped, plus the client's 63.** Measured with
+**Test baseline: 501 .NET across seven projects, 0 skipped, plus the client's 63.** Measured with
 `SCADA_TEST_DB_PORT=5433` (§2.4–§2.5). One flake was seen and is recorded there as a sighting, not a
 diagnosis — its name was not captured and the project passed twice afterwards.
 
@@ -623,13 +631,13 @@ reports a certificate it should trust, check which CA signed the file it was han
 1. **Walk ADR-0023's write path end to end.** `open-work.md` §2.0 records four things written,
    implemented and tested that have never been through a real link, and **the write is the one to do
    first**: it is the only one where being wrong means a plant was changed or an operator was told it
-   was. Every *joint* is now tested — the API's answer, the router's matching, the payload, the
-   executor against a real Modbus slave, the retain rule and the ACL against a real broker — and no
-   run has crossed all of them at once. That is what the walk is for: a browser asking, the router
-   publishing, a real edge taking it off a real broker, a real device changing, and the result
-   reaching the operator's screen. Two things in that list are still unrun and worth naming: a device
-   that accepts a connection and then stops answering, so the executor's ten-second bound is never
-   exercised; and the uplink's own handling of a write message off a broker.
+   was. Every *joint* is now executed by something — the API's answer, the router's matching, the
+   payload, the executor against a real Modbus slave, the uplink taking a message off a real broker,
+   the retain rule and the ACL against a real Mosquitto — and **no run has crossed all of them at
+   once**. That is what the walk is for: a browser asking, the router publishing, a real edge taking
+   it off a real broker, a real device changing, and the result reaching the operator's screen. One
+   path is still unexecuted anywhere and worth naming: **a device that accepts a connection and then
+   stops answering**, so the executor's ten-second bound has never fired.
 2. **Then the other three items in `open-work.md` §2.0** — ADR-0020's omission, ADR-0021's
    reporting and its payload version (two builds of different ages on one link), and ADR-0022's
    derived link actually subscribing. All want a broker and an edge, so they belong to the **same

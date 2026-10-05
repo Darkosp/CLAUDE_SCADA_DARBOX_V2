@@ -177,11 +177,16 @@ defects and not open questions: the work exists and nothing has been through it 
     The confinement test needed a positive control before it meant anything: an ACL refusing
     everything satisfied it just as well, and the first version of that test passed under a mutation
     that removed the rule.
+  - **the uplink's own handling of a message off a broker** — a write published onto the link, into
+    the running service, out to a real device, and the answer back on the topic the cloud listens
+    to. This was the last joint no test crossed and it was covered by compiling, which is the same
+    gap the executor's defect hid behind. Restoring that defect now fails a test **here** as well as
+    the executor's own, which is the point: the silence it caused was visible from both ends and
+    only one of them was being watched.
 
   **Still unrun, and worth naming:** a device that accepts a connection and then stops answering, so
-  the executor's own ten-second bound is never exercised; and the uplink's own handling of a write
-  message off a broker — the executor is tested where it is called, and nothing publishes a request
-  and watches that edge answer it.
+  the executor's own ten-second bound is never exercised. Everything else on this path has been
+  executed by something.
 
 ### 2.1 ADR-0019 configuration provisioning, end to end
 
@@ -442,21 +447,26 @@ with the client's 60 passed beside them. The count is 425 plus the four ADR-0020
 green, at **447 passed, 0 skipped**, with the client's 63. The two flakes above have not been seen
 since the fix.
 
-**Measured again 2026-10-03, after ADR-0023 and its edge-side tests: 498 passed, 0 skipped across
-seven projects**, with the client's 63. Two whole-solution runs produced it: **465** before the
+**Measured again 2026-10-03, after ADR-0023 and its edge-side tests: 501 passed, 0 skipped across
+seven projects**, with the client's 63. Whole-solution runs produced it as it grew: **465** before the
 edge-side tests, which is the baseline above plus ADR-0023's cloud and wire halves (21 payload tests
 in the MQTT module and 7 router tests in the Gateway, one existing Gateway test rewritten to assert
 the routing instead of the refusal it replaced); then **492** after the edge's half went in (7
 executor tests against a real Modbus slave); then **498** after the broker rules (6 more: 4 write-ACL
-tests against a real Mosquitto, and 2 for the retain rule). The last three numbers are what the runs
-printed; an attempt to reconcile them by adding up per-project deltas came out six high, which is
-recorded rather than smoothed over.
+tests against a real Mosquitto, and 2 for the retain rule); then **501** after the uplink's own
+handling of a write message (3 tests, the last joint nothing had crossed). The intermediate numbers
+were undercounted in an earlier draft of this note by six, because it tried to reconcile them by
+adding up per-project deltas instead of reading what the runs printed; the printed numbers are these
+and the deltas are not offered as corroboration.
 
 **One flake was seen and is recorded rather than dismissed.** `ScadaDarbox.Gateway.Tests` failed once
 in a whole-solution run and the failing test's name was not captured before the output scrolled; its
 project then passed 143 of 143 on its own and 149 of 149 in the next whole-solution run. Cause is not
 established, so this is a sighting and not a diagnosis — the two diagnosed flakes above stay fixed
-and a third, unidentified, is possible.
+and a third, unidentified, is possible. A separate race was found and fixed while writing the uplink
+tests: a write is not retained, so one published in the moment between the uplink connecting and
+subscribing is genuinely gone, and a test that published once was asserting on that race rather than
+on the product. It republishes until answered, and the reason is recorded in the test.
 
 **Not claimed:** that no flake remains anywhere, and not that both changes are individually
 necessary. What is claimed is that the diagnosed race is fixed, that the timeout was wrong on its
