@@ -197,7 +197,9 @@ public sealed class AlarmJournalTests : IClassFixture<TestDatabase>
             CancellationToken.None);
 
         // One row: the other tag's raise fails the tag, and this tag's acknowledgement fails the type.
-        var row = Assert.Single(read.Where(e => e.TagId is not null));
+        // Filtered rather than asserted on the whole set, because the engine's own rows are present
+        // too and are not what this is about.
+        var row = Assert.Single(read, e => e.TagId is not null);
         Assert.Equal(mine.TagId, row.TagId);
         Assert.Equal(AlarmEventType.Raised, row.Type);
     }

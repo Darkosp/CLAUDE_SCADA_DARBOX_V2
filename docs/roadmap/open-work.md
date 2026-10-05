@@ -306,6 +306,46 @@ they build, and **no person has narrowed a journal and read the result** — so 
 these filters. The plant may still have been busy." is the right sentence, and whether two dropdowns
 are the right control, are unjudged.
 
+### 2.0f The Modbus response bound — closed on 2026-10-05
+
+The question this register carried was *driver constant or per-device setting?* **Per device, with a
+five-second default.** `ModbusTcpDriverFactory.ResponseTimeoutFor` reads `responseTimeoutSeconds` from
+the device's own connection settings, and the driver takes the result as a constructor argument.
+
+**Why per device and not one number for the deployment:** how long a device takes to answer is a
+property of the device and the link to it, exactly as `host` and `scanIntervalMs` are — not of the
+Gateway. A plant with one device on a slow radio link and twenty on a local switch has one device that
+needs a longer bound and nineteen that would be made slower to report a fault if they all shared it. A
+deployment-wide setting forces that choice on every device at once.
+
+**Why it is refused rather than clamped**, which is the decision worth recording: a device configured
+for a thirty-second bound that silently got five would read Bad on a link that was merely slow, and
+**nothing anywhere would say why** — the operator sees a device that does not work with no indication
+that its own configuration was discarded. An unusable value throws, naming the setting, the value, the
+device and the range. Blank is the exception, because that is how a form field left empty arrives and
+it means "not set".
+
+Bounded at 1 s to 120 s, because both ends are a way to build a driver that does not work: under a
+second and a healthy device reads Bad for reasons that are the Gateway's fault, and over two minutes
+and a scan loop effectively stops reporting faults at all — the silence ADR-0003 refuses, which is the
+failure the bound exists to prevent.
+
+**The test measures the bound rather than asserting a constant, and the mutation was watched.**
+`A_request_that_is_never_answered_is_given_up_on_within_the_configured_bound` sets a two-second bound
+against a socket that accepts and never answers, and requires the read to give up inside six. The
+mutation: set `Retries` back to 3 — **measured 8.8 s, and it fails.** The numbers are chosen against
+that failure and not for tidiness: with a one-second bound and a five-second ceiling, the same
+regression passes, which is the shape of test this project has already been caught by.
+
+**What has not happened:** no live device has been given a bound, and no operator has typed the setting
+in. It **is** reachable from the browser — the device form's connection settings are a free key/value
+list, deliberately ("named settings rather than fixed fields: Modbus wants host/port/unitId"), so
+`responseTimeoutSeconds` can be added the same way `host` is. What is missing is not a field but
+**anything that tells an author the setting exists**: the form does not list a driver's known settings,
+so this one is discoverable only from the documentation. That is a smaller gap than a missing control
+and still a real one, and it is the same class as the trend preview's "Reading…" — the work exists and
+nothing on screen points at it.
+
 ### 2.0 Written, and not yet walked
 
 Decided, implemented, tested — and waiting only for a run that exercises it. These are not
@@ -789,7 +829,7 @@ decided inside an implementation pull request.
 | Alarm flapping — deadband, on-delay | `phase-plan.md`, "Deferred out of Phase 5.5" | **closed 2026-10-05 by [ADR-0025](../architecture/decisions/0025-an-alarm-waits-before-it-announces-itself.md)** — both settings implemented, the schema, the API and the threshold form; see §2.0e |
 | Filtering the journal (tag, event type, time) | same place | **closed 2026-10-05** — server-side, by tag and by event type; see §2.0e |
 | Routing a tag write to an edge-assigned device | ADR-0019, Consequences | **closed 2026-10-03 by [ADR-0023](../architecture/decisions/0023-routing-writes-to-an-edge.md)** — see §2.0 for what it still owes a walk |
-| The Modbus 5 s response bound: driver constant or per-device setting | `phase-plan.md`, Phase 7 note | the design conversation; ADR-0016's pattern points one way |
+| The Modbus 5 s response bound: driver constant or per-device setting | `phase-plan.md`, Phase 7 note | **closed 2026-10-05** — a per-device `responseTimeoutSeconds` setting, defaulting to 5 s; see §2.0f |
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
 | TimescaleDB continuous aggregates and native compression | ADR-0006 | the legal review ADR-0006 asks for; the code deliberately does not use them |
 | Rollback of a schema migration (down-scripts) | ADR-0012, ADR-0014, `phase-plan.md` Phase 6 | **stays forward-only by decision**; the guide's backup-and-restore is the answer |

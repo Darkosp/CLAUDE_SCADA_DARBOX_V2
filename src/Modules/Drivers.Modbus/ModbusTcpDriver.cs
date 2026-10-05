@@ -58,8 +58,15 @@ public sealed class ModbusTcpDriver : IDeviceDriver
     /// confirmed" about a plant that may or may not have changed. The retry is off for the reason
     /// below, and the arithmetic is now one attempt times this value.
     /// </para>
+    /// <para>
+    /// <b>It is per device, from the device's own <c>responseTimeoutSeconds</c> setting</b> —
+    /// see <see cref="ModbusTcpDriverFactory"/>, which reads it and says why it lives there rather
+    /// than on the driver. What was a stated constant with a claim attached is now a value the
+    /// deployment can set, and the claim is checked: the bound is one attempt times one number, and
+    /// <c>A_request_that_is_never_answered_is_given_up_on_within_the_bound</c> measures it.
+    /// </para>
     /// </remarks>
-    private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(5);
+    private readonly TimeSpan _responseTimeout;
 
     /// <summary>
     /// Whether a failed request is sent again before it is given up on.
@@ -68,7 +75,7 @@ public sealed class ModbusTcpDriver : IDeviceDriver
     /// <b>No, and this replaces NModbus's default of three.</b> Two reasons, and the second is the
     /// one that decides it.
     ///
-    /// A retry hides how long a dead device takes. Four attempts times <see cref="ResponseTimeout"/>
+    /// A retry hides how long a dead device takes. Four attempts times the response bound
     /// is a bound four times what every comment in this repository said it was, and a bound nobody
     /// can predict is not a bound.
     ///
@@ -94,12 +101,14 @@ public sealed class ModbusTcpDriver : IDeviceDriver
         int port,
         byte unitId,
         TimeProvider timeProvider,
-        ILogger<ModbusTcpDriver>? logger = null)
+        ILogger<ModbusTcpDriver>? logger = null,
+        TimeSpan? responseTimeout = null)
     {
         _host = host;
         _port = port;
         _unitId = unitId;
         _timeProvider = timeProvider;
+        _responseTimeout = responseTimeout ?? ModbusTcpDriverFactory.DefaultResponseTimeout;
 
         // Optional so a composition that deliberately keeps no log — a unit test, a tool —
         // needs no argument, and the same way the MQTT module takes its logger.
@@ -117,11 +126,11 @@ public sealed class ModbusTcpDriver : IDeviceDriver
         _master = new ModbusFactory().CreateMaster(client);
 
         // Bounded so a device that stops answering reads Bad instead of holding the scan loop
-        // (see ResponseTimeout). The transport carries the setting to the socket underneath, and
+        // (see the response bound). The transport carries the setting to the socket underneath, and
         // Retries is set beside it because the default retries the request three times -- which
         // multiplied the bound by four and, on a write, sent the command more than once.
-        _master.Transport.ReadTimeout = (int)ResponseTimeout.TotalMilliseconds;
-        _master.Transport.WriteTimeout = (int)ResponseTimeout.TotalMilliseconds;
+        _master.Transport.ReadTimeout = (int)_responseTimeout.TotalMilliseconds;
+        _master.Transport.WriteTimeout = (int)_responseTimeout.TotalMilliseconds;
         _master.Transport.Retries = Retries;
     }
 
