@@ -546,7 +546,7 @@ with the client's 60 passed beside them. The count is 425 plus the four ADR-0020
 green, at **447 passed, 0 skipped**, with the client's 63. The two flakes above have not been seen
 since the fix.
 
-**Measured again 2026-10-03, after ADR-0023 and its edge-side tests: 502 passed, 0 skipped across
+**Measured again 2026-10-03, after every slice through Phase 8 and its three closed defects: 540 passed, 0 skipped across
 seven projects**, with the client's 63. Whole-solution runs produced it as it grew: **465** before the
 edge-side tests, which is the baseline above plus ADR-0023's cloud and wire halves (21 payload tests
 in the MQTT module and 7 router tests in the Gateway, one existing Gateway test rewritten to assert

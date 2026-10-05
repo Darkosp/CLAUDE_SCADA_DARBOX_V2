@@ -239,7 +239,7 @@ what it has **not** had — a walk on a real link:
   and a late command is a request to change a plant after the reason for it has
   passed.
 
-**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 539 .NET
+**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 540 .NET
 across seven projects with 0 skipped, and the client's 93.** It was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
 the one that is a proven race from the one that is read off the failure. One more
