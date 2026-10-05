@@ -1,17 +1,33 @@
 # Walking the Phase 8 gate by hand
 
-**Not yet walked.** This is the procedure and what to watch for; nothing below has been done. It
-is written now — before the walk rather than after it, which is the opposite of how
-[Phase 7's record](phase-7-manual-gate.md) was made — because this phase's own gate says the part
-that needs eyes is the part a machine cannot close, and a step nobody wrote down is a step nobody
-walks.
+**Walked on 2026-10-05**, on one machine, against a stack built from the commit under test and
+served at `http://localhost:8090`. **Four defects came out of it, and one of them meant the screen
+every Site is born with could not be saved** — which no test had said, because no test had opened
+one. The steps below are what was followed; where the walk found a step wrong, the step says so and
+[The result](#the-result) names it. The headings, the commands and the claims are otherwise as they
+were written before the walk.
+
+**What this walk is not, and the distinction matters.** It was taken by driving the API and the
+served client, not by a person looking at a rendered page. **Everything a machine can check was
+checked; the judgements that need eyes — whether a Bad tile stands out, whether an unreadable one
+reads as obvious rather than alarming, whether twelve columns are enough for a real screen — are
+still unjudged**, and each step below says which of its watches were confirmed and which were not.
+Phase 5.5's walk found ten defects the suite had passed, and the ones it found were the ones a
+person noticed. This walk is the other half.
 
 The record is deliberately in the same form as [`phase-5.5-manual-gate.md`](phase-5.5-manual-gate.md),
 [`phase-6-manual-gate.md`](phase-6-manual-gate.md) and
 [`phase-7-manual-gate.md`](phase-7-manual-gate.md): numbered steps with what to do, what to watch,
-and a place to write down what it actually said. **When it is walked, the heading above becomes the
-date and the machine, and a "The result" section is added** naming every defect the walk found —
-including the ones that are embarrassing, which is the half of this project's habit that matters.
+and a place to write down what it actually said.
+
+**How the stack was built and run**, because a walk that cannot be repeated is an anecdote:
+`deploy/build-images.sh` from the commit, then
+`docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d` with the image tag set to
+that commit and `SCADA_HTTP_PORT=8090`. **A fresh volume every time** (`down -v` first): the demo
+seeder only seeds an empty database, so a stack reusing a previous walk's database gets no demo
+configuration and step 2 has nothing to look at. Every image here is built from a commit and never
+from the working directory, which is what makes "the commit under test" a meaningful phrase.
+
 
 Phase 8's test gate is in [the phase plan](phase-plan.md):
 
@@ -194,15 +210,87 @@ absence is correct here.**
 
 ## The result
 
-*Not written — the walk has not happened.*
+**Four defects, found in the order the steps met them. The first is the one that mattered**, and it
+is the shape this project keeps meeting: a rule tightened, one place that wrote the same kind of data
+did not follow, and nothing said so until somebody used the thing.
 
-When it is walked, this section names **every** defect found, including the ones that are only
-cosmetic and the ones that are the walk's own fault. Phase 5.5's record is the model: ten defects
-from one walk, listed, with what each one was and how it was fixed. A walk that finds nothing is
-possible and is also a claim worth being suspicious of, for the same reason a mutation that changes
-nothing is.
+### 1. The screen every Site is born with could not be saved
 
-**Until then, what is true:** the storage, the API, the seeder, the renderer and the editor all exist
-and are tested as pure functions; the client's `npm test` and the .NET suite are green; and **no
-person has looked at a screen.** That sentence is the whole of what is open, and it is the reason
-this file exists.
+`ScreenComponentKinds.TakesTitle` was answering two questions with one word — *may* this kind carry
+text, and *must* it. It said yes to both for `label` and for `alarms`, and `ScreenRules` refused a
+screen whose text was empty. So an `alarms` component was required to have a heading.
+
+**ADR-0024 does not say that.** Its kinds table gives text as what a `label` shows — a heading, a
+unit, an instruction — and says nothing of the sort for `alarms`, whose subject is a Site's standing
+alarms. The code was ahead of the ADR.
+
+And `SeedForSiteAsync` writes rows directly, so nothing had ever asked it for the heading. Every
+Site's seeded screen contained an `alarms` component with no title, and **an author who opened the
+screen their Site was born with and changed anything was answered
+`A 'alarms' component shows text and needs some`.** The operator met it as a Save button that
+refused to work, with the reason pointing at a component they had not touched.
+
+*Found by:* step 3, which saves the seeded screen unchanged — the smallest thing an author does.
+*Fixed in* `49a0ce6`: `NeedsTitle` is now the narrow question and `TakesTitle` the wide one; the seed
+carries a heading; **and the seeder checks its own screen against `ScreenRules` before writing it**,
+so this class of defect cannot come back.
+
+### 2. A Site the seeder did not name would have been born empty
+
+The seeder listed its Sites by hand — one `SeedForSiteAsync` call each for Skopje and for Bitola — so
+**"a new Site is not born empty" (ADR-0024 §5) held only for as long as nobody added a third Site to
+the statement above those calls.** A third Site would have been seeded by the database and given no
+screen, and nothing would have said so: an operator would have found it, which is exactly what the
+rule exists to prevent.
+
+*Found by:* step 2, reading the rule instead of the data. Two Sites had screens and the code that
+gave them to two Sites would not have given one to three.
+*Fixed in* `651e0fc`: the Sites are read back from what the transaction wrote, so the screen seed
+cannot disagree with the Site seed, and `SeedScreensAsync` is extracted so the rule is testable.
+
+### 3. The heading was required, collected — and drawn for nobody
+
+`resolveComponent` carried no heading for an `alarms` component and `screen-view.ts` never drew one.
+So the text that was required by the API, that the editor collected, and that made the seed invalid
+**was displayed to nobody.** An author had to invent a heading no reader could see.
+
+*Found by:* fixing defect 1 and then asking where the heading went. It is the reason defect 1 felt
+like a trap rather than a bug: the field existed only to satisfy a rule.
+*Fixed in* `49a0ce6`: the heading travels through the resolver and the view draws it.
+
+### 4. A writable tag was not marked writable
+
+ADR-0024 §9 says *"a writable tag is marked writable on a screen; acting on it is not built here"*,
+and the phase plan repeats it as scope item 6. **Nothing anywhere marked one.** A writable tag was
+shown exactly as a read-only one.
+
+*Found by:* step 7.
+*Fixed in* `66a8741`: the server answers it beside `readable`, and it is a marker rather than a
+button — a dashed pill with nothing to press, because writing from a screen is the next slice and a
+marker that looked pressable would promise something this build cannot do.
+
+### What each step found, and what it could not judge
+
+| Step | Confirmed | Not judged — needs eyes |
+| --- | --- | --- |
+| 1 | a live value, its quality and the source time; the tag goes Bad and stops reading as a number | whether the Bad tile *stands out* |
+| 2 | every Site has a screen; the seed then could not be saved (defects 1–3) | whether the seeded screen was worth looking at |
+| 3 | a bound component saves and reads back; the seeded screen saves unchanged after the fix | whether the value, quality and time are legible at once |
+| 4 | a cross-Site tag is refused at save; a deleted tag's binding survives as `readable: false` and resolves as *missing*, not as a break | whether "unreadable" reads as obvious without being alarming, and whether the row visibly stays |
+| 5 | **404, not 403**, for both the screen and the list, as a Viewer on another Site | — |
+| 6 | Save is immediate, and an author is told nothing (recorded, not fixed) | **what a person actually expects the button to do** — this is the step the walk could not take |
+| 7 | a Viewer cannot edit (403); a writable tag was not marked (defect 4) | whether "writable" is noticeable without looking like a control |
+
+**Two more things the walk could not close**, and they are recorded rather than glossed:
+
+- **Every watch that needs a person is still open.** The table above marks them. A Bad tile that is
+  legible in a JSON payload and invisible on a dark screen is a defect this walk could not see, and
+  the honest statement is that **nobody has yet looked at a rendered page**.
+- **Step 6's finding was left unfixed on purpose.** Nothing says the save is immediate. That is a
+  sentence for the button, and the walk deliberately did not choose it, because the wording should
+  come from how the surprise actually reads — which needs the person who was surprised.
+
+**What is now true:** the storage, the API, the seeder, the renderer and the editor exist; four
+defects the gate's own steps found are fixed with tests behind them (543 .NET, 103 client); and
+**the part a machine can check has now been checked by running it, not only by reading it.** What
+remains open is the part this file was written for, and it is smaller than it was.

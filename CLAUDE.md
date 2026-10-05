@@ -239,8 +239,8 @@ what it has **not** had — a walk on a real link:
   and a late command is a request to change a plant after the reason for it has
   passed.
 
-**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 540 .NET
-across seven projects with 0 skipped, and the client's 98.** It was *not* green
+**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 543 .NET
+across seven projects with 0 skipped, and the client's 103.** It was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
 the one that is a proven race from the one that is read off the failure.
 
@@ -331,13 +331,38 @@ has an id the server has never seen, and **nothing yet says on the Save button t
 immediate** — the walk's step 6 is written to catch an author being surprised by it, and the
 wording is left until someone has been.
 
-**The walk is written and has not been taken.** `docs/roadmap/phase-8-manual-gate.md` is the
-seventh sentence of this phase's gate — *renders* — which no test can close: seven steps in a
-browser, in the form Phase 5.5, 6 and 7 used, and **written before the walk rather than after
-it**, because a step nobody wrote down is a step nobody walks. Until it is walked, the honest
-statement about this phase is `open-work.md` §2.0b's: the parts a machine can check are
-checked, and **no person has looked at a screen.** Phase 5.5's walk found ten defects the suite
-had passed, so the expectation here is that this one finds something too.
+**The walk has been taken, on 2026-10-05, and it found four defects.** `docs/roadmap/phase-8-manual-gate.md`
+is the seventh sentence of this phase's gate — *renders* — which no test can close. It was walked
+against a stack built from the commit under test and served over Docker, and **the first defect it
+found meant the screen every Site is born with could not be saved**: `TakesTitle` was answering "may
+this kind carry text" and "must it" with one word, and answered yes to both for `alarms`, while
+ADR-0024's kinds table gives text as what a `label` shows and says nothing of the sort for `alarms`.
+The seeder writes rows directly and had never supplied a heading, so an author who opened their Site's
+born screen and changed anything was answered `A 'alarms' component shows text and needs some`,
+pointing at a component they had not touched. The other three: a Site the seeder did not name would
+have been born empty; the `alarms` heading was required and collected and **drawn for nobody**; and a
+writable tag was not marked writable, which ADR-0024 §9 requires. All four are fixed with tests.
+
+**The lesson is Phase 5.5's, learned again: a rule and every place that writes the same kind of data
+have to move together.** Two of the four are exactly that shape — a validation that tightened and a
+seeder that did not follow — and neither was visible from reading the code, because each half was
+correct on its own. What found them was running the smallest thing an author does: opening the screen
+their Site was born with and saving it unchanged. **The seeder now checks its own screen against
+`ScreenRules` before writing it**, so that shape cannot come back.
+
+**What the walk could not close, and this is the honest part.** It was taken by driving the API and
+the served client, **not by looking at a rendered page**. Everything a machine can check was checked;
+**every judgement that needs eyes is still open** — whether a Bad tile stands out, whether an
+unreadable one reads as obvious rather than alarming, whether the new "writable" marker is noticeable
+without looking like a control, whether twelve columns are enough for a real screen. Those are listed
+per step in the record. Phase 5.5's walk found ten defects the suite had passed and the ones it found
+were the ones a person noticed; this walk is the other half.
+
+**One more thing worth carrying: a test that cannot fail is not evidence.** The first attempt at
+pinning the seeded-screen defect asserted it passes `ScreenRules` — and it passed with the heading
+removed again, because the rule had been relaxed in the same change. It was replaced with one that
+asserts what the rules cannot: every text field on the seeded screen is filled in, which fails with
+`the seeded 'alarms' component carries no text` when the heading is dropped.
 
 ## When Phase 1 (or any phase) begins
 

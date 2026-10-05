@@ -842,8 +842,8 @@ See [`open-work.md`](open-work.md).
 
 ## Phase 8 — Operator screens (HMI)
 
-**Status: scoped 2026-10-03, the read-and-operate half built, the authoring slice built, and a walk
-written but not taken.**
+**Status: scoped 2026-10-03; the read-and-operate half and the authoring slice are built, the walk has
+been taken, and its four defects are closed.**
 
 ### Why it is scoped now
 
@@ -936,11 +936,22 @@ used between its terminal half and its screen half.
 
 ### The walk
 
-**The gate's seventh sentence is the one no test can close**, and it now has a procedure:
-[`phase-8-manual-gate.md`](phase-8-manual-gate.md) — seven steps in a browser, written before the walk
-rather than after it, in the form Phase 5.5, 6 and 7 used. **It has not been walked.** Until it is, the
-honest statement about this phase is the one in [`open-work.md` §2.0b](open-work.md): the parts a
-machine can check are checked, and no person has looked at a screen.
+**Walked on 2026-10-05**, recorded in [`phase-8-manual-gate.md`](phase-8-manual-gate.md) — seven
+steps against a stack built from the commit under test. **Four defects came out of it**, and the first
+one meant the screen every Site is born with could not be saved. All four are fixed, with tests:
+
+1. the seeded screen was unsaveable, because `TakesTitle` conflated "may carry text" with "must carry
+   text" and the seeder had never supplied a heading (`49a0ce6`);
+2. a Site the seeder did not name would have been born empty (`651e0fc`);
+3. the `alarms` heading was required and collected and drawn for nobody (`49a0ce6`);
+4. a writable tag was not marked writable, which ADR-0024 §9 requires (`66a8741`).
+
+**What the walk could not close, and it is the part this gate exists for:** it was taken by driving
+the API and the served client, not by looking at a rendered page. **Every watch that needs eyes is
+still open** — whether a Bad tile stands out, whether an unreadable one reads as obvious rather than
+alarming, whether the new writable marker is noticeable without looking like a control, whether twelve
+columns are enough. Those are listed per step in the record, and they are what a person walking the
+same seven steps still has to judge.
 
 ## Later (not yet scoped)
 
