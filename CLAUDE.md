@@ -240,7 +240,7 @@ what it has **not** had — a walk on a real link:
   passed.
 
 **The suite is green and its baseline is `open-work.md` §2.4–§2.5: 540 .NET
-across seven projects with 0 skipped, and the client's 93.** It was *not* green
+across seven projects with 0 skipped, and the client's 98.** It was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
 the one that is a proven race from the one that is read off the failure.
 
@@ -318,6 +318,26 @@ screen in front of a person** nor dragged a component, which `open-work.md` §2.
 along with what the tests do pin. **An author can build a screen** — add, remove, resize,
 retitle, reorder, move between rows, save, delete — through a draft that is sent whole on
 save, because a screen is saved by replacing its component set.
+
+**The authoring slice gained a live preview on 2026-10-05**, which is the first of the
+three things `phase-plan.md` listed for the next slice and the one that makes the other two
+cheaper. **An author now sees what an operator will see, drawn by the operator's own
+`app-screen` component given the draft instead of the saved screen** — so there is no second
+renderer that can drift from the first, and a fix to one is a fix to both. Values, qualities,
+source times, labels, status and alarms are live, because the preview is given the session's
+own snapshot and alarm inputs. Two limits are deliberate and recorded: a **trend** says
+"Reading…" because history is keyed by component id and a component an author has just added
+has an id the server has never seen, and **nothing yet says on the Save button that a save is
+immediate** — the walk's step 6 is written to catch an author being surprised by it, and the
+wording is left until someone has been.
+
+**The walk is written and has not been taken.** `docs/roadmap/phase-8-manual-gate.md` is the
+seventh sentence of this phase's gate — *renders* — which no test can close: seven steps in a
+browser, in the form Phase 5.5, 6 and 7 used, and **written before the walk rather than after
+it**, because a step nobody wrote down is a step nobody walks. Until it is walked, the honest
+statement about this phase is `open-work.md` §2.0b's: the parts a machine can check are
+checked, and **no person has looked at a screen.** Phase 5.5's walk found ten defects the suite
+had passed, so the expectation here is that this one finds something too.
 
 ## When Phase 1 (or any phase) begins
 

@@ -146,9 +146,12 @@ and a component has no name, so it is a DELETE and an INSERT.
   enough for a real screen — is unjudged. Phase 5.5's walk found ten defects the suite had passed,
   most of them only visible on screen, and this is the same kind of surface. **This now includes the
   editor**: the operations behind it are tested as pure functions, and nobody has dragged anything.
+  **The procedure for closing this now exists** — [`phase-8-manual-gate.md`](phase-8-manual-gate.md),
+  seven steps in a browser, written on 2026-10-05 *before* the walk rather than after it. Nothing has
+  been run from it.
 - **No screen has been through the browser against a live Gateway.** The resolver is tested as a pure
-  function, the editor's operations are tested as pure functions, and the Angular build compiles both
-  templates; no run has had either in front of a real SignalR stream with a real Site behind it.
+  function, the editor's operations are tested as pure functions, and the Angular build compiles every
+  template; no run has had any of it in front of a real SignalR stream with a real Site behind it.
 - **The editor has no drag and drop**, and does not pretend to: components are added by a picker,
   sized by a pair of buttons and moved by arrows. That is enough to build a screen and it is not what
   an author would choose twice; a builder is the next thing this wants, and it is a client feature
@@ -156,7 +159,35 @@ and a component has no name, so it is a DELETE and an INSERT.
 - **Nothing warns that editing a screen affects every reader at once.** A screen has no draft version
   and no publish step (ADR-0024 takes no position on one), so an author pressing Save changes what
   every operator on that Site sees, immediately. That is defensible for a screen and it is the kind
-  of thing that should be said on the button rather than discovered.
+  of thing that should be said on the button rather than discovered. **The wording is deliberately
+  still absent**: step 6 of the walk is written to catch an author being surprised by it, and choosing
+  the sentence before knowing how the surprise reads would be guessing.
+
+**Closed on 2026-10-05: the live preview.** An author editing a screen now sees what an operator will
+see, drawn by the operator's own `app-screen` component given the draft instead of the saved screen —
+so there is no second renderer that can drift from the first, and a fix to one is a fix to both. It
+was the first of the three items the phase plan listed for the next slice, and the reason it went
+first is that it is the one that makes the other two cheaper: an author who can see the result does
+not need to save to find out what they did.
+
+**What the preview does and does not show, and why the difference is honest.** Values, qualities,
+source times, labels, status and alarms are live, because the preview is given the session's own
+snapshot map and alarm list. A **trend** in the preview says "Reading…" — history is keyed by component
+id and a component an author has just added has an id the server has never seen, so there is nothing to
+fetch it under. That is the same sentence the read view shows for a screen whose history has not
+arrived, which is why it is acceptable rather than misleading; the editor's own note on its `history`
+input records the real fix (key history by *tag*, not by component) and why it is its own slice.
+
+**The one thing the preview depends on, and the mutation that proves it is tested.** `newComponent`
+sets `readable: true`, because `readable` is the server's answer about the *reader* and a component
+that has never been to the server has no answer yet. If that ever became `false` every component in the
+preview would read "Not available to you" — an author looking at a screen that says the opposite of
+what the operator will see. **Mutated to `false`: two named tests fail in
+`src/Web/tests/screen-preview.test.mjs`** — "a component an author just added resolves through the
+preview, because readable is true" and "a bound tag with no reading yet is missing, not Bad and not
+zero" — while the control that sets the flag explicitly to `false` and expects `unreadable` stays
+green, which is what shows the flag still decides rather than being decoration. The client went 93 to
+98 for this slice.
 
 ### 2.0c The demo seeder's race — found, and closed on 2026-10-05
 

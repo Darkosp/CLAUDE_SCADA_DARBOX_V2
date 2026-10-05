@@ -842,7 +842,8 @@ See [`open-work.md`](open-work.md).
 
 ## Phase 8 — Operator screens (HMI)
 
-**Status: scoped 2026-10-03, being built.**
+**Status: scoped 2026-10-03, the read-and-operate half built, the authoring slice built, and a walk
+written but not taken.**
 
 ### Why it is scoped now
 
@@ -914,18 +915,32 @@ used between its terminal half and its screen half.
 
 ### What is left for the next slice
 
-- **Drag and drop, and a live preview.** An author can build a screen today — add,
-  remove, resize, retitle, reorder, move between rows, save, delete — but by a picker
-  and a pair of buttons rather than by dragging. That is enough to build a screen and
-  it is not what an author would choose twice. A builder is a client feature over the
-  same rows, not a new model.
-- **Acting from a screen** — writing a tag from a component, with the permission
-  story that needs (see scope item 6).
-- **Saying that a save is immediate.** A screen has no draft version and no publish
-  step, so Save changes what every operator on the Site sees. That is defensible and
-  it belongs on the button rather than discovered.
+- **Drag and drop.** An author can build a screen today — add, remove, resize, retitle, reorder, move
+  between rows, save, delete — and can see what it will look like while doing it (the live preview,
+  closed 2026-10-05), but by a picker and a pair of buttons rather than by dragging. That is enough to
+  build a screen and it is not what an author would choose twice. A builder is a client feature over
+  the same rows, not a new model.
+- **A trend in the preview says "Reading…", because history is keyed by component id** and a component
+  an author has just added has an id the server has never seen. Reading the editor's own note on
+  `ScreenEditor.history` before changing it: the honest fix is to key history by *tag* so a draft can
+  ask for it, which is a change to the read view as well as the editor and is therefore its own slice.
+- **Acting from a screen** — writing a tag from a component, with the permission story that needs
+  (see scope item 6).
+- **Saying that a save is immediate.** A screen has no draft version and no publish step, so Save
+  changes what every operator on the Site sees. That is defensible and it belongs on the button rather
+  than discovered — and **it is still not on the button**: the walk steps in
+  [`phase-8-manual-gate.md`](phase-8-manual-gate.md) step 6 are written to catch exactly this, and the
+  wording is deliberately left until somebody has been surprised by it.
 - **Nesting and free positioning** if a real deployment needs them. The model
   keeps room for both without deciding them.
+
+### The walk
+
+**The gate's seventh sentence is the one no test can close**, and it now has a procedure:
+[`phase-8-manual-gate.md`](phase-8-manual-gate.md) — seven steps in a browser, written before the walk
+rather than after it, in the form Phase 5.5, 6 and 7 used. **It has not been walked.** Until it is, the
+honest statement about this phase is the one in [`open-work.md` §2.0b](open-work.md): the parts a
+machine can check are checked, and no person has looked at a screen.
 
 ## Later (not yet scoped)
 
