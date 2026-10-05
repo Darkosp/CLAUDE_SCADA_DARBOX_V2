@@ -1262,6 +1262,9 @@ export class App implements OnInit {
       if (!open || !screens.some((screen) => screen.id === open)) {
         this.openScreenId.set(screens[0]?.id ?? null);
       }
+
+      // After the list, so the screen being shown is the one whose trends are fetched.
+      await this.loadScreenHistory();
     } catch (error) {
       this.report(error);
     } finally {
@@ -1271,6 +1274,47 @@ export class App implements OnInit {
 
   protected openScreenById(screenId: string): void {
     this.openScreenId.set(screenId);
+    void this.loadScreenHistory();
+  }
+
+  /**
+   * History for every `trend` component on the screen being shown, by component id.
+   *
+   * Fetched rather than streamed, because history does not change under the reader — unlike the
+   * live values on the same screen, which arrive over the hub. A screen with no trend component
+   * does no work here at all, which is why this is called on opening a screen rather than
+   * continuously.
+   */
+  protected readonly screenHistory = signal(new Map<string, HistorySample[]>());
+
+  protected async loadScreenHistory(): Promise<void> {
+    const screen = this.openScreen();
+
+    if (!screen) {
+      this.screenHistory.set(new Map());
+      return;
+    }
+
+    const to = new Date();
+    const from = new Date(to.getTime() - 15 * 60 * 1000);
+    const wanted = screen.components.filter(
+      (component) => component.kind === 'trend' && component.readable && component.tagId,
+    );
+
+    const loaded = new Map<string, HistorySample[]>();
+
+    for (const component of wanted) {
+      try {
+        loaded.set(component.id, (await this.api.history(component.tagId!, from, to)).samples);
+      } catch {
+        // One tag's history failing must not empty the screen: its own component says there is
+        // nothing to draw, and every other component keeps what it has. The error is left to that
+        // component rather than shown over the whole screen, because it is about one tag.
+        loaded.set(component.id, []);
+      }
+    }
+
+    this.screenHistory.set(loaded);
   }
 
   protected async showJournal(): Promise<void> {

@@ -144,7 +144,8 @@
       } @else if (openScreen(); as showing) {
         <app-screen [screen]="showing"
                     [snapshots]="snapshotsByTagId()"
-                    [alarms]="alarms()" />
+                    [alarms]="alarms()"
+                    [history]="screenHistory()" />
       } @else {
         <p class="muted">This Site has no screens.</p>
       }

@@ -1,5 +1,5 @@
 import { Component, computed, input } from '@angular/core';
-import { Alarm } from './models';
+import { Alarm, HistorySample } from './models';
 import {
   groupIntoRows,
   resolveComponent,
@@ -8,6 +8,7 @@ import {
   ScreenComponent,
 } from './screen';
 import { TagSnapshot } from './tag';
+import { TrendChart } from './trend-chart';
 
 /**
  * One operator screen: the rows a person looks at (ADR-0024).
@@ -19,6 +20,7 @@ import { TagSnapshot } from './tag';
  */
 @Component({
   selector: 'app-screen',
+  imports: [TrendChart],
   template: `
     @if (rows().length === 0) {
       <p class="empty">This screen has nothing on it.</p>
@@ -50,7 +52,16 @@ import { TagSnapshot } from './tag';
                 }
                 @case ('trend') {
                   <p class="caption"><span class="path">{{ $any(cell.resolved).path }}</span></p>
-                  <p class="muted">Open this tag in Browse to see its trend.</p>
+                  @if (historyFor(cell.component.id); as samples) {
+                    @if (samples.length < 2) {
+                      <p class="muted">Not enough history yet.</p>
+                    } @else {
+                      <app-trend-chart [samples]="samples"
+                                       [unitSymbol]="snapshots().get($any(cell.resolved).tagId)?.unitSymbol ?? ''" />
+                    }
+                  } @else {
+                    <p class="muted">Reading…</p>
+                  }
                 }
                 @case ('alarms') {
                   @if ($any(cell.resolved).alarms.length === 0) {
@@ -126,6 +137,19 @@ export class ScreenView {
 
   /** Every standing alarm this session may see. */
   readonly alarms = input.required<readonly Alarm[]>();
+
+  /**
+   * History for the `trend` components on this screen, by component id.
+   *
+   * A map rather than one array, because a screen may hold several trend components and each is
+   * about its own tag. A component with no entry is still being read and says so, which is not the
+   * same as one whose history came back empty.
+   */
+  readonly history = input<ReadonlyMap<string, HistorySample[]>>(new Map());
+
+  protected historyFor(componentId: string): HistorySample[] | null {
+    return this.history().get(componentId) ?? null;
+  }
 
   protected readonly rows = computed(() =>
     groupIntoRows(this.screen().components).map((row) => ({
