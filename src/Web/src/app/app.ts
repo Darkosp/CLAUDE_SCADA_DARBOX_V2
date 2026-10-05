@@ -4,7 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { Api, ApiError } from './api';
 import { Auth } from './auth';
 import { BrowseTree, Selection } from './browse-tree';
-import { Screen as OperatorScreen } from './screen';
+import { SaveScreen, Screen as OperatorScreen } from './screen';
+import { ScreenEditor } from './screen-editor';
 import { ScreenView } from './screen-view';
 import { TrendChart } from './trend-chart';
 import {
@@ -132,7 +133,7 @@ interface UserDraft {
 
 @Component({
   selector: 'app-root',
-  imports: [BrowseTree, TrendChart, ScreenView, FormsModule, DatePipe],
+  imports: [BrowseTree, TrendChart, ScreenView, ScreenEditor, FormsModule, DatePipe],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -241,6 +242,9 @@ export class App implements OnInit {
   protected readonly snapshotsByTagId = computed(
     () => new Map<string, TagSnapshot>(this.stream.tags().map((snapshot) => [snapshot.tagId, snapshot])),
   );
+
+  /** Every tag this session may see, for the screen editor's binding picker (ADR-0024). */
+  protected readonly allTags = computed(() => this.stream.tags());
 
   /** The journal as last read. Not live: history does not change under the reader. */
   protected readonly journalEvents = signal<AlarmEvent[]>([]);
@@ -1274,7 +1278,83 @@ export class App implements OnInit {
 
   protected openScreenById(screenId: string): void {
     this.openScreenId.set(screenId);
+    this.editing.set(false);
     void this.loadScreenHistory();
+  }
+
+  /** Whether the screen being shown is open for editing (ADR-0024's authoring slice). */
+  protected readonly editing = signal(false);
+
+  protected readonly screenSaving = signal(false);
+
+  /**
+   * What the server said when a screen save failed.
+   *
+   * Held here rather than in the editor so that it survives the editor being given a new screen, and
+   * cleared whenever the author changes anything — a message about the last attempt is not about the
+   * one they are making now.
+   */
+  protected readonly screenError = signal<string | null>(null);
+
+  /** Only an Operator on this Site may change a screen, as everywhere else (ADR-0011). */
+  protected readonly canEditScreens = computed(() => this.auth.canOperate(this.siteId()));
+
+  protected startEditingScreen(): void {
+    this.screenError.set(null);
+    this.editing.set(true);
+  }
+
+  protected stopEditingScreen(): void {
+    this.editing.set(false);
+    this.screenError.set(null);
+  }
+
+  protected async saveScreen(body: SaveScreen): Promise<void> {
+    const open = this.openScreen();
+
+    if (!open) {
+      return;
+    }
+
+    this.screenSaving.set(true);
+    this.screenError.set(null);
+
+    try {
+      await this.api.updateScreen(open.id, body);
+
+      // Re-read rather than trusting the request: the server is what decides `readable`, and what an
+      // author sent is not what a reader will see. Reloading is also what proves the save landed.
+      await this.reloadScreens();
+      this.editing.set(false);
+    } catch (error) {
+      // Left on the editor rather than shown over the whole app: this is about one screen, and the
+      // author's draft is still in the component to fix and try again.
+      this.screenError.set(error instanceof ApiError ? error.message : String(error));
+    } finally {
+      this.screenSaving.set(false);
+    }
+  }
+
+  protected async deleteScreen(): Promise<void> {
+    const open = this.openScreen();
+
+    if (!open) {
+      return;
+    }
+
+    this.screenSaving.set(true);
+    this.screenError.set(null);
+
+    try {
+      await this.api.deleteScreen(open.id);
+      this.editing.set(false);
+      this.openScreenId.set(null);
+      await this.reloadScreens();
+    } catch (error) {
+      this.screenError.set(error instanceof ApiError ? error.message : String(error));
+    } finally {
+      this.screenSaving.set(false);
+    }
   }
 
   /**

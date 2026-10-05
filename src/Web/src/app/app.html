@@ -123,6 +123,13 @@
     <main class="screens">
       <div class="pane-head">
         <h2>{{ openScreen()?.name ?? 'Screens' }}</h2>
+        @if (canEditScreens() && openScreen()) {
+          @if (editing()) {
+            <button type="button" class="ghost" (click)="stopEditingScreen()">Done editing</button>
+          } @else {
+            <button type="button" class="ghost" (click)="startEditingScreen()">Edit</button>
+          }
+        }
         <button type="button" class="ghost" (click)="reloadScreens()" [disabled]="screensLoading()">
           Refresh
         </button>
@@ -141,6 +148,16 @@
 
       @if (screensLoading() && screens().length === 0) {
         <p class="muted">Reading…</p>
+      } @else if (editing() && openScreen(); as showing) {
+        <!-- The editor is given the screen the server last had, so Cancel has something to return
+             to and a failed save leaves the author's work in the editor to fix. -->
+        <app-screen-editor [screen]="showing"
+                           [tags]="allTags()"
+                           [saving]="screenSaving()"
+                           [errors]="screenError()"
+                           (saveRequested)="saveScreen($event)"
+                           (deleteRequested)="deleteScreen()"
+                           (cancelled)="stopEditingScreen()" />
       } @else if (openScreen(); as showing) {
         <app-screen [screen]="showing"
                     [snapshots]="snapshotsByTagId()"
