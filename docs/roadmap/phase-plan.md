@@ -840,8 +840,93 @@ confines each side to its own topic. What has not been done is the walk: no run 
 yet had a real broker and a real edge accept a derived configuration end to end.
 See [`open-work.md`](open-work.md).
 
+## Phase 8 — Operator screens (HMI)
+
+**Status: scoped 2026-10-03, being built.**
+
+### Why it is scoped now
+
+`Later (not yet scoped)` below has carried "HMI screen editor and a real
+component library" since the plan was written, on the rule that it waits until a
+phase above "creates a concrete need for it". Two things now do. **Phase 5.5
+walked a screen and found ten defects the suite had passed** — the working rule
+this project took from that is that a phase with a screen is not done until
+somebody has used the screen, and an HMI is the screen on which every other
+feature is finally judged. And the client's `TagStream` already carries a live
+value, its quality and its source timestamp for every visible tag over SignalR
+(`tag-stream.ts`), which is the hard part of an HMI and it is already there.
+
+**What this phase is not.** It is not the scripting engine (Jint) or reporting;
+those stay where they are, for the reason ADR-0002 gives about module
+discipline. It is also not an editor in the sense of a drawing tool: see the
+slice below for what "screen" means here and why.
+
+### Scope
+
+The phase is deliberately split, because the whole of an HMI is more than one
+gate can honestly carry. **This phase builds the read and operate half** — the
+part an operator uses — and the authoring half is what the next slice takes.
+
+1. **A screen is configuration, not code** (ADR-0024). A screen is a row, its
+   components are rows, and it is created and changed through the API the
+   browser itself calls. No deploy, no files, no scripting.
+2. **A closed component set, bound to tags by id.** Each component is a thing
+   this repository renders, and a binding is a tag id or nothing. A component
+   that names a tag the reader cannot see renders its *absence* rather than
+   being hidden, so a screen never looks complete while showing less.
+3. **Quality is carried on every screen, not optional** (ADR-0003, and
+   `phase-0-architecture.md`'s quality-aware rule). A stale or Bad value is
+   marked where it is shown. There is no component that can print a value
+   without a place for its quality to show.
+4. **Site-scoped like everything else** (ADR-0004, ADR-0011). A screen belongs
+   to a Site; a viewer sees the screens of the Sites they may see; editing is
+   `CanOperate` on that Site, reading is `CanView`; a screen on a Site the
+   caller cannot see answers **404, not 403**, as every other Site-scoped path
+   does.
+5. **A new Site is not born empty.** Creating a Site seeds one screen with the
+   components that make it useful — the same lesson Phase 6.5's walk recorded
+   when the first screen a new user saw was blank.
+6. **Screens are read-only in this phase.** Writable tags are visible and
+   marked as writable; *acting* on one from a screen is the next slice, because
+   it needs the write path's permission story settled on a screen rather than
+   in a form.
+
+### Test gate
+
+- A screen created through the API appears for a viewer on that Site and not
+  for one who may not see it, and a screen on an unseen Site answers 404.
+- A component bound to a tag renders that tag's live value, its quality and its
+  source time; a Bad value is marked and is not shown as a number.
+- A component bound to a tag the reader may not see renders as unreadable
+  rather than as zero, an empty box, or nothing at all.
+- A binding to a tag that no longer exists reads as missing rather than breaking
+  the screen.
+- A new Site has a screen with the seed's components, and a viewer sees it.
+- The layout survives a round trip through the API unchanged, and an unknown
+  component kind is refused with a reason rather than stored.
+- The client's pure parts — what a component resolves to for a given snapshot —
+  are unit-tested without a browser, as the rest of the client is.
+
+**Not in the gate, and said so:** anything that needs a person looking at a
+rendered page. Those steps exist and are listed in the record built during the
+work, and they are what a browser walk closes — the same split Phase 7's gate
+used between its terminal half and its screen half.
+
+### What is left for the next slice
+
+- **Authoring beyond the API**: a screen builder a person can drag in. This
+  phase's screens are created and edited through the API and rendered by the
+  client; a builder is a client feature over the same rows, not a new model.
+- **Acting from a screen** — writing a tag from a component, with the permission
+  story that needs (see scope item 6).
+- **Nesting and free positioning** if a real deployment needs them. The model
+  keeps room for both without deciding them.
+
 ## Later (not yet scoped)
 
-HMI screen editor and a real component library, the scripting engine
-(Jint), reporting. These are deliberately left unscoped until a phase above
-creates a concrete need for them, per ADR-0002's module discipline.
+The scripting engine (Jint) and reporting. These are deliberately left unscoped
+until a phase above creates a concrete need for them, per ADR-0002's module
+discipline. Beyond the list, **the multi-tenant half of ADR-0004 is still
+untested**: every deployment so far has exactly one Tenant row, so tenancy is
+enforced by code and tests rather than by two tenants really existing.
+
