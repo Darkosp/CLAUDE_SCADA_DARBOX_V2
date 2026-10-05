@@ -158,19 +158,17 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
     private async Task<int> PublishCountAsync() => (await _broker!.RetainedMessagesAsync()).Count;
 
     /// <summary>
-    /// Fails, saying what the publisher logged, what the broker holds and what it thinks of its
-    /// clients — because this class's failure mode is a silence and a silence cannot be diagnosed.
+    /// Fails, saying what the publisher logged and what the broker holds — because this class's
+    /// failure mode is a silence and a silence cannot be diagnosed.
     /// </summary>
     private async Task FailWithEvidenceAsync(string message)
     {
         var retained = string.Join(", ", await _broker!.RetainedTopicsAsync());
-        var clients = string.Join(" | ", await _broker.ClientSubscriptionsAsync());
 
         Assert.Fail(
             $"{message}{Environment.NewLine}"
             + $"The publisher logged:{Environment.NewLine}{string.Join(Environment.NewLine, _logs.Entries)}{Environment.NewLine}"
-            + $"The broker retains: [{retained}]{Environment.NewLine}"
-            + $"The broker's sessions: [{clients}]");
+            + $"The broker retains: [{retained}]");
     }
 
     private EdgeConfigurationPublisher Publisher(TagCatalogSource source)
