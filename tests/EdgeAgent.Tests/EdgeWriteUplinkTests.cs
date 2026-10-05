@@ -182,19 +182,37 @@ public sealed class EdgeWriteUplinkTests : IAsyncLifetime
         // A live control proves the edge is up and the topic is subscribed: the same service answers
         // a readable request. Without it, "nothing arrived" would also be what a stopped uplink
         // looks like.
-        await _cloud.PublishAsync(new MqttApplicationMessageBuilder()
-            .WithTopic("scada/edge/plant-7/writes")
-            .WithPayload(WritePayload.WriteRequest(Guid.NewGuid(), PressureTag, new TagValue.Numeric(2.5)))
-            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-            .Build());
+        //
+        // The control goes through the retry-publishing helper rather than a single publish, and
+        // that is the same race the helper exists for: a write is not retained (ADR-0023 §3), so one
+        // sent in the moment between the uplink connecting and subscribing is genuinely gone.
+        var controlId = Guid.NewGuid();
 
-        await WaitUntilAsync(() => results.Count >= 1, "the control write to be answered");
+        await PublishWriteUntilAnsweredAsync(
+            WritePayload.WriteRequest(controlId, PressureTag, new TagValue.Numeric(2.5)),
+            results,
+            "the control write to be answered");
+
+        // A moment longer, so a duplicate answer to the control -- which the retry helper can
+        // produce, and which the edge answers honestly, once per request it received -- has arrived
+        // before the assertion below runs. The assertion is about which request was answered, and
+        // without this it was also accidentally an assertion about how many times the test managed
+        // to ask, which is what made it flake under load.
+        await Task.Delay(TimeSpan.FromSeconds(1));
         await uplink.StopAsync(CancellationToken.None);
 
-        // Exactly one answer: the readable request, and not the version 9 message beside it.
-        var only = WritePayload.ReadResult(Assert.Single(results));
-        Assert.Null(only.Refusal);
-        Assert.True(only.Written);
+        // Every answer is to the control, so the version 9 message beside it was not answered.
+        // Asserted on the ids rather than on the count: the count depends on whether a duplicate
+        // publication happened to get through, and the ids are the thing that actually matters --
+        // a reply that did not name a request in flight is the case the format refuses.
+        var answers = results.Select(WritePayload.ReadResult).ToList();
+
+        Assert.NotEmpty(answers);
+        Assert.All(answers, answer => Assert.Null(answer.Refusal));
+        Assert.All(answers, answer => Assert.True(answer.Written));
+        Assert.All(answers, answer => Assert.Equal(controlId, answer.WriteId));
+
+        // And the write really happened, which is what makes the control a control.
         Assert.Equal(250, device.DataStore.HoldingRegisters.ReadPoints(0, 1)[0]);
     }
 
