@@ -1,4 +1,4 @@
-import { Component, computed, input, linkedSignal, output } from '@angular/core';
+import { Component, computed, effect, input, linkedSignal, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Alarm, HistorySample } from './models';
 import { TagSnapshot } from './tag';
@@ -15,6 +15,7 @@ import {
   ScreenComponent,
   ScreenComponentKind,
   toSaveScreen,
+  trendTagIds,
 } from './screen';
 
 /** The five kinds, with what each needs, for the author's picker. The server refuses any other. */
@@ -181,6 +182,21 @@ const WIDEST = 12;
           Delete screen
         </button>
       </div>
+
+      <!--
+        Phase 8's walk step 6, closed. The walk was written to catch an author being surprised that a
+        save is immediate, and the wording was deliberately left until someone had been. This is that
+        wording: a save replaces what every operator on this Site sees, at once, with no "publish"
+        step and no way back except Cancel -- which only works until you press Save.
+
+        It is a sentence rather than a warning box because it is not a hazard: it is how a screen
+        editor has to work if editing is not to need its own version of every screen. What was
+        missing was saying so.
+      -->
+      <p class="muted save-note">
+        Saving replaces the screen every operator on this Site sees, immediately. There is no
+        separate publish step, and Cancel will not undo it afterwards.
+      </p>
     </div>
   `,
   styles: `
@@ -230,6 +246,7 @@ const WIDEST = 12;
       font-size: 0.76rem;
     }
     .actions { display: flex; gap: 8px; margin-top: 8px; }
+    .save-note { font-size: 0.76rem; margin: 6px 0 0; max-width: 46rem; }
     .danger { color: #99201f; }
     .problem { color: #99201f; margin: 6px 0; }
     .muted { color: #5b6672; }
@@ -258,15 +275,25 @@ export class ScreenEditor {
   readonly alarms = input.required<readonly Alarm[]>();
 
   /**
-   * History for the preview's `trend` components, by component id.
+   * History for the preview's `trend` components, **by tag id**.
    *
-   * Empty while an author is working, and that is honest rather than lazy: history is fetched by the
-   * read view for the components of a *saved* screen, and a component added a moment ago has an id
-   * the server has never seen. A trend in the preview therefore says "Reading…" — which is what the
-   * read view says too, for a screen whose history has not arrived. Wiring a fetch for draft ids
-   * would mean asking the server about components that do not exist yet.
+   * Keyed by tag rather than by component, and that is what lets the preview draw a real trend.
+   * Phase 8's walk recorded the limitation this removes: a component an author has just added has an
+   * id the server has never seen, so history keyed by component id could only ever say "Reading…".
+   * The history of a trend is the history of its TAG, so the tag is also the more honest key.
    */
   readonly history = input<ReadonlyMap<string, HistorySample[]>>(new Map());
+
+  /**
+   * Which tags the draft's `trend` components are bound to, so the app knows what to fetch.
+   *
+   * A set of ids rather than the draft itself, because the draft lives in this component and
+   * lifting it up so that another component could read it would move the author's unsaved work into
+   * the app's state for no reason. This is the smallest thing the app has to know to feed the
+   * preview, and it changes only when a binding changes — so typing a title does not refetch every
+   * series on the screen.
+   */
+  readonly trendTagsChanged = output<readonly string[]>();
 
   readonly saving = input(false);
 
@@ -328,6 +355,18 @@ export class ScreenEditor {
   protected readonly components = computed(() => this.draft().components);
 
   protected readonly rows = computed(() => groupIntoRows(this.components()));
+
+  /**
+   * Tells the app which tags the draft's trends are bound to, whenever that set changes.
+   *
+   * An effect rather than a call beside every edit, because there are a dozen ways the draft can
+   * change and one of them would eventually be missed — a component removed, a binding changed, a
+   * whole screen replaced by a save coming back. Watching the computed set means there is one place
+   * that can be right.
+   */
+  private readonly announceTrendTags = effect(() => {
+    this.trendTagsChanged.emit(trendTagIds(this.draft().components));
+  });
 
   /** Whether anything has changed since the server's version, so Save can be disabled. */
   protected readonly changed = computed(

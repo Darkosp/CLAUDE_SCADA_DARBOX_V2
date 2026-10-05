@@ -177,7 +177,7 @@ Site B's must not appear in A's.
 
 **Record:** the status code, and what the API said versus what the screen said.
 
-## 6. A save is immediate, and the author should have been told
+## 6. A save is immediate, and the author is now told so
 
 **Do.** As the **Operator on Site A**, edit the screen and save. Then, **in the other browser
 profile as the Viewer on Site A**, look at the same screen without reloading, then reload.
@@ -185,12 +185,13 @@ profile as the Viewer on Site A**, look at the same screen without reloading, th
 **Watch.** The change is there. There is no draft, no version and no publish step (ADR-0024) —
 **Save changes what every operator on the Site sees, at once.**
 
-**Then watch what the button said.** This is the step that is most likely to produce a defect,
-because as of the slice that added the editor there is **nothing on the screen that says so** — it
-is recorded in the phase plan as *"saying that a save is immediate"*, and it belongs on the button
-rather than discovered by a colleague. **Write down what you expected the button to do and what it
-did.** If you saved expecting a private draft and an operator saw it, that is the finding, and it is
-worth more than a cosmetic one.
+**Then watch what the button said.** This is the step that was most likely to produce a defect,
+because when the walk was taken there was **nothing on the screen that said so**. **Since 2026-10-05
+there is a sentence under the buttons** — that saving replaces what every operator on the Site sees,
+immediately, with no separate publish step and no way back after the fact. Whether that sentence is
+where you would read it, and whether it is enough, is still what this step is for: **write down what
+you expected the button to do and what it did.** If you saved expecting a private draft and an
+operator saw it, that is the finding, and it is worth more than a cosmetic one.
 
 **Record:** what the Viewer saw, when, and what you believed you were doing when you pressed Save.
 
@@ -278,19 +279,37 @@ marker that looked pressable would promise something this build cannot do.
 | 3 | a bound component saves and reads back; the seeded screen saves unchanged after the fix | whether the value, quality and time are legible at once |
 | 4 | a cross-Site tag is refused at save; a deleted tag's binding survives as `readable: false` and resolves as *missing*, not as a break | whether "unreadable" reads as obvious without being alarming, and whether the row visibly stays |
 | 5 | **404, not 403**, for both the screen and the list, as a Viewer on another Site | — |
-| 6 | Save is immediate, and an author is told nothing (recorded, not fixed) | **what a person actually expects the button to do** — this is the step the walk could not take |
+| 6 | Save is immediate; **an author is now told so** (closed 2026-10-05) | whether the sentence is where a person would read it, and whether it is enough |
 | 7 | a Viewer cannot edit (403); a writable tag was not marked (defect 4) | whether "writable" is noticeable without looking like a control |
 
-**Two more things the walk could not close**, and they are recorded rather than glossed:
+**Two more things were open when this walk was recorded, and one of them is now closed.**
+
+- **Step 6's finding was fixed on 2026-10-05, and the wording is a sentence under the buttons.**
+  It says that saving replaces the screen every operator on this Site sees, immediately, that there
+  is no separate publish step, and that Cancel will not undo it afterwards. The walk deliberately left
+  the wording until someone had been surprised by it; what changed the decision is that **the
+  question the step asks is answerable only by a person, and leaving the sentence unwritten does not
+  make the answer better** — it leaves the next author to discover the same thing the walk's author
+  did. The sentence is a candidate, not a conclusion: it is what the next person to walk this step
+  reads, and whether it belongs exactly there is still theirs to judge.
+
+  Note what is *not* claimed. Nothing here says the sentence was tested with a person. It was not.
+  What it replaces is silence, and silence was the finding.
+
+- **The preview's trend limitation is closed too.** History is now keyed by **tag id** rather than by
+  component id, so an author sees a trend drawn over real history before saving — the recorded
+  limitation was that a component an author had just added had an id the server had never seen, so the
+  preview could only ever say "Reading…". Keying by tag is also the more honest answer: two trend
+  components bound to one tag are two views of one series, and one fetch serves both. The rule about
+  which trends need fetching lives in one function, `trendTagIds`, because **two copies of a rule that
+  look alike is the shape of defect this walk found twice**.
 
 - **Every watch that needs a person is still open.** The table above marks them. A Bad tile that is
   legible in a JSON payload and invisible on a dark screen is a defect this walk could not see, and
   the honest statement is that **nobody has yet looked at a rendered page**.
-- **Step 6's finding was left unfixed on purpose.** Nothing says the save is immediate. That is a
-  sentence for the button, and the walk deliberately did not choose it, because the wording should
-  come from how the surprise actually reads — which needs the person who was surprised.
 
 **What is now true:** the storage, the API, the seeder, the renderer and the editor exist; four
-defects the gate's own steps found are fixed with tests behind them (543 .NET, 103 client); and
-**the part a machine can check has now been checked by running it, not only by reading it.** What
-remains open is the part this file was written for, and it is smaller than it was.
+defects the gate's own steps found are fixed with tests behind them, and two of the three things
+`phase-plan.md` listed for the next slice are now built too — the live preview, and the one sentence
+step 6 asked for. **The part a machine can check has been checked by running it, not only by reading
+it.** What remains open is the part this file was written for: a person, and a rendered page.

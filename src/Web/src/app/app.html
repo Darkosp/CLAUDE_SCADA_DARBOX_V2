@@ -158,6 +158,7 @@
                            [history]="screenHistory()"
                            [saving]="screenSaving()"
                            [errors]="screenError()"
+                           (trendTagsChanged)="onTrendTagsChanged($event)"
                            (saveRequested)="saveScreen($event)"
                            (deleteRequested)="deleteScreen()"
                            (cancelled)="stopEditingScreen()" />

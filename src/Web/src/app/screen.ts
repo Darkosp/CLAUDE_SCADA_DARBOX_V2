@@ -31,6 +31,34 @@ export interface ScreenComponent {
   writable: boolean;
 }
 
+/**
+ * The tags whose history a set of components needs, each once.
+ *
+ * Extracted from the app component so it is pure and testable, and so the read view and the
+ * editor's preview agree about what a trend needs **by construction** rather than by two filters
+ * that happen to look alike today — the shape of defect Phase 8's walk found twice.
+ *
+ * Three exclusions, each for its own reason:
+ *
+ * - **not a `trend`**: nothing else draws a series.
+ * - **not `readable`**: this session may not see the tag, so asking the server for its history is a
+ *   request that can only fail — and the component says "unreadable" rather than "Reading…".
+ * - **no `tagId`**: a trend an author has added but not yet bound to anything. Asking for history
+ *   for `null` is not a question the API has an answer to.
+ *
+ * De-duplicated because two trend components bound to one tag are two views of one series, and one
+ * fetch serves both.
+ */
+export function trendTagIds(components: readonly ScreenComponent[]): readonly string[] {
+  return [
+    ...new Set(
+      components
+        .filter((component) => component.kind === 'trend' && component.readable && component.tagId)
+        .map((component) => component.tagId!),
+    ),
+  ];
+}
+
 /** One operator screen, as the API sends it. */
 export interface Screen {
   id: string;

@@ -71,7 +71,7 @@ import { TrendChart } from './trend-chart';
                       </span>
                     }
                   </p>
-                  @if (historyFor(cell.component.id); as samples) {
+                  @if (historyFor($any(cell.resolved).tagId); as samples) {
                     @if (samples.length < 2) {
                       <p class="muted">Not enough history yet.</p>
                     } @else {
@@ -172,16 +172,21 @@ export class ScreenView {
   readonly alarms = input.required<readonly Alarm[]>();
 
   /**
-   * History for the `trend` components on this screen, by component id.
+   * History for the `trend` components on this screen, **by tag id**.
    *
-   * A map rather than one array, because a screen may hold several trend components and each is
-   * about its own tag. A component with no entry is still being read and says so, which is not the
-   * same as one whose history came back empty.
+   * Keyed by tag rather than by component because the history of a trend is the history of its tag
+   * — two trend components bound to one tag are two views of one series — and because a component an
+   * author has just added to a draft has an id the server has never seen, so a preview keyed by
+   * component could only ever say "Reading…".
+   *
+   * A map rather than one array, because a screen may hold several trends about different tags. A
+   * tag with no entry is still being read and says so, which is not the same as one whose history
+   * came back empty.
    */
   readonly history = input<ReadonlyMap<string, HistorySample[]>>(new Map());
 
-  protected historyFor(componentId: string): HistorySample[] | null {
-    return this.history().get(componentId) ?? null;
+  protected historyFor(tagId: string | null): HistorySample[] | null {
+    return tagId === null ? null : (this.history().get(tagId) ?? null);
   }
 
   protected readonly rows = computed(() =>

@@ -346,6 +346,42 @@ so this one is discoverable only from the documentation. That is a smaller gap t
 and still a real one, and it is the same class as the trend preview's "Reading…" — the work exists and
 nothing on screen points at it.
 
+### 2.0g Two things Phase 8's walk left open — both closed on 2026-10-05
+
+**1. The preview's trend said "Reading…" instead of drawing a series.** The recorded cause was that
+history was keyed by **component id**, and a component an author has just added has an id the server
+has never seen — so the preview could ask for nothing. History is now keyed by **tag id**.
+
+Keying by tag is the more honest answer as well as the fix: **the history of a trend is the history of
+its tag**, and two trend components bound to one tag are two views of one series, so one fetch serves
+both. The read view and the preview now call one function, `trendTagIds`, rather than each holding a
+filter that looks like the other — which is the shape of defect this walk found twice, and the reason
+the rule is a function.
+
+**What the tests pin**, seven of them: that a readable trend asks for its tag; that two trends on one
+tag ask once; that a `value` component asks for nothing however it is bound; that an **unreadable**
+trend asks for nothing — the exclusion that is about the sentence on screen, because an unreadable
+trend renders as unreadable (ADR-0024 §5) and a fetch that could never succeed would leave it on
+"Reading…" claiming an answer is coming; that a trend bound to nothing asks for nothing; and that the
+exclusions combine rather than cancelling each other.
+
+**What has not happened:** no author has watched a trend draw in the preview. The mechanism is tested
+from the client's own data shapes, and **the fetch path against a live Gateway with a draft's tags is
+unexercised** — as is every judgement about whether a 15-minute window is the right one for an author
+to judge a trend by.
+
+**2. Nothing said that a save is immediate.** `phase-plan.md` asked for it *on the button*; it is a
+sentence **under** the buttons, because a button label that is a paragraph is not a button label. It
+says that saving replaces the screen every operator on this Site sees, immediately, that there is no
+separate publish step, and that Cancel will not undo it afterwards.
+
+**This is a candidate, not a conclusion, and that is deliberate.** Step 6 of the walk exists to find
+out what an author *expects* the button to do, and the wording was left unwritten so that the answer
+would come from someone who had been surprised. What changed the decision is that **leaving it
+unwritten does not make that answer better** — it leaves the next author to be surprised by the same
+thing. So the step now reads the sentence and is asked whether it is in the right place and whether it
+is enough. **Nobody has read it yet.**
+
 ### 2.0 Written, and not yet walked
 
 Decided, implemented, tested — and waiting only for a run that exercises it. These are not
@@ -833,7 +869,9 @@ decided inside an implementation pull request.
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
 | TimescaleDB continuous aggregates and native compression | ADR-0006 | the legal review ADR-0006 asks for; the code deliberately does not use them |
 | Rollback of a schema migration (down-scripts) | ADR-0012, ADR-0014, `phase-plan.md` Phase 6 | **stays forward-only by decision**; the guide's backup-and-restore is the answer |
-| Authoring a screen: drag and drop, a live preview while editing | `phase-plan.md`, Phase 8 "What is left for the next slice" | the editor that exists — see §2.0b for what it does and what it does not |
+| Authoring a screen: drag and drop, a live preview while editing | `phase-plan.md`, Phase 8 "What is left for the next slice" | **the preview is closed 2026-10-05**; drag and drop waits for a slice — see §2.0b |
+| The preview's trend saying "Reading…" instead of drawing | same place | **closed 2026-10-05** — history is keyed by tag now, so a draft can ask for it; see §2.0g |
+| Saying that a save is immediate | same place | **closed 2026-10-05** — a sentence under the buttons; see §2.0g |
 | Writing a tag from a screen | same place | an ADR: it puts the Operator check and the audit entry behind a button instead of a form |
 | Scripting (Jint), reporting | `phase-plan.md`, "Later (not yet scoped)" | a phase that creates a concrete need |
 | CI — any pipeline at all | not scoped by any phase | a phase that wants it; today every gate rests on a recorded hand walk |

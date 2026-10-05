@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Api, ApiError } from './api';
 import { Auth } from './auth';
 import { BrowseTree, Selection } from './browse-tree';
-import { SaveScreen, Screen as OperatorScreen } from './screen';
+import { SaveScreen, Screen as OperatorScreen, trendTagIds } from './screen';
 import { ScreenEditor } from './screen-editor';
 import { ScreenView } from './screen-view';
 import { TrendChart } from './trend-chart';
@@ -1395,42 +1395,68 @@ export class App implements OnInit {
   }
 
   /**
-   * History for every `trend` component on the screen being shown, by component id.
+   * History for the `trend` components on screen, **by tag id**.
    *
-   * Fetched rather than streamed, because history does not change under the reader — unlike the
-   * live values on the same screen, which arrive over the hub. A screen with no trend component
-   * does no work here at all, which is why this is called on opening a screen rather than
-   * continuously.
+   * Fetched rather than streamed, because history does not change under the reader — unlike the live
+   * values on the same screen, which arrive over the hub. A screen with no trend component does no
+   * work here at all, which is why this is called when a screen opens rather than continuously.
+   *
+   * **Keyed by tag rather than by component, and that is what makes the editor's preview work.**
+   * Phase 8's walk recorded the limitation this removes: a component an author has just added has an
+   * id the server has never seen, so a trend drawn from history keyed by component id could only
+   * ever say "Reading…". The history of a trend is the history of its TAG — two trend components
+   * bound to one tag are two views of one series — so the tag is also the more honest key, and one
+   * fetch serves both.
    */
   protected readonly screenHistory = signal(new Map<string, HistorySample[]>());
 
   protected async loadScreenHistory(): Promise<void> {
-    const screen = this.openScreen();
+    await this.loadPreviewHistory(trendTagIds(this.openScreen()?.components ?? []));
+  }
 
-    if (!screen) {
-      this.screenHistory.set(new Map());
-      return;
-    }
+  /**
+   * The tags the editor's draft has `trend` components bound to, as the editor reports them.
+   *
+   * History is fetched by tag, so this is the whole of what the app needs to know about a draft it
+   * does not otherwise hold — see `ScreenEditor.trendTagsChanged` for why it is a set of ids rather
+   * than the draft.
+   */
+  protected readonly previewHistoryTags = signal<readonly string[]>([]);
 
+  /**
+   * Brings the preview's history up to date with whatever the editor's draft binds.
+   *
+   * Keyed on which tags those are, so typing a title does not refetch every series on the screen.
+   */
+  private readonly keepPreviewHistoryCurrent = effect(() => {
+    void this.loadPreviewHistory(this.previewHistoryTags());
+  });
+
+  /** Records what the editor's draft binds, from the editor's own announcement. */
+  protected onTrendTagsChanged(tagIds: readonly string[]): void {
+    this.previewHistoryTags.set(tagIds);
+  }
+
+  /** Loads history for exactly these tags and replaces what was held. */
+  protected async loadPreviewHistory(tagIds: readonly string[]): Promise<void> {
     const to = new Date();
     const from = new Date(to.getTime() - 15 * 60 * 1000);
-    const wanted = screen.components.filter(
-      (component) => component.kind === 'trend' && component.readable && component.tagId,
-    );
-
     const loaded = new Map<string, HistorySample[]>();
 
-    for (const component of wanted) {
+    for (const tagId of tagIds) {
       try {
-        loaded.set(component.id, (await this.api.history(component.tagId!, from, to)).samples);
+        loaded.set(tagId, (await this.api.history(tagId, from, to)).samples);
       } catch {
         // One tag's history failing must not empty the screen: its own component says there is
         // nothing to draw, and every other component keeps what it has. The error is left to that
         // component rather than shown over the whole screen, because it is about one tag.
-        loaded.set(component.id, []);
+        loaded.set(tagId, []);
       }
     }
 
+    // Replaced rather than merged: the caller's list is the truth about which series should be
+    // drawable, and merging would leave one on screen after its binding had moved or its component
+    // been deleted.
     this.screenHistory.set(loaded);
   }
 

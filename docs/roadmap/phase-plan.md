@@ -919,22 +919,30 @@ used between its terminal half and its screen half.
 
 ### What is left for the next slice
 
+**Two of the four buildable items below were closed on 2026-10-05** — the preview's trend, and the
+sentence on Save — so what is left is the two that need a decision or a slice rather than a wording.
+
 - **Drag and drop.** An author can build a screen today — add, remove, resize, retitle, reorder, move
   between rows, save, delete — and can see what it will look like while doing it (the live preview,
   closed 2026-10-05), but by a picker and a pair of buttons rather than by dragging. That is enough to
   build a screen and it is not what an author would choose twice. A builder is a client feature over
   the same rows, not a new model.
-- **A trend in the preview says "Reading…", because history is keyed by component id** and a component
-  an author has just added has an id the server has never seen. Reading the editor's own note on
-  `ScreenEditor.history` before changing it: the honest fix is to key history by *tag* so a draft can
-  ask for it, which is a change to the read view as well as the editor and is therefore its own slice.
+- **A trend in the preview now draws a real series — closed 2026-10-05.** History is keyed by **tag
+  id** rather than by component id, so a draft can ask for it: a component an author has just added
+  has an id the server has never seen, which is why it used to say "Reading…". Keying by tag is also
+  the more honest answer — two trend components bound to one tag are two views of one series — and the
+  rule about which trends need fetching lives in one function, `trendTagIds`, because two copies of a
+  rule that look alike is the shape of defect Phase 8's walk found twice.
 - **Acting from a screen** — writing a tag from a component, with the permission story that needs
-  (see scope item 6).
-- **Saying that a save is immediate.** A screen has no draft version and no publish step, so Save
-  changes what every operator on the Site sees. That is defensible and it belongs on the button rather
-  than discovered — and **it is still not on the button**: the walk steps in
-  [`phase-8-manual-gate.md`](phase-8-manual-gate.md) step 6 are written to catch exactly this, and the
-  wording is deliberately left until somebody has been surprised by it.
+  (see scope item 6). **Still open, and it needs an ADR**: it puts the Operator check and the audit
+  entry behind a button instead of a form, which ADR-0011 and ADR-0023 both have something to say
+  about.
+- **Saying that a save is immediate — closed 2026-10-05**, and the wording differs from what this
+  entry asked for. It asked for a sentence *on the button*; what is there is a sentence **under** it,
+  because a button label that is a paragraph is not a button label. It says that saving replaces the
+  screen every operator on the Site sees, immediately, with no separate publish step and no way back
+  after the fact. `phase-8-manual-gate.md` step 6 records that this is a **candidate**, not a
+  conclusion: whether it is where a person would read it is still that step's question.
 - **Nesting and free positioning** if a real deployment needs them. The model
   keeps room for both without deciding them.
 
