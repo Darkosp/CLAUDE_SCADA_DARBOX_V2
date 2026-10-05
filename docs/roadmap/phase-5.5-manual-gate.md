@@ -149,3 +149,64 @@ Sign out, sign in as the Viewer from step 6, and open **Journal**.
 Anything that looks wrong or merely confusing, even where the behaviour is technically
 correct. A screen that is right and unreadable still fails an operator at four in the
 morning.
+
+## The result
+
+**Walked, and it found ten things no test had. All ten were fixed and re-checked on screen
+before the phase merged.** The procedure above is what was followed; this section is what it
+came back with, and it is written here rather than only in the phase plan because a record of
+*how* to walk a gate with no record of what the walk found reads as a gate nobody walked.
+
+**The first one stopped the walk at its first step, and the other nine are all the same kind of
+thing** — the screen failing an operator while behaving exactly as specified. That distinction is
+the whole reason this file exists: a suite can be green and an operator can still be stuck.
+
+### The one that stopped it
+
+**Saving an alarm threshold threw `raw.trim is not a function`.** An `<input type="number">` bound
+with `ngModel` hands over a **number** — or `null` once the box is empty or its contents are not a
+number — and never the string the draft was declared as. Declaring the field `string` is a lie the
+compiler cannot catch, and it took the save with it.
+
+**Fixing it exposed a quieter defect behind it:** with the value arriving as a number, non-numeric
+text silently became **"no limit"** rather than a refusal. Those are different things — *no limit on
+this side* against *the limit is zero* — and zero is an ordinary number. A blank box and a box
+holding something unreadable must not mean the same thing.
+
+`NumberField` and `parseLimit` are the fix, and they carry the reasoning; the field is now typed
+for what it really holds. The tests are in `parse-number-field.test.mjs`.
+
+### The other nine — correct behaviour an operator could not use
+
+| What the walk saw | What it was |
+| --- | --- |
+| the banner showed the value at raise without saying so | a number with no label reads as the *current* value, and on a cleared alarm the two disagree |
+| two words for one state | the same state named differently in two places |
+| the acknowledging user was visible only in the journal | the list a reader actually watches did not say who acknowledged |
+| no way to shelve an alarm once acknowledged | shelving was reachable only while an alarm was Active, so acknowledging it first — the normal order — removed the control |
+| a shelf duration that stayed selected after use | the next shelf silently reused it; a duration left sitting in a box is that shelf's default |
+| raw doubles | `4.8100000000000005` in a Note column, which is arithmetic rather than a measurement |
+| an outage window without its date across midnight | `15:31:33 – 14:13:44` reads as an interval that ran *backwards*; it was an outage of nearly a day |
+| the journal stacking above Browse | two views at once, one over the other |
+| internal slugs in the Note column | the engine's own vocabulary where a reader expects a sentence |
+
+Each fix is in the client, each is held by a test, and the four that are pure formatting live in
+`journal-formatting.test.mjs` with a comment saying so — two of those tests name this walk in their
+own text ("exactly what the gate saw in the Note column"). The slug formatter is
+`source-events.test.mjs`.
+
+**The lesson, and it is the one this project keeps relearning.** Phase 2 found two defects this way
+and said the same thing; Phase 8's walk found four more on 2026-10-05 and said it again. **A green
+suite says nothing about whether a screen is usable**, and the defects a walk finds are
+disproportionately the ones that need a person: a label that is missing, a control that has gone
+away, a number with more digits than meaning.
+
+## What remains open from this phase
+
+The walk closed the gate. Two things were deliberately deferred and are in the phase plan under
+Phase 5.5 rather than here, because they are decisions and not defects:
+
+- **Filtering the journal.** A thousand rows in a browser is not how anyone finds one alarm's
+  history, and the fix is server-side because the Site filter lives there.
+- **Flapping** — deadband and on-delay — which needs an ADR before any code, since it changes what
+  an alarm *is*.
