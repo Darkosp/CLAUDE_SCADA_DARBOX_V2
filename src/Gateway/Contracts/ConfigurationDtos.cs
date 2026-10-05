@@ -180,3 +180,62 @@ public sealed record SaveTagRequest(
 
 /// <summary>A driver this build has, and whether it pushes rather than being polled (ADR-0016).</summary>
 public sealed record DriverDto(string Key, bool Pushing);
+
+/// <summary>
+/// One operator screen, as the client renders it (ADR-0024).
+/// </summary>
+/// <param name="Components">Everything on the screen, in the order the renderer considers it.</param>
+public sealed record ScreenDto(
+    Guid Id,
+    Guid SiteId,
+    string Name,
+    int Position,
+    IReadOnlyList<ScreenComponentDto> Components);
+
+/// <summary>
+/// One thing on a screen, resolved for the caller who asked (ADR-0024).
+/// </summary>
+/// <param name="Kind">
+/// One of the kinds this build draws. The API refuses a screen naming any other, so a client only
+/// ever sees one it has a renderer for.
+/// </param>
+/// <param name="Title">What the author wrote, for kinds that show text.</param>
+/// <param name="TagId">The tag to read, for kinds that read one.</param>
+/// <param name="Readable">
+/// Whether this caller may see the value behind <paramref name="TagId"/> — decided by the server so
+/// that every renderer gives the same answer and there is one place to check (ADR-0024 §5). Always
+/// true for a component that reads no tag.
+/// </param>
+public sealed record ScreenComponentDto(
+    Guid Id,
+    int RowIndex,
+    int ColumnSpan,
+    int Position,
+    string Kind,
+    string? Title,
+    Guid? TagId,
+    bool Readable);
+
+/// <summary>
+/// A screen as an author sends it. The whole component set travels with every save, and one that is
+/// missing from it is deleted — see <c>IScreenRepository</c> for why that is replace rather than
+/// merge.
+/// </summary>
+/// <param name="Components">
+/// Everything the screen should have afterwards. A component keeps its <c>Id</c> across saves so an
+/// audit entry about editing it still points at the same thing, and one without an id is new.
+/// </param>
+public sealed record SaveScreenRequest(
+    string Name,
+    int Position,
+    IReadOnlyList<SaveScreenComponentRequest> Components);
+
+/// <param name="Id">The component's existing id, or null for one being added.</param>
+public sealed record SaveScreenComponentRequest(
+    Guid? Id,
+    int RowIndex,
+    int ColumnSpan,
+    int Position,
+    string Kind,
+    string? Title,
+    Guid? TagId);

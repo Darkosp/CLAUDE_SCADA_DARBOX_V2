@@ -20,13 +20,14 @@ internal static class UniqueNames
     public const string FolderIndex = "ux_folder_name_in_parent";
     public const string TagIndex = "ux_tag_name_in_device";
     public const string EdgeIndex = "ux_edge_name_in_tenant";
+    public const string ScreenIndex = "ux_screen_name_in_site";
 
     private const string UniqueViolation = "23505";
 
     /// <summary>Whether this is one of the name indexes refusing a write.</summary>
     public static bool IsNameClash(PostgresException exception) =>
         exception.SqlState == UniqueViolation &&
-        exception.ConstraintName is DeviceIndex or FolderIndex or TagIndex or EdgeIndex;
+        exception.ConstraintName is DeviceIndex or FolderIndex or TagIndex or EdgeIndex or ScreenIndex;
 
     public static async Task<ConfigurationConflictException> DeviceTakenAsync(
         NpgsqlDataSource dataSource, string name, Guid siteId, Guid? folderId, CancellationToken cancellationToken) =>
@@ -46,6 +47,21 @@ internal static class UniqueNames
     /// </summary>
     public static ConfigurationConflictException EdgeTaken(string name) =>
         new($"An edge named '{name}' already exists. An edge's name is the name in its certificate, so it must be unique across the deployment.");
+
+    /// <summary>
+    /// A screen whose name is already taken on its Site. Named by Site, like a device, because that
+    /// is the parent a screen's name is unique within (ADR-0015, ADR-0024 §6).
+    /// </summary>
+    public static async Task<ConfigurationConflictException> ScreenTakenAsync(
+        NpgsqlDataSource dataSource, string name, Guid siteId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var site = await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT name FROM site WHERE id = @siteId", new { siteId }, cancellationToken: cancellationToken)).ConfigureAwait(false)
+            ?? "this Site";
+
+        return new ConfigurationConflictException($"A screen named '{name}' already exists on {site}.");
+    }
 
     /// <summary>A tag added to a template, which one of the devices made from it already has.</summary>
     public static async Task<ConfigurationConflictException> TemplateTagTakenAsync(

@@ -4,6 +4,46 @@ using ScadaDarbox.Core.Templates;
 namespace ScadaDarbox.Core.Configuration;
 
 /// <summary>
+/// Reads and writes operator screens (ADR-0024).
+/// </summary>
+/// <remarks>
+/// <para>
+/// A screen and its components are read as one thing, because that is how they are shown and how
+/// they are saved: an author edits a screen, and the set of components is the part of it that
+/// changes. Nothing reads a component on its own.
+/// </para>
+/// <para>
+/// Saving replaces the component set rather than merging it. A component removed on screen is gone,
+/// and a component's row is soft-deleted rather than reused, so an audit entry that named it still
+/// resolves (ADR-0009). Merging would mean a client that failed to send a component could not be
+/// distinguished from an author who deleted it, and on a screen that is the difference between a
+/// tile somebody removed on purpose and one that quietly vanished.
+/// </para>
+/// </remarks>
+public interface IScreenRepository
+{
+    /// <summary>Every live screen of one Site, in display order, with its components.</summary>
+    Task<IReadOnlyList<Screen>> GetBySiteAsync(Guid siteId, CancellationToken cancellationToken);
+
+    /// <summary>One screen with its components, or null when it does not exist or is deleted.</summary>
+    Task<Screen?> FindAsync(Guid screenId, CancellationToken cancellationToken);
+
+    /// <summary>Adds a screen and the components it was created with.</summary>
+    Task AddAsync(Screen screen, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Replaces a screen's name, position and whole component set.
+    /// </summary>
+    /// <exception cref="ConfigurationConflictException">
+    /// The name is taken by another live screen on the same Site (ADR-0015).
+    /// </exception>
+    Task UpdateAsync(Screen screen, CancellationToken cancellationToken);
+
+    /// <summary>Soft-deletes a screen and every component on it.</summary>
+    Task DeleteAsync(Guid screenId, CancellationToken cancellationToken);
+}
+
+/// <summary>
 /// Reads and writes the folder tree of one site (ADR-0001 §4).
 /// </summary>
 /// <remarks>

@@ -183,4 +183,47 @@ internal static class ConfigurationRows
             TemplateTagId = TemplateTagId,
         };
     }
+
+    internal sealed record ScreenRow(
+        Guid Id,
+        Guid TenantId,
+        Guid SiteId,
+        string Name,
+        int Position)
+    {
+        internal Screen ToDomain(IReadOnlyList<ScreenComponent> components) => new()
+        {
+            Id = Id,
+            TenantId = TenantId,
+            SiteId = SiteId,
+            Name = Name,
+            Position = Position,
+            Components = components,
+        };
+    }
+
+    internal sealed record ScreenComponentRow(
+        Guid Id,
+        Guid ScreenId,
+        int RowIndex,
+        int ColumnSpan,
+        int Position,
+        string Kind,
+        string? Title,
+        Guid? TagId,
+        Guid? DeviceId)
+    {
+        internal ScreenComponent ToDomain() => new()
+        {
+            Id = Id,
+            ScreenId = ScreenId,
+            RowIndex = RowIndex,
+            ColumnSpan = ColumnSpan,
+            Position = Position,
+            Kind = Kind,
+            Title = Title,
+            TagId = TagId,
+            DeviceId = DeviceId,
+        };
+    }
 }

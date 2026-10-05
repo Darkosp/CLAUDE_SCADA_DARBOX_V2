@@ -45,6 +45,8 @@ internal static class ConfigurationEndpoints
         MapTags(app);
         MapTagDeletion(app);
         app.MapEdgeApi();
+
+        app.MapScreenApi();
     }
 
     private static void MapFolders(WebApplication app)

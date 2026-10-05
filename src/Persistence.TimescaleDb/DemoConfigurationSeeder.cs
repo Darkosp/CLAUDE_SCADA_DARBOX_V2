@@ -97,5 +97,13 @@ public static class DemoConfigurationSeeder
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        // After the transaction, not inside it: a screen is not part of the demo dataset that a
+        // caller asked for, and the seed is idempotent by asking whether the Site already has one
+        // (ADR-0024 §7). A second run of the seeder therefore leaves the operator's own screens
+        // alone, which is the behaviour that matters on an upgrade.
+        var screens = new ScreenRepository(dataSource);
+        await screens.SeedForSiteAsync(TenantId, SiteId, "Skopje", cancellationToken).ConfigureAwait(false);
+        await screens.SeedForSiteAsync(TenantId, SecondSiteId, "Bitola", cancellationToken).ConfigureAwait(false);
     }
 }

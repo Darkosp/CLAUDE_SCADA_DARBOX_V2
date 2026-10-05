@@ -163,6 +163,7 @@ public static class GatewayApp
         services.AddSingleton<IDeviceRepository, DeviceRepository>();
         services.AddSingleton<IEdgeRepository, EdgeRepository>();
         services.AddSingleton<ITagRepository, TagRepository>();
+        services.AddSingleton<IScreenRepository, ScreenRepository>();
         services.AddSingleton<IHistorian, TimescaleHistorian>();
         services.AddSingleton<ITagValueSubscriber, SignalRTagBroadcaster>();
         services.AddSingleton<ITagEngine, TagEngine>();
