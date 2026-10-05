@@ -203,10 +203,14 @@ away, a number with more digits than meaning.
 
 ## What remains open from this phase
 
-The walk closed the gate. Two things were deliberately deferred and are in the phase plan under
-Phase 5.5 rather than here, because they are decisions and not defects:
+**Nothing. Both deferred items were closed on 2026-10-05.** They are recorded here because this
+file's job is to say what the walk left behind, and leaving the entry reading "deferred" once they
+were done is exactly the kind of stale present-tense claim this project corrects in place.
 
 - **Filtering the journal.** A thousand rows in a browser is not how anyone finds one alarm's
-  history, and the fix is server-side because the Site filter lives there.
-- **Flapping** — deadband and on-delay — which needs an ADR before any code, since it changes what
-  an alarm *is*.
+  history. Now server-side — by tag and by event type — because the Site filter and the row limit
+  already were, and because filtering in the browser would answer "which of the newest two hundred
+  rows are about this tag" rather than the question being asked.
+- **Flapping** — deadband and on-delay. Closed by
+  [ADR-0025](../architecture/decisions/0025-an-alarm-waits-before-it-announces-itself.md), which was
+  written before any code as this entry said it had to be, since each changes what an alarm *is*.

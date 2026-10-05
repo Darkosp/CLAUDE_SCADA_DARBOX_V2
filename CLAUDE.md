@@ -108,10 +108,9 @@ survives a Gateway restart.**
 The gate was walked by hand as well as tested, and the hand walk found
 ten defects the suite had passed (listed in the status note). Treat that
 as the working rule rather than an anecdote: a phase that has a screen is
-not done until someone has used the screen. Two things were deliberately
-deferred and are recorded under Phase 5.5 in `phase-plan.md`: filtering
-the journal, and flapping (deadband / on-delay), the latter needing an
-ADR before any code.
+not done until someone has used the screen. **Two things were deliberately deferred and both are now
+closed**: filtering the journal, and flapping (deadband / on-delay), the latter closed by ADR-0025 —
+see the entry below.
 
 **Phase 6 (on-premises deployment packaging) is complete and merged to
 `main`** (PRs #10–#17; see `phase-plan.md`'s Phase 6 status note). The
@@ -239,8 +238,29 @@ what it has **not** had — a walk on a real link:
   and a late command is a request to change a plant after the reason for it has
   passed.
 
-**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 543 .NET
-across seven projects with 0 skipped, and the client's 103.** It was *not* green
+**Phase 5.5's two deferred items were closed on 2026-10-05, and the more important one is ADR-0025.**
+Walking that phase's gate had recorded **flapping** — one Site writing three journal rows every ~25
+seconds while a value oscillated across a limit — and the phase plan said it needed *an ADR before any
+code*, because both standard remedies change what an alarm **is**. `ADR-0025` is that ADR: an alarm
+definition carries an **on-delay** (the condition must hold for it, and a condition that stops inside
+the window raises nothing at all — no journal row, nothing to dismiss) and a **deadband** (which
+applies to clearing only, so an alarm still raises at exactly its limit and "High 4.50" stays true).
+Both are nullable and **null is not zero**, so the migration cannot change what an existing alarm
+means. The other item, **filtering the journal** by tag and event type, is now server-side because the
+Site filter and the row limit already were.
+
+**Two things in that work are worth carrying forward.** The first is a decision the ADR got **wrong and
+the test caught**: the draft said a Bad reading "neither advances the wait nor cancels it", and the
+failure was right — **pausing a wait has the Gateway counting time in which it was not watching**, so a
+device offline for ten minutes would satisfy a sixty-second delay while nothing was measured and the
+alarm would raise on the strength of an outage. The wait is now abandoned and starts again from the
+first Good reading, and the ADR carries the correction rather than the original claim. The second is
+that **a filter's absent case is the one that fails silently**: an empty tag filter must be left out of
+the request rather than sent as `tag=`, which would match nothing and show a reader an empty journal
+they would read as a quiet night.
+
+**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 557 .NET
+across seven projects with 0 skipped, and the client's 110.** It was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
 the one that is a proven race from the one that is read off the failure.
 

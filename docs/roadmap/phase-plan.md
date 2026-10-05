@@ -492,22 +492,26 @@ nothing about any of them.
   that the journal shows when nothing was being watched, and today the
   most likely such window is one the journal cannot see.
 
-**Deferred out of Phase 5.5, raised by walking its gate by hand.**
+**Deferred out of Phase 5.5 by walking its gate by hand — both closed on 2026-10-05.**
 
-- **Filtering the journal** — by tag, by event type, by time. The screen
-  reads the whole window the Gateway returns (newest first, capped at
-  1000 rows). On a plant of any size that is not how anyone will look
-  for one alarm's history. Server-side, since the Site filter and the
-  row limit already are.
-- **Flapping.** A value oscillating across a threshold produces a
-  complete occurrence each time it crosses: during the gate, one Site
-  wrote three journal rows every ~25 seconds. The journal is recording
-  faithfully — the alarm really did raise and clear — but a journal that
-  fills with an oscillation buries everything else in it, and an
-  operator watching the banner learns nothing from it. The remedies are
-  standard (a deadband around the limit, an on-delay before raising,
-  both in ISA-18.2) and neither is a detail of this phase: each changes
-  what an alarm *is*, and so belongs in an ADR before any code.
+- **Filtering the journal** — by tag, by event type, by time. The screen read the whole window the
+  Gateway returned (newest first, capped at 1000 rows), and on a plant of any size that is not how
+  anyone looks for one alarm's history. **Now done, server-side**, because the Site filter and the row
+  limit already were: `/api/alarms/journal` takes repeatable `tag` and `type` parameters, and the
+  client sends them rather than filtering the page that arrived — filtering in the browser would
+  answer "which of the newest two hundred rows are about this tag", which is not the question anyone
+  is asking. The filters are ANDed, including for the engine's own rows; `AlarmJournalQuery` records
+  why that is a choice between two defensible ones rather than an obvious answer.
+- **Flapping.** A value oscillating across a threshold produced a complete occurrence each time it
+  crossed: during the gate, one Site wrote **three journal rows every ~25 seconds**. The journal was
+  recording faithfully — the alarm really did raise and clear — but a journal that fills with an
+  oscillation buries everything else in it, and an operator watching the banner learns nothing from
+  it. **Now closed by [ADR-0025](../architecture/decisions/0025-an-alarm-waits-before-it-announces-itself.md)**,
+  written before any code as this entry said it had to be, because both remedies change what an alarm
+  *is*: an alarm definition carries an **on-delay** (the condition must hold for it, and a condition
+  that stops inside the window raises nothing at all) and a **deadband** (which applies to clearing
+  only, so an alarm still raises at exactly its limit). Both nullable, and null is not zero, so the
+  migration cannot change what an existing alarm means.
 
 ## Phase 6 — On-premises deployment packaging
 

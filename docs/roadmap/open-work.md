@@ -251,6 +251,61 @@ only that the rows came out once. A later ordinary run is asserted in the same t
 idempotence on an already-seeded database is what an upgrade depends on and xUnit promises no order
 between two test methods sharing one fixture.
 
+### 2.0e Phase 5.5's two deferred items — closed on 2026-10-05
+
+**Both were raised by walking Phase 5.5's gate by hand, both were deliberately left out of that
+phase, and both are now built.** They are recorded here with what each has **not** had, which is the
+same thing every other section here records.
+
+**Flapping — closed by [ADR-0025](../architecture/decisions/0025-an-alarm-waits-before-it-announces-itself.md).**
+The walk recorded the shape: one Site wrote three journal rows every ~25 seconds while a value
+oscillated across a limit. An alarm definition now carries an **on-delay** and a **deadband**, and the
+two are separate settings because they are separate decisions — a wait trades speed for quiet, and a
+band trades the position of a limit for quiet. Both nullable, and **null is not zero**: the migration
+cannot change what an existing alarm means, which is the most important property it has.
+
+**What the tests pin**, and each of these is a fact about the engine rather than about a screen: a
+breach that stops inside the delay raises nothing **and leaves the journal unchanged**, against a
+control with no delay that raises immediately; the raise carries the reading that *confirmed* the
+breach and records the wait it waited; a value crossing to the other limit starts its wait again; a
+deadband does not delay the raise and holds the alarm until the value is past the limit by the band,
+strictly, in both directions; and a restart resets a wait in progress without writing anything about
+it.
+
+**One decision the ADR got wrong, found by writing its test — and this is the part worth reading.**
+The first draft said a Bad reading "neither advances the wait nor cancels it". The test failed, and the
+failure was right: **pausing a wait has the Gateway counting time in which it was not watching.** A
+device offline for ten minutes would satisfy a sixty-second delay while nothing at all was measured,
+so the alarm would raise on the strength of an outage. The wait is now abandoned and starts again from
+the first Good reading. The ADR carries the correction rather than the original claim.
+
+**What has not happened:** no run has configured a delay or a band through the browser, and **no alarm
+has been watched waiting**. Everything above is the engine driven by a stub clock. The threshold form
+gained two fields and **nobody has typed in them** — which is the same gap §2.0b records for the
+screens, and the same reason: it needs a person.
+
+**Filtering the journal — closed 2026-10-05.** `/api/alarms/journal` takes repeatable `tag` and `type`
+parameters, the client sends them, and the filters are ANDed with the Site filter and with each other.
+
+**What the tests pin:** that narrowing by tag returns that tag's rows and not another's, against a
+control that sees both unfiltered; that a Site filter still lets the engine's own rows through **when
+nothing else is narrowing**, which is ADR-0013's rule and the thing this feature could most easily have
+broken; that two filters are intersected rather than treated as alternatives; and, on the client, that
+an absent filter is left out of the request entirely rather than sent empty — because `tag=` matching
+nothing would show a reader an empty journal and let them conclude the plant had been quiet.
+
+**One choice made against the first instinct.** The engine's own rows are *removed* by a tag or type
+filter, though they survive the Site filter. The argument is that a Site filter is enforcement — a
+reader does not pick it and cannot see past it — while a tag filter is something the reader chose, so
+it means "these rows only", and a filter that quietly returned rows failing one of its two conditions
+would be one a reader could not reason about. The first version of the test asserted the opposite and
+was rewritten; `AlarmJournalQuery` records both readings and why one won.
+
+**What has not happened:** nobody has used the filter pickers. The client suites cover the query string
+they build, and **no person has narrowed a journal and read the result** — so whether "Nothing matches
+these filters. The plant may still have been busy." is the right sentence, and whether two dropdowns
+are the right control, are unjudged.
+
 ### 2.0 Written, and not yet walked
 
 Decided, implemented, tested — and waiting only for a run that exercises it. These are not
@@ -731,8 +786,8 @@ decided inside an implementation pull request.
 
 | Item | Where it is recorded | What it waits for |
 |---|---|---|
-| Alarm flapping — deadband, on-delay | `phase-plan.md`, "Deferred out of Phase 5.5" | **an ADR first**: each changes what an alarm *is* |
-| Filtering the journal (tag, event type, time) | same place | a phase that wants it |
+| Alarm flapping — deadband, on-delay | `phase-plan.md`, "Deferred out of Phase 5.5" | **closed 2026-10-05 by [ADR-0025](../architecture/decisions/0025-an-alarm-waits-before-it-announces-itself.md)** — both settings implemented, the schema, the API and the threshold form; see §2.0e |
+| Filtering the journal (tag, event type, time) | same place | **closed 2026-10-05** — server-side, by tag and by event type; see §2.0e |
 | Routing a tag write to an edge-assigned device | ADR-0019, Consequences | **closed 2026-10-03 by [ADR-0023](../architecture/decisions/0023-routing-writes-to-an-edge.md)** — see §2.0 for what it still owes a walk |
 | The Modbus 5 s response bound: driver constant or per-device setting | `phase-plan.md`, Phase 7 note | the design conversation; ADR-0016's pattern points one way |
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
