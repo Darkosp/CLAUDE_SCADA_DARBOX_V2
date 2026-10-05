@@ -240,7 +240,7 @@ what it has **not** had — a walk on a real link:
   passed.
 
 **The suite is green and its baseline is `open-work.md` §2.4–§2.5: 539 .NET
-across seven projects with 0 skipped, and the client's 75.** It was *not* green
+across seven projects with 0 skipped, and the client's 93.** It was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
 the one that is a proven race from the one that is read off the failure. One more
 flake was seen on 2026-10-03 and recorded there as a **sighting, not a diagnosis**:
@@ -274,8 +274,10 @@ decision that shapes the code most is that a component shows its own quality**: 
 is no kind that can print a value with nowhere for its quality to go, and a binding the
 reader may not see renders as unreadable rather than disappearing, because hiding it
 would make a screen look complete while showing less. **What no run has done is put a
-screen in front of a person**, which `open-work.md` §2.0b records along with the four
-things the tests do pin.
+screen in front of a person** nor dragged a component, which `open-work.md` §2.0b records
+along with what the tests do pin. **An author can build a screen** — add, remove, resize,
+retitle, reorder, move between rows, save, delete — through a draft that is sent whole on
+save, because a screen is saved by replacing its component set.
 
 ## When Phase 1 (or any phase) begins
 

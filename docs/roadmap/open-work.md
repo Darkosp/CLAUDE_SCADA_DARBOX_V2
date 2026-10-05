@@ -144,16 +144,19 @@ and a component has no name, so it is a DELETE and an INSERT.
 - **A person has not looked at a screen.** Everything about how it reads — whether a Bad tile stands
   out, whether an unreadable one is obvious without being alarming, whether the twelve-column grid is
   enough for a real screen — is unjudged. Phase 5.5's walk found ten defects the suite had passed,
-  most of them only visible on screen, and this is the same kind of surface.
-- **No screen has been edited by anybody but a test.** Create, update, delete and replace-the-
-  component-set all have tests; none has been through the browser, and the client has no editing
-  affordance at all — that is the next slice.
-- **The client has never rendered against a live Gateway.** Its resolver is tested as a pure
-  function and the Angular build compiles the template, and no run has had the two together with a
-  real SignalR stream behind them.
-- **`trend` renders as a sentence, not a chart.** The component says which tag it is about and tells
-  the reader to open it in Browse. That is deliberate for this slice — the trend chart is bound to
-  one selected tag today — and it is the first thing the next slice should finish.
+  most of them only visible on screen, and this is the same kind of surface. **This now includes the
+  editor**: the operations behind it are tested as pure functions, and nobody has dragged anything.
+- **No screen has been through the browser against a live Gateway.** The resolver is tested as a pure
+  function, the editor's operations are tested as pure functions, and the Angular build compiles both
+  templates; no run has had either in front of a real SignalR stream with a real Site behind it.
+- **The editor has no drag and drop**, and does not pretend to: components are added by a picker,
+  sized by a pair of buttons and moved by arrows. That is enough to build a screen and it is not what
+  an author would choose twice; a builder is the next thing this wants, and it is a client feature
+  over the same rows rather than a new model.
+- **Nothing warns that editing a screen affects every reader at once.** A screen has no draft version
+  and no publish step (ADR-0024 takes no position on one), so an author pressing Save changes what
+  every operator on that Site sees, immediately. That is defensible for a screen and it is the kind
+  of thing that should be said on the button rather than discovered.
 
 ### 2.0c A race in the demo seeder, found but not fixed
 
@@ -603,7 +606,7 @@ decided inside an implementation pull request.
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
 | TimescaleDB continuous aggregates and native compression | ADR-0006 | the legal review ADR-0006 asks for; the code deliberately does not use them |
 | Rollback of a schema migration (down-scripts) | ADR-0012, ADR-0014, `phase-plan.md` Phase 6 | **stays forward-only by decision**; the guide's backup-and-restore is the answer |
-| Authoring a screen: a builder a person can drag in | `phase-plan.md`, Phase 8 "What is left for the next slice" | the read half, which is built — see §2.0b for what it owes a browser |
+| Authoring a screen: drag and drop, a live preview while editing | `phase-plan.md`, Phase 8 "What is left for the next slice" | the editor that exists — see §2.0b for what it does and what it does not |
 | Writing a tag from a screen | same place | an ADR: it puts the Operator check and the audit entry behind a button instead of a form |
 | Scripting (Jint), reporting | `phase-plan.md`, "Later (not yet scoped)" | a phase that creates a concrete need |
 | CI — any pipeline at all | not scoped by any phase | a phase that wants it; today every gate rests on a recorded hand walk |

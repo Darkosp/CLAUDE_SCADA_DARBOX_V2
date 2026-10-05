@@ -914,11 +914,16 @@ used between its terminal half and its screen half.
 
 ### What is left for the next slice
 
-- **Authoring beyond the API**: a screen builder a person can drag in. This
-  phase's screens are created and edited through the API and rendered by the
-  client; a builder is a client feature over the same rows, not a new model.
+- **Drag and drop, and a live preview.** An author can build a screen today — add,
+  remove, resize, retitle, reorder, move between rows, save, delete — but by a picker
+  and a pair of buttons rather than by dragging. That is enough to build a screen and
+  it is not what an author would choose twice. A builder is a client feature over the
+  same rows, not a new model.
 - **Acting from a screen** — writing a tag from a component, with the permission
   story that needs (see scope item 6).
+- **Saying that a save is immediate.** A screen has no draft version and no publish
+  step, so Save changes what every operator on the Site sees. That is defensible and
+  it belongs on the button rather than discovered.
 - **Nesting and free positioning** if a real deployment needs them. The model
   keeps room for both without deciding them.
 
