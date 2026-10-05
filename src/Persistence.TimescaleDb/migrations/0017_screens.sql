@@ -108,3 +108,24 @@ CREATE VIEW screen_component_active AS
 SELECT id, site_id, screen_id, row_index, column_span, position, kind, title, tag_id, device_id
 FROM screen_component
 WHERE deleted_at IS NULL;
+
+-- Grants, for the reason 0009 gives: since that migration a new table is granted SELECT and INSERT
+-- only, and one that genuinely needs more asks for it in the migration that creates it.
+--
+-- A screen is soft-deleted (ADR-0009), which is an UPDATE, and it is edited far more often than it
+-- is made. A component does not need UPDATE: a screen is saved by replacing its whole component set,
+-- and the repository does that with a DELETE and an INSERT rather than by marking rows deleted --
+-- a component has no name for a soft-deleted row to preserve, and a soft-deleted row keeps its
+-- primary key, so re-inserting a component that kept its id would collide with it.
+--
+-- Missing this is not a subtle failure and it is worth naming what it looked like: the first run of
+-- the screen tests failed with `42501: permission denied for table screen_component` on the delete,
+-- while every read worked. Reads are exactly what the default grant covers.
+GRANT SELECT, INSERT, UPDATE ON screen TO scada_app;
+GRANT SELECT, INSERT, DELETE ON screen_component TO scada_app;
+
+-- The views are read by the repository, and a view is a separate object with its own privileges:
+-- granting on the table does not grant on the view over it. SELECT alone, because every write goes
+-- to the tables by name -- a view is a read path (ADR-0009).
+GRANT SELECT ON screen_active TO scada_app;
+GRANT SELECT ON screen_component_active TO scada_app;

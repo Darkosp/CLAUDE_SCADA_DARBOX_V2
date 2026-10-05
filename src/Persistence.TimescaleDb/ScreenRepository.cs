@@ -142,15 +142,22 @@ public sealed class ScreenRepository : IScreenRepository
                 screen,                transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-            // Soft-deleted, not replaced in place: the set is the author's, and a component they
-            // removed must not reappear because a client sent it again. A row that keeps its id
-            // would also let an audit entry about the old component describe the new one.
+            // Deleted, not soft-deleted, and this is the one place in this repository where that is
+            // right. Soft deletion exists so that a historian sample or an audit row recorded long
+            // ago can still resolve a *name* (ADR-0009) -- and a component has no name. It is a row
+            // saying "a value component, row 0, spanning 8" and nothing else, so there is no history
+            // that could want it back.
+            //
+            // Soft-deleting would not merely be unnecessary here, it would not work: an author
+            // resending a component keeps its id, a soft-deleted row keeps its primary key, and the
+            // insert below would then collide with the row it was replacing. That is what the first
+            // run of these tests did, as `23505: duplicate key value violates unique constraint
+            // "screen_component_pkey"`.
+            //
+            // Hard deletion is safe for everything pointing at this table: nothing references a
+            // component.
             await connection.ExecuteAsync(new CommandDefinition(
-                """
-                UPDATE screen_component
-                SET deleted_at = now()
-                WHERE screen_id = @Id AND deleted_at IS NULL
-                """,
+                "DELETE FROM screen_component WHERE screen_id = @Id",
                 new { screen.Id },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -246,10 +253,14 @@ public sealed class ScreenRepository : IScreenRepository
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         // The components go with the screen, unlike a folder's contents (ADR-0001 §6): a component
-        // has no meaning apart from the screen it is on, so there is nothing for an operator to
-        // move out first and no decision about where it would go.
+        // has no meaning apart from the screen it is on, so there is nothing for an operator to move
+        // out first and no decision about where it would go.
+        //
+        // Deleted outright rather than soft-deleted, for the reason UpdateAsync gives: a component
+        // has no name for a soft-deleted row to preserve (ADR-0009), and it is this table's DELETE
+        // grant rather than its UPDATE one that exists to carry a save.
         await connection.ExecuteAsync(new CommandDefinition(
-            "UPDATE screen_component SET deleted_at = now() WHERE screen_id = @screenId AND deleted_at IS NULL",
+            "DELETE FROM screen_component WHERE screen_id = @screenId",
             new { screenId },
             transaction,
             cancellationToken: cancellationToken)).ConfigureAwait(false);
