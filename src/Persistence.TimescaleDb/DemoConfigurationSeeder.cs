@@ -16,6 +16,20 @@ namespace ScadaDarbox.Persistence.TimescaleDb;
 /// </remarks>
 public static class DemoConfigurationSeeder
 {
+    /// <summary>
+    /// The advisory lock that makes this seeder one-at-a-time.
+    /// </summary>
+    /// <remarks>
+    /// "SCAD_SE" as bytes — the same convention <see cref="MigrationLock.Key"/> uses, which is
+    /// "SCADA_MG", so the two read in a lock listing rather than being numbers nobody can place.
+    /// They are deliberately different values: a seeder starting while a migration runs must wait
+    /// for the migration rather than take a lock of its own beside it.
+    ///
+    /// Eight bytes exactly, because a <c>long</c> is what Postgres takes as a lock key and a ninth
+    /// byte does not fit: the first attempt at this was ten characters and did not compile.
+    /// </remarks>
+    private const long LockKey = 0x5343_4144_5F53_4545;
+
     public static readonly Guid TenantId = new("0f7a1b2c-0000-4000-8000-000000000001");
     public static readonly Guid SiteId = new("0f7a1b2c-0000-4000-8000-000000000002");
 
@@ -42,15 +56,6 @@ public static class DemoConfigurationSeeder
         int modbusPort,
         CancellationToken cancellationToken)
     {
-        await using (var probe = dataSource.CreateCommand("SELECT count(*) FROM tenant"))
-        {
-            var existing = (long)(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
-            if (existing > 0)
-            {
-                return;
-            }
-        }
-
         var connectionSettings = JsonSerializer.Serialize(new Dictionary<string, string>
         {
             ["host"] = modbusHost,
@@ -60,6 +65,41 @@ public static class DemoConfigurationSeeder
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // One seeder at a time, and the lock is taken BEFORE the question is asked.
+        //
+        // This used to ask "is there a tenant yet" on its own connection and then seed on another,
+        // which is a read followed by a write with nothing between them: two processes starting at
+        // once against an empty database both read zero and both inserted the whole demo dataset --
+        // two tenants, two Skopjes, two of every device. It was found by this project's own test
+        // host, which starts the app once per test in parallel against one database, and it is
+        // exactly the shape a rolling start or a misconfigured Kubernetes update would produce.
+        //
+        // Transaction-scoped rather than session-scoped: the lock ends when this transaction does,
+        // so a process that dies mid-seed releases it without anyone cleaning up. The second seeder
+        // waits here, and then asks its question after the first has committed -- which is what
+        // makes the answer true rather than merely earlier.
+        //
+        // Removing this is not a silent change: the test for it fails with `23505: duplicate key
+        // value violates unique constraint "tenant_pkey"`, which is what two seeders colliding on
+        // fixed ids looks like.
+        await using (var take = new NpgsqlCommand("SELECT pg_advisory_xact_lock(@key)", connection, transaction))
+        {
+            take.Parameters.AddWithValue("key", LockKey);
+            await take.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using (var probe = new NpgsqlCommand("SELECT count(*) FROM tenant", connection, transaction))
+        {
+            var existing = (long)(await probe.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
+            if (existing > 0)
+            {
+                // Nothing to do, and the lock is released by the rollback this leaves behind. An
+                // empty transaction is cheaper to reason about than a conditional commit.
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+        }
 
         await using (var command = new NpgsqlCommand(
             """

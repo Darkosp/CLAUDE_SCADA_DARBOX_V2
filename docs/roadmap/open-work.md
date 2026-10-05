@@ -158,29 +158,32 @@ and a component has no name, so it is a DELETE and an INSERT.
   every operator on that Site sees, immediately. That is defensible for a screen and it is the kind
   of thing that should be said on the button rather than discovered.
 
-### 2.0c A race in the demo seeder, found but not fixed
+### 2.0c The demo seeder's race — found, and closed on 2026-10-05
 
-**`DemoConfigurationSeeder.SeedIfEmptyAsync` can seed twice.** It asks `SELECT count(*) FROM tenant`
-and seeds if the answer is zero, which is a read followed by a write with nothing between them: two
-processes starting at once against an empty database both read zero and both insert. The observed
-consequence is a Site with more than one seeded screen, which is cosmetic — but the same race
-duplicates the whole demo dataset, including the tenant, and nothing in the seeder prevents it.
+**`DemoConfigurationSeeder.SeedIfEmptyAsync` could seed twice, and no longer can.** It asked
+`SELECT count(*) FROM tenant` on one connection and then seeded on another, which is a read followed
+by a write with nothing between them: two processes starting at once against an empty database both
+read zero and both inserted the whole demo dataset — two tenants, two Skopjes, two of every device.
 
 It was found because `GatewayTestHost` starts the app once per test with the tests running in
 parallel against one database, which is a much better double-start generator than a deployment is.
-That is why it was noticed at all, and it is also why it is not being called a production defect: no
-deployment in this project has ever started two Gateways against an empty database, and the shape
-that would — a rolling start, or a K8s `Recreate` misconfigured as `RollingUpdate` — is exactly the
-shape Phase 6's packaging uses `depends_on` and one replica to avoid.
+That is also why it was recorded as a sighting rather than a production defect at the time: no
+deployment in this project has ever started two Gateways against an empty database. What makes it
+worth having closed anyway is the shape — a rolling start, or a Kubernetes `Recreate` written as
+`RollingUpdate` — and that the same race duplicates the *Site*, which every other entity hangs off.
 
-**Not fixed here, and deliberately.** Every fix is a behaviour change and none is obviously right:
-a unique constraint on the demo names would make the second seeder fail loudly instead of quietly
-duplicating, which is better but turns a cosmetic race into a startup failure; an advisory lock is
-what `MigrationLock` already does and would be the consistent answer, but it is a mechanism for a
-seeder that only ever runs on a demo dataset. The test that noticed it now asserts what it is about
-(a new Site comes up with a screen) rather than the count, so the race is no longer hidden — it is
-recorded, and the decision about whether to close it belongs with the first deployment that starts
-more than one Gateway.
+**The fix is a transaction-scoped advisory lock taken before the question is asked**
+(`pg_advisory_xact_lock`, key `0x5343_4144_5F53_4545`), with the probe and the insert inside that one
+transaction. The second seeder waits and then asks its question *after* the first has committed, so
+the answer is true rather than merely earlier. Transaction-scoped rather than session-scoped for the
+reason `MigrationLock` gives: a process that dies mid-seed releases it without anyone cleaning up.
+
+**Proved by mutation.** With the lock removed, `DemoSeederConcurrencyTests` fails with
+`23505: duplicate key value violates unique constraint "tenant_pkey"` — which is what two seeders
+colliding on fixed ids looks like, and is also why the test asserts that nobody threw rather than
+only that the rows came out once. A later ordinary run is asserted in the same test, because
+idempotence on an already-seeded database is what an upgrade depends on and xUnit promises no order
+between two test methods sharing one fixture.
 
 ### 2.0 Written, and not yet walked
 
