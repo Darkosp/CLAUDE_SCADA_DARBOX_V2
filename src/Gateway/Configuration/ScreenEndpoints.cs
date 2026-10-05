@@ -184,13 +184,37 @@ internal static class ScreenEndpoints
                     // ADR-0024 §5: a binding the reader may not see is still rendered, and says so.
                     // Deciding it here means every renderer gets the same answer, and there is one
                     // place to check rather than one per component.
-                    Readable: component.TagId is null || IsReadable(component.TagId.Value, catalog, caller)))
+                    Readable: component.TagId is null || IsReadable(component.TagId.Value, catalog, caller),
+                    // ADR-0024 §9: a writable tag is marked writable on a screen; acting on it is not
+                    // built here. False for a reader who cannot operate the Site even when the tag is
+                    // writable, because "you may not" and "this cannot be" are different sentences.
+                    Writable: IsWritable(component.TagId, catalog, caller)))
                 .ToList());
 
     private static bool IsReadable(Guid tagId, TagCatalog catalog, Caller caller) =>
         catalog.FindTag(tagId) is { } tag
         && catalog.FindDevice(tag.DeviceId) is { } device
         && caller.Access.CanView(device.SiteId);
+
+    /// <summary>
+    /// Whether this component's tag is one the caller could write — which is only ever a marking,
+    /// because writing from a screen is not built (ADR-0024 §9).
+    /// </summary>
+    /// <remarks>
+    /// A tag that is not readable is not writable either, and the order is deliberate: the first
+    /// question about a binding the reader cannot see is not what they may do with it.
+    /// </remarks>
+    private static bool IsWritable(Guid? tagId, TagCatalog catalog, Caller caller)
+    {
+        if (tagId is not { } id || !IsReadable(id, catalog, caller))
+        {
+            return false;
+        }
+
+        return catalog.FindTag(id) is { IsWritable: true } tag
+            && catalog.FindDevice(tag.DeviceId) is { } device
+            && caller.Access.CanOperate(device.SiteId);
+    }
 
     /// <summary>
     /// The screen a request describes, or null with <see cref="Problem"/> saying why.

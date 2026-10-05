@@ -162,6 +162,47 @@ test('an alarms component carries its heading through, because the view draws it
   assert.equal(resolved.title, 'Standing alarms');
 });
 
+test('a writable tag is marked writable, and that is all this phase does with it', () => {
+  // ADR-0024 §9: a writable tag is MARKED writable on a screen; acting on it is not built here,
+  // because putting a write behind a button means putting the Operator check, the audit entry and the
+  // write path's own refusals behind that button too. The marker travels through the resolver so the
+  // view can draw it, and nothing about it is pressable.
+  const resolved = resolveComponent(
+    component({ kind: 'value', tagId: 'tag-1', writable: true }),
+    new Map([['tag-1', snapshot({})]]),
+    [],
+    site,
+  );
+
+  assert.equal(resolved.kind, 'value');
+  assert.equal(resolved.writable, true);
+});
+
+test('the control: a tag that is not writable is not marked', () => {
+  const resolved = resolveComponent(
+    component({ kind: 'value', tagId: 'tag-1', writable: false }),
+    new Map([['tag-1', snapshot({})]]),
+    [],
+    site,
+  );
+
+  assert.equal(resolved.writable, false);
+});
+
+test('an unreadable binding is never marked writable, whatever the server said', () => {
+  // The server answers this itself -- a reader who cannot operate the Site is told false even when the
+  // tag is writable -- and this is the client-side control for it: "you may not do this" and "this
+  // cannot be done" are different sentences, and a marker over a value nobody can see is neither.
+  const resolved = resolveComponent(
+    component({ kind: 'value', tagId: 'tag-1', readable: false, writable: true }),
+    none,
+    [],
+    site,
+  );
+
+  assert.equal(resolved.kind, 'unreadable');
+  assert.equal(resolved.writable, undefined);
+});
 test('an alarms component with no heading still resolves, and says so as null', () => {
   // The control, and the reason the heading is optional rather than required: ADR-0024's kinds table
   // gives text as what a `label` shows and says nothing of the sort for `alarms`. A screen a new Site

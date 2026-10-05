@@ -20,6 +20,15 @@ export interface ScreenComponent {
    * place to check (ADR-0024 §5). Always true for a component that reads no tag.
    */
   readable: boolean;
+  /**
+   * Whether this session could write the tag behind `tagId` — **if writing from a screen existed,
+   * which it does not** (ADR-0024 §9).
+   *
+   * ADR-0024 requires that a writable tag is *marked* writable on a screen and stops there; acting on
+   * it is the next slice. Decided by the server for the same reason `readable` is, and false for a
+   * reader who cannot operate the Site even when the tag itself is writable.
+   */
+  writable: boolean;
 }
 
 /** One operator screen, as the API sends it. */
@@ -46,9 +55,11 @@ export type ResolvedScreenComponent =
       quality: string;
       sourceTimestampUtc: string | null;
       path: string;
+      /** ADR-0024 §9: marked, never actionable in this phase. False for a kind that reads no tag. */
+      writable: boolean;
     }
-  | { kind: 'status'; id: string; quality: string }
-  | { kind: 'trend'; id: string; tagId: string; path: string }
+  | { kind: 'status'; id: string; quality: string; writable: boolean }
+  | { kind: 'trend'; id: string; tagId: string; path: string; writable: boolean }
   | { kind: 'alarms'; id: string; title: string | null; alarms: Alarm[] }
   | { kind: 'missing'; id: string; note: string }
   | { kind: 'unreadable'; id: string; note: string };
@@ -123,11 +134,19 @@ export function resolveComponent(
         quality: snapshot.quality,
         sourceTimestampUtc: snapshot.sourceTimestampUtc,
         path: snapshot.path,
+        // Marked, never actionable: writing from a screen is the next slice (ADR-0024 §9).
+        writable: component.writable,
       };
     case 'status':
-      return { kind: 'status', id: component.id, quality: snapshot.quality };
+      return { kind: 'status', id: component.id, quality: snapshot.quality, writable: component.writable };
     case 'trend':
-      return { kind: 'trend', id: component.id, tagId: component.tagId, path: snapshot.path };
+      return {
+        kind: 'trend',
+        id: component.id,
+        tagId: component.tagId,
+        path: snapshot.path,
+        writable: component.writable,
+      };
     default:
       return { kind: 'missing', id: component.id, note: 'This build cannot draw this.' };
   }
@@ -244,6 +263,11 @@ export function newComponent(
     // standing to answer it -- and a component that hid itself mid-edit would be one an author could
     // not delete.
     readable: true,
+    // False, and unlike `readable` it is NOT optimistically true. A component that has never been to
+    // the server has no tag the server has looked at in this session, so there is nothing to say about
+    // whether it could be written -- and the preview is the place an author compares against what an
+    // operator sees, so a marker shown before a save and gone after it would be the preview lying.
+    writable: false,
   };
 }
 

@@ -297,6 +297,42 @@ public sealed class ScreenApiTests : IClassFixture<GatewayTestHost>
     }
 
     [RequiresDatabaseFact]
+    public async Task A_writable_tag_is_marked_writable_and_a_reader_who_may_not_write_is_not_told_so()
+    {
+        // ADR-0024 9: "a writable tag is marked writable on a screen; acting on it is not built here."
+        // This phase builds the marking and nothing else, and the marking is the server's answer for
+        // the same reason `readable` is -- the reader's own rights are not the client's to decide.
+        //
+        // `CreateLiveDeviceAsync` creates its tag with IsWritable: true, which is what makes this a
+        // test of the marking rather than of a tag that could never be written anyway.
+        var admin = await _host.LoginAsAdminAsync();
+        var device = await _host.CreateLiveDeviceAsync(admin, Bitola, "Writability probe");
+        using var client = _host.CreateClient(admin);
+
+        var created = await client.PostAsJsonAsync(
+            $"/api/sites/{Bitola}/screens",
+            new SaveScreenRequest(
+                $"screen-{Guid.NewGuid():N}",
+                0,
+                [
+                    new SaveScreenComponentRequest(null, 0, 12, 0, "value", null, device.TagId),
+                    new SaveScreenComponentRequest(null, 1, 12, 0, "label", "A heading", null),
+                ]));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var screenId = await created.Content.ReadFromJsonAsync<Guid>();
+
+        var read = await client.GetFromJsonAsync<ScreenDto>($"/api/screens/{screenId}");
+
+        // The admin operates every Site, so a writable tag is marked.
+        Assert.True(Assert.Single(read!.Components, c => c.Kind == "value").Writable);
+
+        // And the control, which is the same rule the other way round: a component that names no tag
+        // has nothing that could be written, so it is not marked. Without this the assertion above
+        // would pass on a server that simply answered true always.
+        Assert.False(Assert.Single(read.Components, c => c.Kind == "label").Writable);
+    }
+
+    [RequiresDatabaseFact]
     public async Task A_deleted_screen_is_gone_from_the_list_and_from_its_own_path()
     {
         var admin = await _host.LoginAsAdminAsync();

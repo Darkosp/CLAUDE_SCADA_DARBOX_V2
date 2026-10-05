@@ -36,6 +36,11 @@ import { TrendChart } from './trend-chart';
                 @case ('value') {
                   <p class="caption">
                     <span class="path">{{ $any(cell.resolved).path }}</span>
+                    @if ($any(cell.resolved).writable) {
+                      <span class="writable" title="This tag could be written — from a screen, not yet">
+                        writable
+                      </span>
+                    }
                     <span class="quality" [class]="'q-' + $any(cell.resolved).quality">
                       {{ $any(cell.resolved).quality }}
                     </span>
@@ -46,12 +51,26 @@ import { TrendChart } from './trend-chart';
                   }
                 }
                 @case ('status') {
+                  <p class="caption">
+                    @if ($any(cell.resolved).writable) {
+                      <span class="writable" title="This tag could be written — from a screen, not yet">
+                        writable
+                      </span>
+                    }
+                  </p>
                   <p class="quality alone" [class]="'q-' + $any(cell.resolved).quality">
                     {{ $any(cell.resolved).quality }}
                   </p>
                 }
                 @case ('trend') {
-                  <p class="caption"><span class="path">{{ $any(cell.resolved).path }}</span></p>
+                  <p class="caption">
+                    <span class="path">{{ $any(cell.resolved).path }}</span>
+                    @if ($any(cell.resolved).writable) {
+                      <span class="writable" title="This tag could be written — from a screen, not yet">
+                        writable
+                      </span>
+                    }
+                  </p>
                   @if (historyFor(cell.component.id); as samples) {
                     @if (samples.length < 2) {
                       <p class="muted">Not enough history yet.</p>
@@ -119,6 +138,17 @@ import { TrendChart } from './trend-chart';
     .reading { margin: 0; font-size: 1.6rem; font-variant-numeric: tabular-nums; }
     .at { margin: 2px 0 0; font-size: 0.72rem; color: #8a949e; }
     .quality { border-radius: 999px; padding: 1px 8px; font-size: 0.72rem; background: #eef1f4; }
+    /* ADR-0024 §9: marked, and deliberately not a button. Writing from a screen is the next slice,
+       and a marker that looked pressable would promise something the build cannot do. */
+    .writable {
+      border-radius: 999px;
+      padding: 1px 8px;
+      font-size: 0.72rem;
+      background: #eaeefb;
+      color: #2f4a9c;
+      border: 1px dashed #b9c4e6;
+      cursor: default;
+    }
     .quality.alone { display: inline-block; font-size: 0.95rem; padding: 4px 12px; }
     .q-Good { background: #e3f6e9; color: #1c6b3a; }
     .q-Uncertain { background: #fdf3dc; color: #8a6100; }

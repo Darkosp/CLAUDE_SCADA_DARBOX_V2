@@ -206,6 +206,27 @@ public sealed record ScreenDto(
 /// that every renderer gives the same answer and there is one place to check (ADR-0024 §5). Always
 /// true for a component that reads no tag.
 /// </param>
+/// <summary>
+/// One component of a screen as the API sends it, with the two things only the server can answer.
+/// </summary>
+/// <param name="Readable">
+/// Whether the caller may see the tag this component names — the server's answer about the *reader*,
+/// decided here so every renderer agrees and there is one place to check (ADR-0024 §5).
+/// </param>
+/// <param name="Writable">
+/// Whether this component's tag could be written from here — **if writing from a screen existed,
+/// which it does not** (ADR-0024 §9, and phase-plan scope item 6).
+///
+/// ADR-0024 requires that <i>"a writable tag is marked writable on a screen"</i>, and that is the
+/// whole of the requirement: acting on it is the next slice, because putting a write behind a button
+/// means putting the Operator check, the audit entry and the write path's own refusals behind that
+/// button too.
+///
+/// Decided on the server for the same reason <paramref name="Readable"/> is. A component whose reader
+/// cannot operate the Site reports false even when the tag is writable, because "you may not do this"
+/// and "this cannot be done" are different sentences, and a screen that conflated them would be lying
+/// to one of the two people reading it.
+/// </param>
 public sealed record ScreenComponentDto(
     Guid Id,
     int RowIndex,
@@ -214,7 +235,8 @@ public sealed record ScreenComponentDto(
     string Kind,
     string? Title,
     Guid? TagId,
-    bool Readable);
+    bool Readable,
+    bool Writable);
 
 /// <summary>
 /// A screen as an author sends it. The whole component set travels with every save, and one that is
