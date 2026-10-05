@@ -61,11 +61,18 @@ public sealed class ScratchDatabase : IAsyncDisposable
     /// <c>Command Timeout=0</c>, for the reason <c>Persistence.Tests</c>' copy of this string
     /// documents at length: this connection carries <c>CREATE</c>/<c>DROP DATABASE</c> and nothing
     /// else, and a client-side ten-second deadline made the client give up while the server was
-    /// still working — a failed test that passes on its own. The <c>Timeout=3</c> stays, because
-    /// failing fast on an absent server is what the availability probe needs.
+    /// still working — a failed test that passes on its own.
+    ///
+    /// <c>Timeout=30</c>, and it was three until 2026-10-05. Three seconds to <em>connect</em> is not
+    /// enough when thirty test classes are creating databases in parallel across six assemblies, and
+    /// what it bought was not worth what it cost: a
+    /// <c>NpgsqlException: The operation has timed out</c> inside <c>ConnectAsync</c>, in whichever
+    /// test happened to be unlucky, which is a flake that cannot be diagnosed from its own failure
+    /// message. The availability probe does not need a short deadline to be quick — it answers on the
+    /// first successful connect and only asks again when there is nothing there.
     /// </remarks>
     private static string ServerConnectionString =>
-        $"Host={ServerHost};Port={ServerPort};Database=postgres;Username=scada;Password=scada;Timeout=3;Command Timeout=0";
+        $"Host={ServerHost};Port={ServerPort};Database=postgres;Username=scada;Password=scada;Timeout=30;Command Timeout=0";
 
     public static async Task<ScratchDatabase> CreateMigratedAsync()
     {
@@ -105,8 +112,16 @@ public sealed class ScratchDatabase : IAsyncDisposable
         await drop.ExecuteNonQueryAsync();
     }
 
+    /// <remarks>
+    /// <c>Timeout=30</c>, matching the <c>Persistence.Tests</c> copy of this string and for the same
+    /// reason: this carries the privileged role, and the application role is derived from it by
+    /// <c>ApplicationRole.ConnectionStringFor</c>, so a default here is a default for every
+    /// connection the Gateway's tests open. Fifteen seconds — Npgsql's own default — was measured
+    /// failing on 2026-10-05 as <c>NpgsqlException: The operation has timed out</c> in
+    /// <c>ConnectAsync</c>, in whichever test happened to be unlucky.
+    /// </remarks>
     private static string ConnectionStringFor(string database) =>
-        $"Host={ServerHost};Port={ServerPort};Database={database};Username=scada;Password=scada";
+        $"Host={ServerHost};Port={ServerPort};Database={database};Username=scada;Password=scada;Timeout=30";
 }
 
 /// <summary>A fact that reports as skipped, rather than passing, when no database is reachable.</summary>

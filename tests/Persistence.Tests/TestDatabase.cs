@@ -40,12 +40,22 @@ public sealed class TestDatabase : IAsyncLifetime
     /// the <em>client</em> gave up while the server was still working, which surfaced as
     /// <c>NpgsqlException … TimeoutException: Timeout during reading attempt</c> inside
     /// <see cref="DropEmptyAsync"/> and as a failed test that passes on its own. Measured
-    /// 2026-10-02: five of eight whole-solution runs, never once in isolation. The
-    /// <c>Timeout=3</c> beside it stays — connecting fast and failing fast is still right, and the
-    /// availability probe depends on it.
+    /// 2026-10-02: five of eight whole-solution runs, never once in isolation.
+    ///
+    /// <c>Timeout=30</c> is the <em>connect</em> deadline, and it was three until 2026-10-05. The
+    /// note that used to sit here — "connecting fast and failing fast is still right" — was the
+    /// mistake, and it cost a flake that took a hunt to name:
+    /// <c>NpgsqlException: The operation has timed out</c> inside
+    /// <c>NpgsqlConnector.ConnectAsync</c>, on a loaded machine, in a test about something else
+    /// entirely. Thirty test classes each create their own database here, in parallel, and three
+    /// seconds is not enough for a connection when six other assemblies are doing the same. What
+    /// "failing fast" was protecting is the availability probe below, and that probe does not
+    /// depend on this number to be quick: it answers on the first successful connect and only
+    /// <em>asks again</em> on a failure, so the cost of a longer deadline is paid once per run and
+    /// only when there is no server to find.
     /// </remarks>
     private static string ServerConnectionString =>
-        $"Host={ServerHost};Port={ServerPort};Database=postgres;Username=scada;Password=scada;Timeout=3;Command Timeout=0";
+        $"Host={ServerHost};Port={ServerPort};Database=postgres;Username=scada;Password=scada;Timeout=30;Command Timeout=0";
 
     /// <summary>
     /// The application role belongs to the whole server, so every run gives it the same
@@ -142,8 +152,24 @@ public sealed class TestDatabase : IAsyncLifetime
         await drop.ExecuteNonQueryAsync();
     }
 
+    /// <summary>
+    /// A connection string for one database, as the privileged role.
+    /// </summary>
+    /// <remarks>
+    /// <c>Timeout=30</c> for the reason <see cref="ServerConnectionString"/> gives at length: thirty
+    /// test classes create and migrate databases in parallel here, and Npgsql's default of fifteen
+    /// seconds to <em>connect</em> is not always enough on a loaded machine. This string used to
+    /// carry no deadline of its own, so everything built from it — the privileged role, and the
+    /// application role derived from it by <c>ApplicationRole.ConnectionStringFor</c> — inherited a
+    /// default that was measured failing on 2026-10-05, as
+    /// <c>NpgsqlException: The operation has timed out</c> in <c>ConnectAsync</c> inside
+    /// <c>MigrationLockTests</c>.
+    ///
+    /// It is deliberately the same number in both test projects, so that a flake cannot be a
+    /// difference between two helpers that look alike.
+    /// </remarks>
     internal static string ConnectionStringFor(string database) =>
-        $"Host={ServerHost};Port={ServerPort};Database={database};Username=scada;Password=scada";
+        $"Host={ServerHost};Port={ServerPort};Database={database};Username=scada;Password=scada;Timeout=30";
 
     private static readonly DatabaseAvailability AvailabilityProbe = new(() =>
     {

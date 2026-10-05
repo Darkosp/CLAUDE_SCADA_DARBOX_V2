@@ -1,0 +1,34 @@
+{
+  "$schema": "https://xunit.net/schema/current/xunit.runner.schema.json",
+
+  "maxParallelThreads": 4,
+
+  "//": [
+    "Why this file exists, and why four.",
+    "",
+    "Every test class in this project that needs a database creates one and runs the",
+    "real migrator against it. That is deliberate -- a test that built its own tables",
+    "could pass while the shipped migration was broken -- and it means a whole-solution",
+    "run starts fourteen of these migrations at once in this assembly alone, beside",
+    "sixteen more in Gateway.Tests.",
+    "",
+    "xUnit's default is one thread per core, which on the machine this was measured on",
+    "is twenty. The server answers that with 'failed to launch job ... out of background",
+    "workers' -- 24578 times in one log -- because max_worker_processes is 39 and every",
+    "parallel query and maintenance worker competes for those slots. What a test sees is",
+    "not that warning but its own client deadline: NpgsqlException: The operation has",
+    "timed out, inside ConnectAsync, in whichever test happened to be unlucky. It was",
+    "seen in MigrationLockTests, in EmbeddedScriptsTests, in DataProtectionKeysTests and",
+    "in a configuration-publishing test, which is the signature of a shared ceiling",
+    "rather than of any one test being wrong.",
+    "",
+    "Four rather than a number chosen for how it feels: enough to keep the suite quick,",
+    "few enough that the migrations are not all at once. It is capped per assembly, so",
+    "the seven assemblies together still use the machine -- what is removed is the",
+    "thirty-at-once spike, not the parallelism.",
+    "",
+    "This is not a fix for a product defect. The product has no such ceiling: it runs one",
+    "migrator (ADR-0014) and one Gateway. What this fixes is a test harness whose",
+    "parallelism outgrew the database it shares."
+  ]
+}

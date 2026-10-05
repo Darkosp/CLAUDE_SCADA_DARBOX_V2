@@ -26,6 +26,17 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
 
     private TestBroker? _broker;
 
+    /// <summary>
+    /// What the publisher logged during this test.
+    /// </summary>
+    /// <remarks>
+    /// Attached and kept, because this test's failure mode is a silence: the first configuration
+    /// never arrives and the assertion says only that. It has already earnt its place — the first
+    /// captured failure showed the publisher connecting and publishing the configuration
+    /// successfully, which ruled the publisher out and moved the question to delivery.
+    /// </remarks>
+    private readonly CapturingLoggerProvider _logs = new();
+
     public async Task InitializeAsync() => _broker = await TestBroker.StartAsync();
 
     public async Task DisposeAsync()
@@ -44,7 +55,22 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
         await publisher.StartAsync(CancellationToken.None);
 
         using var cloud = await SubscribeAsync("scada/edge/edge-a/config");
-        await WaitUntilAsync(() => cloud.Count >= 1, "the first configuration to be published");
+
+        try
+        {
+            await WaitUntilAsync(() => cloud.Count >= 1, "the first configuration to be published");
+        }
+        catch (TimeoutException exception)
+        {
+            // Rethrown with what the publisher said, because the failure on its own is a silence and
+            // a silence cannot be diagnosed from the outside. This has already paid for itself: the
+            // first capture showed the publisher connecting and publishing successfully, which ruled
+            // the publisher out and pointed at delivery.
+            throw new TimeoutException(
+                $"{exception.Message} The publisher logged:{Environment.NewLine}"
+                + string.Join(Environment.NewLine, _logs.Entries),
+                exception);
+        }
 
         // The edge's device is assigned: the cloud's configuration of it changes.
         source.Set(Catalogue(assigned: true));
@@ -130,7 +156,7 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
             // router is only present because the publisher is what hands it the way to publish.
             new EdgeWriteRouter(options, NullLogger<EdgeWriteRouter>.Instance),
             options,
-            NullLogger<EdgeConfigurationPublisher>.Instance);
+            _logs.CreateLogger<EdgeConfigurationPublisher>());
     }
 
     /// <summary>A catalogue with this edge, and one device either assigned to it or not.</summary>
