@@ -933,10 +933,14 @@ sentence on Save — so what is left is the two that need a decision or a slice 
   the more honest answer — two trend components bound to one tag are two views of one series — and the
   rule about which trends need fetching lives in one function, `trendTagIds`, because two copies of a
   rule that look alike is the shape of defect Phase 8's walk found twice.
-- **Acting from a screen** — writing a tag from a component, with the permission story that needs
-  (see scope item 6). **Still open, and it needs an ADR**: it puts the Operator check and the audit
-  entry behind a button instead of a form, which ADR-0011 and ADR-0023 both have something to say
-  about.
+- **Acting from a screen — closed 2026-10-05 by
+  [ADR-0026](../architecture/decisions/0026-operating-from-a-screen.md)**, the ADR this item asked for.
+  Only a `value` component offers a write control, the server's `writable` flag decides whether it is
+  offered at all, the write is confirmed in a dialog showing the tag's current reading with its quality
+  and source time, and it is **never held, queued or reported done before the device has answered**.
+  A failed write leaves the dialog open with the operator's value in it. No deployment setting was
+  added: an Operator could already write any writable tag through the API, and this is the value and
+  the control that acts on it appearing together.
 - **Saying that a save is immediate — closed 2026-10-05**, and the wording differs from what this
   entry asked for. It asked for a sentence *on the button*; what is there is a sentence **under** it,
   because a button label that is a paragraph is not a button label. It says that saving replaces the

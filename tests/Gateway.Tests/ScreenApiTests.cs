@@ -299,9 +299,12 @@ public sealed class ScreenApiTests : IClassFixture<GatewayTestHost>
     [RequiresDatabaseFact]
     public async Task A_writable_tag_is_marked_writable_and_a_reader_who_may_not_write_is_not_told_so()
     {
-        // ADR-0024 9: "a writable tag is marked writable on a screen; acting on it is not built here."
-        // This phase builds the marking and nothing else, and the marking is the server's answer for
-        // the same reason `readable` is -- the reader's own rights are not the client's to decide.
+        // ADR-0024 §9 required that "a writable tag is marked writable on a screen", and ADR-0026 §2
+        // turned that marking into the thing that decides whether the write control is offered. The
+        // answer is the server's for the same reason `readable` is — the reader's own rights are not
+        // the client's to decide — and it stays the server's now that a control hangs off it: a
+        // client that drew the control anyway would be refused by the write path, and this flag is
+        // what stops it being offered in the first place.
         //
         // `CreateLiveDeviceAsync` creates its tag with IsWritable: true, which is what makes this a
         // test of the marking rather than of a tag that could never be written anyway.

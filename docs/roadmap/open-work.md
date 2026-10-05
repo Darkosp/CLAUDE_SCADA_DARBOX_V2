@@ -382,6 +382,49 @@ unwritten does not make that answer better** — it leaves the next author to be
 thing. So the step now reads the sentence and is asked whether it is in the right place and whether it
 is enough. **Nobody has read it yet.**
 
+### 2.0h Operating from a screen — closed on 2026-10-05
+
+ADR-0024 §8 said a writable tag is marked writable and acting on it "is the next slice's". This is that
+slice, and it is closed by **[ADR-0026](../architecture/decisions/0026-operating-from-a-screen.md)**.
+The ADR was written first, as the register required, because **this is the second thing in the project
+that lets a web page change a plant** and the first whose control sits beside the value it acts on.
+
+**What was built, and what it deliberately did not touch.** One `value` component offers a `Write…`
+control; the server's `writable` flag decides whether it is offered, exactly as it already decided
+`readable`; the dialog shows the tag's path, its reading, its quality and its source time; `Enter`
+submits because it is a form, and a boolean tag gets a two-option picker rather than a text box. **The
+write path itself was not changed at all** — no endpoint, no permission rule, no new way to reach a
+device. If any of those had been needed it would have meant ADR-0011 or ADR-0023 was wrong.
+
+**Two decisions were argued and reversed while writing it, and both reversals are in the ADR.** The
+first draft added a `ScreenWrites:Enabled` switch, off by default; it was dropped because a switch
+whose off position only hides one of two ways to reach the same capability invites a deployment to
+believe it has disabled something it has not, and because ADR-0023's neighbouring switch defaults to
+**on** with the words "an Operator may write one and always could". The first draft also added a
+`tag.write_from_screen` audit action; reading the code refused it, because **the Browse view already
+has a write form**, so API writes were already coming from people at screens — the available
+distinction was which page they were looking at, not what kind of event it was.
+
+**What the tests pin.** On the client: that a `value` component carries the tag a write is addressed to
+and the kind of value the tag takes — both new on the resolved state, and both failing quietly if lost;
+that whether a write may be offered comes from the component rather than from the tag's kind; and that
+an unreadable component, one with no reading yet, and every other kind resolve with **no write target at
+all**, which is what makes "one component writes and nothing else does" structural rather than a rule a
+template has to remember. On the Gateway, the existing `writable` test already covers the three-way rule
+the control hangs off, and its comment now says so.
+
+**What has not happened, and it is the same gap as everything else in Phase 8: nobody has pressed the
+button.** No write has been made from a rendered screen; the dialog has never been opened by a person;
+whether `Write…` beside a reading is noticeable without looking like part of the value, and whether the
+sentence about the current reading being the *last* one rather than the live one is clear, are
+unjudged. **The write itself is well covered** — ADR-0023's path is tested from the cloud's side to a
+real Modbus slave — but the control that reaches it is not, because reaching it needs an eye.
+
+One thing worth carrying: the Browse view's write message said *"Sent X to Y"*, which claimed more than
+the write path knows. It now says the write was **accepted**, and that the reading changes when the next
+scan reports what the device holds — which is the true statement whether the device is polled here or
+behind an edge.
+
 ### 2.0 Written, and not yet walked
 
 Decided, implemented, tested — and waiting only for a run that exercises it. These are not
@@ -872,7 +915,7 @@ decided inside an implementation pull request.
 | Authoring a screen: drag and drop, a live preview while editing | `phase-plan.md`, Phase 8 "What is left for the next slice" | **the preview is closed 2026-10-05**; drag and drop waits for a slice — see §2.0b |
 | The preview's trend saying "Reading…" instead of drawing | same place | **closed 2026-10-05** — history is keyed by tag now, so a draft can ask for it; see §2.0g |
 | Saying that a save is immediate | same place | **closed 2026-10-05** — a sentence under the buttons; see §2.0g |
-| Writing a tag from a screen | same place | an ADR: it puts the Operator check and the audit entry behind a button instead of a form |
+| Writing a tag from a screen | same place | **closed 2026-10-05 by [ADR-0026](../architecture/decisions/0026-operating-from-a-screen.md)** — one component writes, the server decides whether to offer it; see §2.0h |
 | Scripting (Jint), reporting | `phase-plan.md`, "Later (not yet scoped)" | a phase that creates a concrete need |
 | CI — any pipeline at all | not scoped by any phase | a phase that wants it; today every gate rests on a recorded hand walk |
 

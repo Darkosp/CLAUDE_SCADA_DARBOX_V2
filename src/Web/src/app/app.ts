@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Api, ApiError } from './api';
@@ -739,7 +739,15 @@ export class App implements OnInit {
 
     await this.withErrorHandling(async () => {
       await this.api.writeTag(tag.id, value);
-      this.writeNote.set(`Sent ${raw} to ${tag.name}. The next scan shows what the device holds.`);
+
+      // "Accepted", not "done", and the difference is ADR-0023: where the device is behind an edge
+      // the cloud reports success only once the edge has confirmed the device took it, and the
+      // reading the screen shows is still the last one the Gateway measured. "Sent" would claim the
+      // plant had changed at a moment when nothing here knows that it has.
+      this.writeNote.set(
+        `Accepted for ${tag.name}. Its reading changes when the next scan reports what the device holds.`,
+      );
+
       if (tag.valueKind !== 'Boolean') {
         this.writeDraft.set('');
       }
@@ -1412,6 +1420,33 @@ export class App implements OnInit {
 
   protected async loadScreenHistory(): Promise<void> {
     await this.loadPreviewHistory(trendTagIds(this.openScreen()?.components ?? []));
+  }
+
+  /**
+   * The view that owns the write dialog, so its state can be told how the write ended (ADR-0026).
+   *
+   * The read view and the editor's preview are two instances of the same component, so this asks for
+   * whichever is on screen — `viewChild` reads the one the template is currently rendering.
+   */
+  private readonly screenView = viewChild(ScreenView);
+
+  /**
+   * Performs a write an operator confirmed on a screen (ADR-0026).
+   *
+   * **The dialog is told what happened and is never told it worked before it did.** The API refuses
+   * an unpermitted write, a device may refuse it, and a device behind an edge answers only when the
+   * edge confirms (ADR-0023) — so this waits and reports, rather than closing the dialog on optimism.
+   * A failure leaves the operator's value in the box so a typo can be corrected.
+   */
+  protected async onScreenWrite(request: { tagId: string; value: number | boolean }): Promise<void> {
+    try {
+      await this.api.writeTag(request.tagId, request.value);
+      this.screenView()?.finishWrite(null);
+    } catch (error) {
+      this.screenView()?.finishWrite(
+        error instanceof ApiError ? error.message : 'The write did not go through.',
+      );
+    }
   }
 
   /**

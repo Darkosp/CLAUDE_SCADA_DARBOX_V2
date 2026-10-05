@@ -1,4 +1,5 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, input, output, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Alarm, HistorySample } from './models';
 import {
   groupIntoRows,
@@ -20,7 +21,7 @@ import { TrendChart } from './trend-chart';
  */
 @Component({
   selector: 'app-screen',
-  imports: [TrendChart],
+  imports: [TrendChart, FormsModule],
   template: `
     @if (rows().length === 0) {
       <p class="empty">This screen has nothing on it.</p>
@@ -37,9 +38,7 @@ import { TrendChart } from './trend-chart';
                   <p class="caption">
                     <span class="path">{{ $any(cell.resolved).path }}</span>
                     @if ($any(cell.resolved).writable) {
-                      <span class="writable" title="This tag could be written — from a screen, not yet">
-                        writable
-                      </span>
+                      <span class="writable" title="This tag can be written">writable</span>
                     }
                     <span class="quality" [class]="'q-' + $any(cell.resolved).quality">
                       {{ $any(cell.resolved).quality }}
@@ -49,11 +48,27 @@ import { TrendChart } from './trend-chart';
                   @if ($any(cell.resolved).sourceTimestampUtc; as at) {
                     <p class="at">at {{ at }}</p>
                   }
+
+                  <!--
+                    The write control (ADR-0026). Offered only where the server said it was writable,
+                    and only on a value component — decision 1's "one component writes, nothing else
+                    does". The button is not the guard: the API refuses an unpermitted write whatever
+                    a client draws, and the flag's job is to not offer what would be refused.
+
+                    The second condition is not a screen decision but a fact about the tag: a text,
+                    discrete or valueless tag has no value this dialog can collect, and offering a
+                    numeric box for one would invite a rejected write.
+                  -->
+                  @if ($any(cell.resolved).writable && writableAsANumberOrAFlag($any(cell.resolved).valueKind)) {
+                    <button type="button" class="operate" (click)="beginWrite(cell.resolved)">
+                      Write…
+                    </button>
+                  }
                 }
                 @case ('status') {
                   <p class="caption">
                     @if ($any(cell.resolved).writable) {
-                      <span class="writable" title="This tag could be written — from a screen, not yet">
+                      <span class="writable" title="This tag can be written, though not from a status component">
                         writable
                       </span>
                     }
@@ -66,7 +81,7 @@ import { TrendChart } from './trend-chart';
                   <p class="caption">
                     <span class="path">{{ $any(cell.resolved).path }}</span>
                     @if ($any(cell.resolved).writable) {
-                      <span class="writable" title="This tag could be written — from a screen, not yet">
+                      <span class="writable" title="This tag can be written, though not from a trend">
                         writable
                       </span>
                     }
@@ -108,6 +123,67 @@ import { TrendChart } from './trend-chart';
           }
         </div>
       }
+    }
+
+    <!--
+      The write dialog (ADR-0026). Inside this component so that the read view and the editor's
+      preview share one set of rules about what it shows, when it closes and what it keeps -- the
+      same reason one renderer serves both.
+
+      It shows the tag, its reading, its quality and its source time (decision 4). **A Bad or old
+      reading does not disable the Write button**: there is a real case for writing to a controller
+      that has stopped reporting, and refusing would be this software deciding a plant procedure it
+      cannot see. The dialog's job is that the operator is looking at what the plant is doing.
+    -->
+    @if (writeTarget(); as target) {
+      <div class="write-backdrop">
+        <form class="write-dialog" (ngSubmit)="confirmWrite()">
+          <h3>Write to {{ target.path }}</h3>
+
+          <p class="write-current">
+            Now: <strong>{{ target.text }}</strong>
+            <span class="quality" [class]="'q-' + target.quality">{{ target.quality }}</span>
+            @if (target.sourceTimestampUtc; as at) {
+              <span class="muted">at {{ at }}</span>
+            }
+          </p>
+
+          <label>
+            New value
+            @if (target.valueKind === 'boolean') {
+              <!-- A picker, not free text: there are two answers and neither is a typo away. -->
+              <select name="writeValue" [ngModel]="writeDraft()"
+                      (ngModelChange)="writeDraft.set($event)" [disabled]="writing()">
+                <option value="">Choose…</option>
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            } @else {
+              <input name="writeValue" type="text" inputmode="decimal" autocomplete="off"
+                     [ngModel]="writeDraft()" (ngModelChange)="writeDraft.set($event)"
+                     [disabled]="writing()" />
+            }
+          </label>
+
+          @if (writeProblem(); as problem) {
+            <p class="error" role="alert">{{ problem }}</p>
+          }
+
+          <div class="write-actions">
+            <!--
+              Write, not OK: the button that changes a plant should say what it does, and an
+              explicit submit means a stray Enter in the field does nothing until it is pressed --
+              which is what an operator expects from a form. Escape closes without writing.
+            -->
+            <button type="submit" [disabled]="writing()">
+              {{ writing() ? 'Writing…' : 'Write' }}
+            </button>
+            <button type="button" class="ghost" (click)="cancelWrite()" [disabled]="writing()">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
     }
   `,
   styles: `
@@ -159,6 +235,36 @@ import { TrendChart } from './trend-chart';
     .empty, .unavailable { margin: 0; color: #5b6672; }
     .unavailable { font-style: italic; }
     .muted { margin: 0; color: #5b6672; }
+
+    /* The write control. Understated on purpose: it sits beside a value an operator reads, and a
+       control that looked like the most important thing on the screen would make an operating
+       action look like the normal state of the screen. */
+    .operate { margin-top: 6px; font-size: 0.78rem; }
+
+    /* No backdrop-click to dismiss: it is the gesture most likely to be accidental, and this is the
+       one dialog whose accidental dismissal leaves the operator unsure whether the write happened. */
+    .write-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(20, 28, 38, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+    }
+    .write-dialog {
+      background: #fff;
+      border-radius: 10px;
+      padding: 18px 20px;
+      min-width: 22rem;
+      max-width: 32rem;
+      box-shadow: 0 12px 40px rgba(20, 28, 38, 0.3);
+    }
+    .write-dialog h3 { margin: 0 0 10px; font-size: 1rem; }
+    .write-current { margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+    .write-dialog label { display: block; margin-bottom: 12px; font-size: 0.82rem; }
+    .write-dialog input, .write-dialog select { display: block; margin-top: 4px; width: 100%; }
+    .write-actions { display: flex; gap: 8px; }
   `,
 })
 export class ScreenView {
@@ -189,6 +295,19 @@ export class ScreenView {
     return tagId === null ? null : (this.history().get(tagId) ?? null);
   }
 
+  /**
+   * Whether a tag of this kind has a value the write dialog can collect.
+   *
+   * Numeric and boolean only. A **text** tag would need its own field, a **discrete** tag is a code
+   * whose meaning lives in the device, and **none** is a tag with no value at all — and the API
+   * refuses a value of the wrong kind in every one of those cases, so offering the control would
+   * offer a write that cannot succeed. That is the same rule as decision 2, applied to the tag
+   * rather than to the reader.
+   */
+  protected writableAsANumberOrAFlag(kind: string): boolean {
+    return kind === 'numeric' || kind === 'boolean';
+  }
+
   protected readonly rows = computed(() =>
     groupIntoRows(this.screen().components).map((row) => ({
       rowIndex: row.rowIndex,
@@ -198,6 +317,103 @@ export class ScreenView {
       })),
     })),
   );
+
+  /**
+   * The write in progress, or null (ADR-0026).
+   *
+   * Held here rather than in the app so that **the same dialog serves the read view and the editor's
+   * preview**, the same way one renderer serves both — a second dialog is a second set of rules about
+   * when it closes and what it keeps.
+   */
+  protected readonly writeTarget = signal<Extract<ResolvedScreenComponent, { kind: 'value' }> | null>(null);
+
+  /** What the operator has typed, as text. Parsed on submit so a typo is refused rather than coerced. */
+  protected readonly writeDraft = signal('');
+
+  /** True while the request is in flight, which disables the dialog (ADR-0026 §3). */
+  protected readonly writing = signal(false);
+
+  /** What the server said when a write failed. Kept so the dialog stays open with its value. */
+  protected readonly writeProblem = signal<string | null>(null);
+
+  /** A write the operator has confirmed. The parent performs it — this component calls no API. */
+  readonly writeRequested = output<{ tagId: string; value: number | boolean }>();
+
+  protected beginWrite(resolved: Extract<ResolvedScreenComponent, { kind: 'value' }>): void {
+    this.writeTarget.set(resolved);
+    this.writeDraft.set('');
+    this.writeProblem.set(null);
+    this.writing.set(false);
+  }
+
+  protected cancelWrite(): void {
+    // Refused while a request is out, because the answer is coming either way and closing the dialog
+    // would leave the operator with no way to hear it (ADR-0026 §3).
+    if (this.writing()) {
+      return;
+    }
+
+    this.writeTarget.set(null);
+    this.writeProblem.set(null);
+  }
+
+  /**
+   * Confirms the dialog. Returns without writing when the text is not a value of the tag's kind.
+   *
+   * Parsed here rather than coerced to a number, because `Number('')` is `0` and writing zero to a
+   * plant because a field was left empty is exactly the class of defect ADR-0003 exists to prevent.
+   */
+  protected confirmWrite(): void {
+    const target = this.writeTarget();
+
+    if (!target || this.writing()) {
+      return;
+    }
+
+    const raw = this.writeDraft().trim();
+
+    if (target.valueKind === 'boolean') {
+      // A boolean tag takes true or false, and the field is a picker rather than free text, so
+      // anything else here is not a typo a person made.
+      if (raw !== 'true' && raw !== 'false') {
+        this.writeProblem.set('Choose true or false.');
+        return;
+      }
+
+      this.writing.set(true);
+      this.writeProblem.set(null);
+      this.writeRequested.emit({ tagId: target.tagId, value: raw === 'true' });
+      return;
+    }
+
+    if (raw === '' || !Number.isFinite(Number(raw))) {
+      this.writeProblem.set('Enter a number.');
+      return;
+    }
+
+    this.writing.set(true);
+    this.writeProblem.set(null);
+    this.writeRequested.emit({ tagId: target.tagId, value: Number(raw) });
+  }
+
+  /**
+   * Called by the parent when the write has finished, successfully or not.
+   *
+   * A failure keeps the dialog and the value (ADR-0026 §5): the operator corrects a typo or presses
+   * Write again, rather than re-typing a setpoint because the message closed the box.
+   */
+  finishWrite(problem: string | null): void {
+    this.writing.set(false);
+
+    if (problem === null) {
+      this.writeTarget.set(null);
+      this.writeDraft.set('');
+      this.writeProblem.set(null);
+      return;
+    }
+
+    this.writeProblem.set(problem);
+  }
 }
 
 /**

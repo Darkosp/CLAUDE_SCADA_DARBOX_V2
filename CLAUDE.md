@@ -259,8 +259,33 @@ that **a filter's absent case is the one that fails silently**: an empty tag fil
 the request rather than sent as `tag=`, which would match nothing and show a reader an empty journal
 they would read as a quiet night.
 
-**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 557 .NET
-across seven projects with 0 skipped, and the client's 110.** It was *not* green
+**The last item Phase 8 left was closed on 2026-10-05, and it is ADR-0026: operating from a screen.**
+ADR-0024 §8 had said a writable tag is marked writable and "acting on it is not built here — so it is
+the next slice's". That slice is built. **Only a `value` component offers a `Write…` control**, the
+server's existing `writable` flag decides whether it is offered at all, the write is confirmed in a
+dialog showing the tag's path, its reading, its quality and its source time, and a boolean tag gets a
+two-option picker rather than a text box. `Enter` submits, because it is a form; Escape closes.
+
+**The write path itself was not touched at all** — no endpoint, no permission rule, no new way to reach
+a device. If any of those had been needed, it would have meant ADR-0011 or ADR-0023 was wrong.
+
+**Two things were argued and reversed while writing it, and both reversals are worth knowing.** A
+`ScreenWrites:Enabled` switch, off by default, was dropped: a switch whose off position only hides one
+of two ways to reach the same capability invites a deployment to believe it has disabled something it
+has not, and ADR-0023's neighbouring switch defaults to **on** with the words "an Operator may write one
+and always could". And a `tag.write_from_screen` audit action was dropped once the code was read, because
+**the Browse view already has a write form** — API writes were already coming from people at screens, so
+the distinction available was which page they were looking at, not what kind of event it was.
+
+**The test that matters most here is a negative one**: an unreadable component, one with no reading yet,
+and every component kind other than `value` resolve with **no write target at all**, which is what makes
+"one component writes and nothing else does" structural rather than a rule a template has to remember.
+**And nobody has pressed the button** — no write has been made from a rendered screen, and whether
+`Write…` beside a reading is noticeable without looking like part of the value is unjudged. That is the
+same gap as everything else in Phase 8, and the same reason: it needs an eye.
+
+**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 568 .NET
+across seven projects with 0 skipped, and the client's 124.** It was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
 the one that is a proven race from the one that is read off the failure.
 

@@ -116,6 +116,13 @@ puts the Operator check, the audit entry and the write path's own refusals behin
 than a form, and that is a decision about a screen rather than about storage — so it is the next
 slice's, and this ADR does not half-take it.
 
+**Closed on 2026-10-05 by [ADR-0026](0026-operating-from-a-screen.md)**, which is the next slice this
+decision named. That ADR keeps the marking and builds the action: only a `value` component offers the
+control, the server still decides whether it is offered, the write is confirmed in a dialog showing the
+current reading, and it is never held or reported done before the device has answered. **The decision
+above is left standing rather than rewritten**, because it is what was true of this phase and it is the
+reason the next ADR exists.
+
 ## Consequences
 
 - **A screen is data, so it can be edited by anything that can call the API** — including a builder

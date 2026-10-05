@@ -169,8 +169,8 @@ const WIDEST = 12;
           <app-screen [screen]="draft()"
                       [snapshots]="snapshots()"
                       [alarms]="alarms()"
-                      [history]="history()" />
-        }
+                      [history]="history()"
+                      (writeRequested)="writeRequested.emit($event)" />        }
       </section>
 
       <div class="actions">
@@ -294,6 +294,15 @@ export class ScreenEditor {
    * series on the screen.
    */
   readonly trendTagsChanged = output<readonly string[]>();
+
+  /**
+   * A write an operator confirmed in the preview (ADR-0026).
+   *
+   * Forwarded rather than performed here, because the editor calls no API: a save goes out as
+   * `saveRequested` and an operating write goes out as this, and the app is the one place that
+   * knows how to reach the server for either.
+   */
+  readonly writeRequested = output<{ tagId: string; value: number | boolean }>();
 
   readonly saving = input(false);
 

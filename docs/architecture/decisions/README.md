@@ -56,6 +56,7 @@ they say about it.
 | [0023](0023-routing-writes-to-an-edge.md) | A tag write is routed to the edge that reads the device, is never queued or retained, and a deployment may turn it off |
 | [0024](0024-a-screen-is-configuration.md) | An operator screen is configuration and not code, its component set is closed, and every component that reads a tag shows that tag's quality |
 | [0025](0025-an-alarm-waits-before-it-announces-itself.md) | An alarm waits before it announces itself, and a deadband shifts where it clears but never where it raises |
+| [0026](0026-operating-from-a-screen.md) | One component writes and nothing else does, the server decides whether the control is offered, and the write is never held or reported done before it is |
 
 ## Template
 

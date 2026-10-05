@@ -1,5 +1,5 @@
 import { Alarm } from './models';
-import { formatValue, TagSnapshot } from './tag';
+import { formatValue, TagSnapshot, TagValue } from './tag';
 
 /** The component kinds this build renders. The server refuses any other (ADR-0024 §3). */
 export type ScreenComponentKind = 'label' | 'value' | 'trend' | 'alarms' | 'status';
@@ -79,11 +79,27 @@ export type ResolvedScreenComponent =
   | {
       kind: 'value';
       id: string;
+      /**
+       * The tag behind this component, which is what a write is addressed to (ADR-0026).
+       *
+       * Carried rather than looked up again from the component, so that the thing the dialog writes
+       * to is the thing whose reading is on screen beside it.
+       */
+      tagId: string;
+      /** What a new value has to be. The server decides this too, and refuses a mismatch. */
+      valueKind: TagValue['kind'];
       text: string;
       quality: string;
       sourceTimestampUtc: string | null;
       path: string;
-      /** ADR-0024 §9: marked, never actionable in this phase. False for a kind that reads no tag. */
+      /**
+       * Whether this session could write this tag, decided by the server (ADR-0024 §5, ADR-0026 §2).
+       *
+       * False for a kind that reads no tag, for a tag that is not writable, for a tag this session
+       * may not see, and for a reader who cannot operate the Site. **What it gates is the offer of a
+       * control, not the write itself** — the API refuses an unpermitted write whatever a client
+       * draws. See ADR-0026 §2 for why the flag is still worth having.
+       */
       writable: boolean;
     }
   | { kind: 'status'; id: string; quality: string; writable: boolean }
@@ -155,6 +171,8 @@ export function resolveComponent(
       return {
         kind: 'value',
         id: component.id,
+        tagId: component.tagId,
+        valueKind: snapshot.value.kind,
         // formatValue is the one place a value becomes text, and it already refuses to print a
         // number for a Bad reading — which is the guarantee every component here inherits rather
         // than re-implements.
@@ -162,7 +180,8 @@ export function resolveComponent(
         quality: snapshot.quality,
         sourceTimestampUtc: snapshot.sourceTimestampUtc,
         path: snapshot.path,
-        // Marked, never actionable: writing from a screen is the next slice (ADR-0024 §9).
+        // Marks the control, and the write is refused again by the API if anyone gets here without
+        // the role (ADR-0026 §2).
         writable: component.writable,
       };
     case 'status':

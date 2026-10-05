@@ -185,9 +185,11 @@ internal static class ScreenEndpoints
                     // Deciding it here means every renderer gets the same answer, and there is one
                     // place to check rather than one per component.
                     Readable: component.TagId is null || IsReadable(component.TagId.Value, catalog, caller),
-                    // ADR-0024 §9: a writable tag is marked writable on a screen; acting on it is not
-                    // built here. False for a reader who cannot operate the Site even when the tag is
-                    // writable, because "you may not" and "this cannot be" are different sentences.
+                    // ADR-0026 §2: the server decides whether the write control is offered, for the
+                    // same reason it decides readability. False for a reader who cannot operate the
+                    // Site even when the tag is writable, because "you may not" and "this cannot be"
+                    // are different sentences — and the first two answers are separate, so a client
+                    // cannot make one out of the other.
                     Writable: IsWritable(component.TagId, catalog, caller)))
                 .ToList());
 

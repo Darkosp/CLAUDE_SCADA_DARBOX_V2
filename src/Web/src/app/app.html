@@ -159,6 +159,7 @@
                            [saving]="screenSaving()"
                            [errors]="screenError()"
                            (trendTagsChanged)="onTrendTagsChanged($event)"
+                           (writeRequested)="onScreenWrite($event)"
                            (saveRequested)="saveScreen($event)"
                            (deleteRequested)="deleteScreen()"
                            (cancelled)="stopEditingScreen()" />
@@ -166,7 +167,8 @@
         <app-screen [screen]="showing"
                     [snapshots]="snapshotsByTagId()"
                     [alarms]="alarms()"
-                    [history]="screenHistory()" />
+                    [history]="screenHistory()"
+                    (writeRequested)="onScreenWrite($event)" />
       } @else {
         <p class="muted">This Site has no screens.</p>
       }
