@@ -559,21 +559,69 @@ were undercounted in an earlier draft of this note by six, because it tried to r
 adding up per-project deltas instead of reading what the runs printed; the printed numbers are these
 and the deltas are not offered as corroboration.
 
-**One flake was seen and is recorded rather than dismissed.** `ScadaDarbox.Gateway.Tests` failed once
-in a whole-solution run and the failing test's name was not captured before the output scrolled; its
-project then passed 143 of 143 on its own and 149 of 149 in the next whole-solution run. Cause is not
-established, so this is a sighting and not a diagnosis — the two diagnosed flakes above stay fixed
-and a third, unidentified, is possible. A separate race was found and fixed while writing the uplink
-tests: a write is not retained, so one published in the moment between the uplink connecting and
-subscribing is genuinely gone, and a test that published once was asserting on that race rather than
-on the product. It republishes until answered, and the reason is recorded in the test.
+**One flake was seen on 2026-10-03, and it is now diagnosed and fixed rather than left as a
+sighting.** `ScadaDarbox.Gateway.Tests` failed once in a whole-solution run and the failing test's
+name was not captured before the output scrolled; its project then passed 143 of 143 on its own and
+149 of 149 in the next whole-solution run. That was recorded honestly as *a sighting and not a
+diagnosis*, and it was the right thing to write at the time — but the sighting was one instance of a
+**pattern**, which is why hunting for the named test alone would not have found it.
 
-**Not claimed:** that no flake remains anywhere, and not that both changes are individually
-necessary. What is claimed is that the diagnosed race is fixed, that the timeout was wrong on its
-own terms whatever its share of the blame, and that the reproduction rate went from 8 of 8 red to
-7 of 7 green on the same machine, the same stack and the same test database. The third candidate
-above — one shared database that several classes create and drop under each other — is still theshape of the design, and a deadline that is a wall clock rather than a signal is still how
-`WaitUntilAsync` is written.
+**What it was, established on 2026-10-05.** Every failing test had the same shape: something
+published a **retained** message, a subscriber connected afterwards, and the message never arrived
+inside a twenty-second window. Four different tests, in two assemblies, over the course of the hunt —
+`EdgeConfigurationPublishingTests` (three separate test methods), `ConfigurationLinkTests`,
+`EdgeWriteUplinkTests`, `MqttDataProtectionKeysTests`' neighbours and others — which is exactly why
+three attempts to name "the" failing test failed: **no single test was wrong.**
+
+The evidence, from one captured failure, three statements together:
+
+- the publisher logged `Connected to the broker at 127.0.0.1:59949` and `Published the configuration
+  of edge edge-a to scada/edge/edge-a/config: 1 device(s)`;
+- `TestBroker.RetainedTopicsAsync()` returned `[scada/edge/edge-a/config]` — the broker **held** it;
+- the subscriber reported `connected=True` with `sent=0`, for the whole twenty seconds.
+
+That is [dotnet/MQTTnet#1353](https://github.com/dotnet/MQTTnet/issues/1353), *"Retained messages are
+not sent to new subscribers"* — reported with these exact symptoms (the server logs the retained
+messages, the client receives nothing, *"maybe it can be some timing issue?"*) and closed as fixed in
+4.0. It is still reachable at 5.2.0.1603 under whole-suite load. **It is not this project's code**:
+the publisher set the retain flag (ADR-0019 §4) and the broker stored it. It is also **not the
+product's broker** — that is Mosquitto, and nothing in this repository ships MQTTnet's server, which
+exists here only as a test double.
+
+**The fix, and the rule it leaves.** A test waits for what it owns. `EdgeConfigurationPublishingTests`
+waits on the broker's retained set — the authoritative statement that the cloud published and it was
+retained — and reads the configuration back out of it, so "the changed configuration" and "the emptied
+configuration" are one wait with different expectations; delivery to a late subscriber is still
+asserted, in the single test whose subject that is. `ConfigurationLinkTests` waits for the edge's
+subscription on the broker *before* publishing, so the message reaches a live subscription instead of
+being replayed to one that did not exist. The reasoning is written on `TestBroker` in all three test
+projects, because the next broker test written here will reach for the same shape.
+
+**Measured: 30 consecutive whole-suite runs, 540 tests each, zero failures.** The rate before was one
+failure in every 3 to 12 runs. The one place the limitation remains is
+`A_configuration_published_while_the_edge_was_away_is_applied_when_it_connects`, whose **subject is**
+retained replay — it is honest about what it depends on and it is the only such test left.
+
+A separate race was found and fixed while writing the uplink tests: a write is not retained, so one
+published in the moment between the uplink connecting and subscribing is genuinely gone, and a test
+that published once was asserting on that race rather than on the product. It republishes until
+answered, and the reason is recorded in the test.
+
+**One mass failure during the hunt was the environment, not anything here.** A Docker Desktop restart
+stopped the test database mid-run and produced whole-solution runs with 11 and 17 failures at once,
+every one of them `57P01 terminating connection due to administrator command` or `57P03 the database
+system is shutting down`. It is recorded so that the next mass failure of that size is not mistaken
+for a defect: **read the error, not the count.** Three other things the same hunt found are real and
+fixed — a port chosen and then bound (a documented race, reproduced), a three-second *connect* deadline
+that was too short for thirty parallel test classes, and the same deadline missing entirely from the
+shared connection builder.
+
+**Not claimed:** that no flake remains anywhere. What is claimed is that the diagnosed race is fixed,
+that the timeout was wrong on its own terms whatever its share of the blame, that the retained-delivery
+pattern is understood rather than worked around blindly, and that the reproduction rate went from 1 in
+3–12 red to **30 of 30 green** on the same machine, the same stack and the same test database. One
+shared database that several classes create and drop under each other is still the shape of the design,
+and a deadline that is a wall clock rather than a signal is still how `WaitUntilAsync` is written.
 
 
 What this run does **not** say: nothing above needed TimescaleDB, so the

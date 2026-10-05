@@ -242,9 +242,42 @@ what it has **not** had — a walk on a real link:
 **The suite is green and its baseline is `open-work.md` §2.4–§2.5: 540 .NET
 across seven projects with 0 skipped, and the client's 93.** It was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
-the one that is a proven race from the one that is read off the failure. One more
-flake was seen on 2026-10-03 and recorded there as a **sighting, not a diagnosis**:
-its name was not captured, and the project passed twice afterwards.
+the one that is a proven race from the one that is read off the failure.
+
+**The flake seen on 2026-10-03 is diagnosed and fixed as of 2026-10-05, and what
+it turned out to be is worth knowing before writing another broker test here.** It
+was recorded at the time as *a sighting, not a diagnosis* — the failing test's name
+was never captured — and that was right, because there was no single failing test
+to name. **Every instance had the same shape: something published a retained
+message, a subscriber connected afterwards, and the message never arrived inside
+twenty seconds.** Four different test methods across two assemblies over one hunt,
+which is why three attempts to name "the" test failed.
+
+The evidence, from one captured failure, is three statements that cannot all be
+true: the publisher logged that it had published the configuration; the broker's
+retained set contained the topic; and the subscriber reported itself connected with
+nothing received. That is [dotnet/MQTTnet#1353](https://github.com/dotnet/MQTTnet/issues/1353),
+*"Retained messages are not sent to new subscribers"*, and it is **still reachable
+at 5.2.0.1603** under whole-suite load. It is **not this project's code** — the
+publisher set the retain flag (ADR-0019 §4) and the broker stored it — and **not the
+product's broker**, which is Mosquitto; nothing here ships MQTTnet's server, which
+exists only as a test double.
+
+**The rule it leaves: a test waits for what it owns.** `EdgeConfigurationPublishingTests`
+now waits on the broker's retained set and reads the configuration back out of it, and
+`ConfigurationLinkTests` waits for the edge's subscription *before* publishing, so the
+message reaches a live subscription rather than a replayed one. The reasoning is on
+`TestBroker` in all three test projects. **Measured: 30 consecutive whole-suite runs,
+540 tests each, zero failures**, against a rate of one in every 3 to 12 before. One test
+still depends on retained replay — `A_configuration_published_while_the_edge_was_away
+_is_applied_when_it_connects`, whose subject that is — and it says so.
+
+Also from that hunt, and worth more than the flake: a **mass failure is not a code
+failure until you read the error.** A Docker Desktop restart stopped the test database
+mid-run and produced runs with 11 and 17 failures at once, all of them `57P01` or
+`57P03`. Three real defects came out of the same hunt — a port chosen and then bound, a
+three-second *connect* deadline that was too short for thirty parallel test classes, and
+that deadline missing entirely from the shared connection builder.
 
 **What 2026-10-03 left is a walk, not a decision.** `open-work.md` §2.0 records
 four things written, implemented and tested that have never been through a real
