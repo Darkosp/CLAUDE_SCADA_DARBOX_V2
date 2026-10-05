@@ -15,7 +15,7 @@ import {
   TagHistory,
   TemplateTag,
 } from './models';
-import { Screen } from './screen';
+import { SaveScreen, Screen } from './screen';
 
 /** An error carrying the message the gateway gave, so the UI can show the real reason. */
 export class ApiError extends Error {
@@ -247,6 +247,25 @@ export class Api {
    */
   screens(siteId: string): Promise<Screen[]> {
     return this.get<Screen[]>(`/api/sites/${siteId}/screens`);
+  }
+
+  /**
+   * Creates a screen (ADR-0024).
+   *
+   * The whole component set travels with every save, and one missing from it is deleted — so a
+   * caller sends what the screen should have afterwards, not what changed. `screen.ts`'s edit
+   * operations are how a caller builds that set without losing a component by accident.
+   */
+  createScreen(siteId: string, body: SaveScreen): Promise<string> {
+    return this.send('POST', `/api/sites/${siteId}/screens`, body) as Promise<string>;
+  }
+
+  updateScreen(screenId: string, body: SaveScreen): Promise<unknown> {
+    return this.send('PUT', `/api/screens/${screenId}`, body);
+  }
+
+  deleteScreen(screenId: string): Promise<unknown> {
+    return this.send('DELETE', `/api/screens/${screenId}`, null);
   }
 
   // ---- transport ----------------------------------------------------------

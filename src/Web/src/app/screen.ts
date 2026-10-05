@@ -151,3 +151,263 @@ export function groupIntoRows(
       components: [...inRow].sort((left, right) => left.position - right.position),
     }));
 }
+
+// ---- authoring (ADR-0024's next slice) --------------------------------------
+//
+// The operations an author performs, here rather than inside the component that renders them, for
+// the reason `resolveComponent` is here: they are decisions about a screen, and a decision made
+// inside a template is one that cannot be tested without a browser.
+//
+// Every one of them returns a new set and rewrites rows and positions to be dense and ascending, so
+// a list edited repeatedly cannot come back with a gap the renderer would draw as an empty row.
+
+/** A component as an author sends it: no id means it is being added. */
+export interface SaveScreenComponent {
+  id: string | null;
+  rowIndex: number;
+  columnSpan: number;
+  position: number;
+  kind: ScreenComponentKind;
+  title: string | null;
+  tagId: string | null;
+}
+
+/** A screen as an author sends it: the whole component set, not the change. */
+export interface SaveScreen {
+  name: string;
+  position: number;
+  components: SaveScreenComponent[];
+}
+
+/**
+ * The component as it goes back to the server.
+ *
+ * `readable` is deliberately dropped: it is the server's answer about the *reader*, not something an
+ * author states, and sending it would invite a client that believes it can grant itself a binding.
+ * A placeholder id is dropped too — for the server it means "this is new", which is what it is.
+ */
+export function toSaveComponent(component: ScreenComponent): SaveScreenComponent {
+  return {
+    id: isNew(component) ? null : component.id,
+    rowIndex: component.rowIndex,
+    columnSpan: component.columnSpan,
+    position: component.position,
+    kind: component.kind,
+    title: component.title,
+    tagId: component.tagId,
+  };
+}
+
+/** A screen as an author sends it. */
+export function toSaveScreen(screen: Screen): SaveScreen {
+  return {
+    name: screen.name,
+    position: screen.position,
+    components: screen.components.map(toSaveComponent),
+  };
+}
+
+let nextId = 1;
+
+/**
+ * A component being added, before the server has given it an id.
+ *
+ * The id is a placeholder so a list being edited can key on it and a removal can name it, and every
+ * one of them starts `new-` so `toSaveComponent` can tell it from a real one. It is not a UUID and
+ * does not pretend to be: a client that invented a UUID could collide with a real row.
+ */
+export function newComponent(
+  kind: ScreenComponentKind,
+  tagId: string | null,
+  title: string | null,
+): ScreenComponent {
+  return {
+    id: `new-${nextId++}`,
+    rowIndex: 0,
+    columnSpan: 12,
+    position: 0,
+    kind,
+    title,
+    tagId,
+    // What the reader may see is the server's to decide (ADR-0024 5). A component being authored is
+    // shown as readable until a save comes back and says otherwise, because the client has no
+    // standing to answer it -- and a component that hid itself mid-edit would be one an author could
+    // not delete.
+    readable: true,
+  };
+}
+
+/** Whether this component has been saved yet, or is still local to this edit. */
+export function isNew(component: ScreenComponent): boolean {
+  return component.id.startsWith('new-');
+}
+
+/**
+ * The component set with one added, at the end of a row.
+ *
+ * Half width when the row already holds something: a full-width component beside another would be
+ * twenty-four columns of a twelve-column grid, and the server refuses that — so a client that
+ * defaulted to full width would produce a screen it could not save.
+ */
+export function addComponent(
+  components: readonly ScreenComponent[],
+  component: ScreenComponent,
+  rowIndex: number,
+): ScreenComponent[] {
+  const inRow = components.filter((existing) => existing.rowIndex === rowIndex);
+
+  return renumber([
+    ...components,
+    {
+      ...component,
+      rowIndex,
+      position: inRow.length,
+      columnSpan: inRow.length === 0 ? 12 : 6,
+    },
+  ]);
+}
+
+/** The component set with one removed. */
+export function removeComponent(
+  components: readonly ScreenComponent[],
+  componentId: string,
+): ScreenComponent[] {
+  return renumber(components.filter((component) => component.id !== componentId));
+}
+
+/**
+ * The component set with one changed: its span, its title, or the tag it reads.
+ *
+ * `undefined` means "leave this alone", because a title and a tag are both legitimately absent and
+ * a caller that had to tell "set to null" from "not mentioned" would need a second parameter for
+ * each. Null means set to nothing, which only a title can legally be.
+ */
+export function changeComponent(
+  components: readonly ScreenComponent[],
+  componentId: string,
+  change: { columnSpan?: number; title?: string | null; tagId?: string | null },
+): ScreenComponent[] {
+  return components.map((component) =>
+    component.id === componentId
+      ? {
+          ...component,
+          columnSpan: change.columnSpan ?? component.columnSpan,
+          title: change.title === undefined ? component.title : change.title,
+          tagId: change.tagId === undefined ? component.tagId : change.tagId,
+        }
+      : component,
+  );
+}
+
+/**
+ * The component set with one inserted at a place in another row.
+ *
+ * The whole set is rebuilt in row order with the moved component spliced in, rather than appended
+ * and trusted to sort itself out. That is because `renumber` reads array order as the order within a
+ * row — which is what makes every other operation's numbering true by construction — so a component
+ * appended to the array would become the last of its row whatever the caller asked for.
+ */
+export function moveComponent(
+  components: readonly ScreenComponent[],
+  componentId: string,
+  rowIndex: number,
+  at?: number,
+): ScreenComponent[] {
+  const moved = components.find((component) => component.id === componentId);
+
+  if (!moved) {
+    return [...components];
+  }
+
+  const target = components
+    .filter((component) => component.id !== componentId && component.rowIndex === rowIndex)
+    .sort((left, right) => left.position - right.position);
+
+  // Where in the row: the end unless the caller said, and clamped rather than refused, because an
+  // author dragging past the end of a row means the end of it.
+  const place = Math.max(0, Math.min(at ?? target.length, target.length));
+  target.splice(place, 0, { ...moved, rowIndex });
+
+  const rows = [...new Set([...components.map((component) => component.rowIndex), rowIndex])].sort(
+    (left, right) => left - right,
+  );
+
+  const rebuilt = rows.flatMap((row) =>
+    row === rowIndex
+      ? target
+      : components
+          .filter((component) => component.id !== componentId && component.rowIndex === row)
+          .sort((left, right) => left.position - right.position),
+  );
+
+  return renumber(rebuilt);
+}
+
+/**
+ * The component set with one moved a place earlier or later within its row.
+ *
+ * Returns the same set unchanged at either end rather than wrapping: an author pressing "left" on
+ * the first component means nothing by it, and a component that jumped to the end of the row would
+ * be a surprise they then have to undo.
+ */
+export function reorderComponent(
+  components: readonly ScreenComponent[],
+  componentId: string,
+  direction: -1 | 1,
+): ScreenComponent[] {
+  const moved = components.find((component) => component.id === componentId);
+
+  if (!moved) {
+    return [...components];
+  }
+
+  const inRow = components
+    .filter((component) => component.rowIndex === moved.rowIndex)
+    .sort((left, right) => left.position - right.position);
+
+  const at = inRow.findIndex((component) => component.id === componentId);
+  const to = at + direction;
+
+  if (to < 0 || to >= inRow.length) {
+    return [...components];
+  }
+
+  const reordered = [...inRow];
+  [reordered[at], reordered[to]] = [reordered[to], reordered[at]];
+
+  const positions = new Map(reordered.map((component, index) => [component.id, index]));
+
+  return components.map((component) =>
+    component.rowIndex === moved.rowIndex
+      ? { ...component, position: positions.get(component.id) ?? component.position }
+      : component,
+  );
+}
+
+/**
+ * Rows and positions rewritten to be dense and ascending.
+ *
+ * Rows: a row that lost its last component is not a row, so the set is closed up and an author
+ * never sees a gap they cannot explain.
+ *
+ * Positions: assigned from the order of the array within each row, which is what makes every
+ * operation's "append to the end of the row" and "swap these two" true by construction rather than
+ * by each operation maintaining the numbering itself. Without this a move leaves the position it
+ * vacated empty — `moveComponent` hands the moved component `inTarget.length`, and the component it
+ * displaced keeps the number it had — so the next render would order the row by a hole.
+ */
+function renumber(components: readonly ScreenComponent[]): ScreenComponent[] {
+  const rows = [...new Set(components.map((component) => component.rowIndex))].sort(
+    (left, right) => left - right,
+  );
+  const numbers = new Map(rows.map((row, index) => [row, index]));
+  const withinRow = new Map<number, number>();
+
+  return components.map((component) => {
+    const row = numbers.get(component.rowIndex) ?? 0;
+    const position = withinRow.get(row) ?? 0;
+    withinRow.set(row, position + 1);
+
+    return { ...component, rowIndex: row, position };
+  });
+}
