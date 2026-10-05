@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using MQTTnet;
@@ -74,6 +75,8 @@ internal sealed class TestBroker : IAsyncDisposable
                 .WithDefaultEndpointBoundIPAddress(IPAddress.Loopback)
                 .WithDefaultEndpointPort(port)
                 .Build());
+
+            Watch(server);
 
             try
             {
@@ -155,6 +158,63 @@ internal sealed class TestBroker : IAsyncDisposable
     /// twenty retries and a confusing message about ports, which is the class of mistake this file
     /// exists because of.
     /// </remarks>
+    /// <summary>
+    /// Waits until the broker has a client subscribed to <paramref name="topicFilter"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is how a test stops depending on MQTTnet's retained-message delivery, which is not
+    /// reliable.</b> A service subscribes in the background — <c>UplinkService</c> connects and
+    /// subscribes inside its own loop — so a test that publishes a retained configuration straight
+    /// after <c>StartAsync</c> is relying on that message being replayed to a subscription which did
+    /// not exist when it was published. The broker holds it, and MQTTnet does not reliably hand it
+    /// over. Measured on 2026-10-05 in the Gateway's copy of this type, three ways in one failure: the
+    /// publisher logged the publish, the retained set contained the topic, and the subscriber reported
+    /// itself connected with nothing received for twenty seconds. That is
+    /// [dotnet/MQTTnet#1353](https://github.com/dotnet/MQTTnet/issues/1353) — reported as "maybe it
+    /// can be some timing issue", closed as fixed in 4.0, and still reachable at 5.2.0.1603 under load.
+    /// </para>
+    /// <para>
+    /// It is not this project's code and not the product's broker, which is Mosquitto; nothing in this
+    /// repository ships MQTTnet's server. So a test that needs a message to arrive waits for the
+    /// subscriber to be subscribed, and then publishes. Delivery to a live subscription has never been
+    /// seen to fail.
+    /// </para>
+    /// <para>
+    /// Watched through <c>ClientSubscribedTopicAsync</c> rather than read back off the session, because
+    /// <c>MqttSessionStatus</c> exposes no subscription list.
+    /// </para>
+    /// </remarks>
+    internal async Task<bool> WaitForSubscriptionAsync(string topicFilter, TimeSpan within)
+    {
+        var deadline = DateTime.UtcNow + within;
+        while (true)
+        {
+            if (Subscribed.Contains(topicFilter))
+            {
+                return true;
+            }
+
+            if (DateTime.UtcNow > deadline)
+            {
+                return false;
+            }
+
+            await Task.Delay(25).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Every topic filter subscribed on this broker, in the order they were subscribed.</summary>
+    private static readonly ConcurrentQueue<string> Subscribed = new();
+
+    /// <summary>Arms the subscription watch. Called on every server this type builds.</summary>
+    private static void Watch(MqttServer server) =>
+        server.ClientSubscribedTopicAsync += args =>
+        {
+            Subscribed.Enqueue(args.TopicFilter.Topic);
+            return Task.CompletedTask;
+        };
+
     private static bool IsPortTaken(Exception exception) =>
         exception is SocketException { SocketErrorCode: SocketError.AddressAlreadyInUse }
         || (exception.InnerException is not null && IsPortTaken(exception.InnerException));

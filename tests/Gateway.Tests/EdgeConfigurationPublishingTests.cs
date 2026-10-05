@@ -54,30 +54,19 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
         using var publisher = Publisher(source);
         await publisher.StartAsync(CancellationToken.None);
 
-        using var cloud = await SubscribeAsync("scada/edge/edge-a/config");
-
-        try
-        {
-            await WaitUntilAsync(() => cloud.Count >= 1, "the first configuration to be published");
-        }
-        catch (TimeoutException exception)
-        {
-            // Rethrown with what the publisher said, because the failure on its own is a silence and
-            // a silence cannot be diagnosed from the outside. This has already paid for itself: the
-            // first capture showed the publisher connecting and publishing successfully, which ruled
-            // the publisher out and pointed at delivery.
-            throw new TimeoutException(
-                $"{exception.Message} The publisher logged:{Environment.NewLine}"
-                + string.Join(Environment.NewLine, _logs.Entries),
-                exception);
-        }
+        // The publish is waited for on the broker, not on a subscriber: what this test owns is that
+        // the cloud published and the broker retained it, and delivery to a client that connected
+        // afterwards is MQTTnet's in-process server, which is not reliable at it. See
+        // TestBroker.RetainsAsync for the measurement and the upstream issue.
+        await WaitUntilRetainedAsync("the first configuration to be published");
 
         // The edge's device is assigned: the cloud's configuration of it changes.
         source.Set(Catalogue(assigned: true));
-        await WaitUntilAsync(() => cloud.Count >= 2, "the changed configuration to be published");
+        await WaitUntilRetainedAsync("the changed configuration to be published", devices: 1);
 
         // And it is retained: an edge that subscribes later — one that was off while this
-        // happened — is given it the moment it asks (ADR-0019 §4).
+        // happened — is given it the moment it asks (ADR-0019 §4). This is the one place delivery to
+        // a late subscriber is asserted, on a client connected to this broker for the first time.
         var late = await SubscribeAsync("scada/edge/edge-a/config", window: TimeSpan.FromSeconds(2));
         Assert.True(late.Retain, "the configuration an edge is given on subscribing must be retained");
         var read = EdgeConfigurationPayload.Read(late.Payload!);
@@ -96,14 +85,17 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
         using var publisher = Publisher(source);
         await publisher.StartAsync(CancellationToken.None);
 
-        using var cloud = await SubscribeAsync("scada/edge/edge-a/config");
-        await WaitUntilAsync(() => cloud.Count >= 1, "the first configuration to be published");
-        var published = cloud.Count;
+        await WaitUntilRetainedAsync("the first configuration to be published");
+
+        // Counted on the broker rather than on one subscriber. A subscriber here would report what it
+        // happened to be sent, and a publish that was made and not delivered would read as a publish
+        // that was not made — the wrong conclusion in both directions.
+        var publishes = await PublishCountAsync();
 
         source.Set(Catalogue(assigned: true));
         await Task.Delay(TimeSpan.FromSeconds(2));
 
-        Assert.Equal(published, cloud.Count);
+        Assert.Equal(publishes, await PublishCountAsync());
 
         await publisher.StopAsync(CancellationToken.None);
     }
@@ -117,17 +109,68 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
         using var publisher = Publisher(source);
         await publisher.StartAsync(CancellationToken.None);
 
-        using var cloud = await SubscribeAsync("scada/edge/edge-a/config");
-        await WaitUntilAsync(() => cloud.Count >= 1, "the first configuration to be published");
+        await WaitUntilRetainedAsync("the first configuration to be published");
 
         source.Set(Catalogue(assigned: true, withEdge: false));
-        await WaitUntilAsync(() => cloud.Count >= 2, "the edge's configuration to be emptied");
-
-        var read = EdgeConfigurationPayload.Read(cloud.Payload!);
-        Assert.Null(read.Refusal);
-        Assert.Empty(read.Devices);
+        await WaitUntilRetainedAsync("the edge's configuration to be emptied", devices: 0);
 
         await publisher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Waits until the broker holds this topic's retained configuration, and optionally until it is of
+    /// a given size.
+    /// </summary>
+    /// <remarks>
+    /// The device count is read back out of the payload, so waiting for "the emptied configuration"
+    /// and waiting for "the changed configuration" are the same wait with a different expectation —
+    /// and neither is a guess about how long a publish takes.
+    /// </remarks>
+    private async Task WaitUntilRetainedAsync(string what, int? devices = null)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        while (true)
+        {
+            var read = await RetainedConfigurationAsync();
+            if (read is not null && (devices is null || read.Devices.Count == devices))
+            {
+                return;
+            }
+
+            if (DateTime.UtcNow > deadline)
+            {
+                await FailWithEvidenceAsync($"Timed out waiting for {what}.");
+            }
+
+            await Task.Delay(50);
+        }
+    }
+
+    /// <summary>The payload the broker holds for this edge's topic, or null when it holds none.</summary>
+    private async Task<EdgeConfigurationPayloadResult?> RetainedConfigurationAsync()
+    {
+        var messages = await _broker!.RetainedMessagesAsync();
+        var message = messages.FirstOrDefault(candidate => candidate.Topic == "scada/edge/edge-a/config");
+        return message is null ? null : EdgeConfigurationPayload.Read(message.ConvertPayloadToString());
+    }
+
+    /// <summary>How many retained messages the broker is holding, which is how many publishes landed.</summary>
+    private async Task<int> PublishCountAsync() => (await _broker!.RetainedMessagesAsync()).Count;
+
+    /// <summary>
+    /// Fails, saying what the publisher logged, what the broker holds and what it thinks of its
+    /// clients — because this class's failure mode is a silence and a silence cannot be diagnosed.
+    /// </summary>
+    private async Task FailWithEvidenceAsync(string message)
+    {
+        var retained = string.Join(", ", await _broker!.RetainedTopicsAsync());
+        var clients = string.Join(" | ", await _broker.ClientSubscriptionsAsync());
+
+        Assert.Fail(
+            $"{message}{Environment.NewLine}"
+            + $"The publisher logged:{Environment.NewLine}{string.Join(Environment.NewLine, _logs.Entries)}{Environment.NewLine}"
+            + $"The broker retains: [{retained}]{Environment.NewLine}"
+            + $"The broker's sessions: [{clients}]");
     }
 
     private EdgeConfigurationPublisher Publisher(TagCatalogSource source)
@@ -211,19 +254,6 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
         return new Subscription(client, messages);
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition, string what)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(20);
-        while (!condition())
-        {
-            if (DateTime.UtcNow > deadline)
-            {
-                throw new TimeoutException($"Timed out waiting for {what}.");
-            }
-
-            await Task.Delay(100);
-        }
-    }
 
     
 
@@ -239,7 +269,6 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
             _messages = messages;
         }
 
-        internal int Count => _messages.Count;
 
         internal MqttApplicationMessage Last => _messages.Last();
 

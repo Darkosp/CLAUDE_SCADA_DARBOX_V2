@@ -114,6 +114,91 @@ internal sealed class TestBroker : IAsyncDisposable
         return ((IPEndPoint)probe.LocalEndpoint).Port;
     }
 
+    /// <summary>
+    /// What the broker is holding as retained, by topic — the question a test asks when a message it
+    /// watched being published does not arrive.
+    /// </summary>
+    /// <remarks>
+    /// This exists because "the publisher published and the subscriber did not receive it" has two
+    /// very different explanations, and the broker is the only thing that can tell them apart: either
+    /// the retained message was stored and was not delivered, or it was never stored at all. Without
+    /// this, both look identical from the outside — a timeout.
+    /// </remarks>
+    internal async Task<IReadOnlyList<string>> RetainedTopicsAsync()
+    {
+        var retained = await _server.GetRetainedMessagesAsync().ConfigureAwait(false);
+        return retained.Select(message => message.Topic).ToList();
+    }
+
+    /// <summary>The retained messages themselves, for a test that needs to read the payload back.</summary>
+    internal async Task<IReadOnlyList<MqttApplicationMessage>> RetainedMessagesAsync() =>
+        (await _server.GetRetainedMessagesAsync().ConfigureAwait(false)).ToList();
+
+    /// <summary>
+    /// Waits until the broker is holding a retained message on <paramref name="topic"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This exists because delivering a retained message to a subscriber that was not yet connected
+    /// is not reliable in MQTTnet's in-process server, and the tests were built on it.</b> Measured on
+    /// 2026-10-05, three ways, in one failure: the publisher logged that it had published the
+    /// configuration to <c>scada/edge/edge-a/config</c>; <see cref="RetainedTopicsAsync"/> showed the
+    /// broker holding it; and the subscriber reported <c>connected=True</c> with nothing received, for
+    /// twenty seconds. That is [dotnet/MQTTnet#1353](https://github.com/dotnet/MQTTnet/issues/1353)
+    /// exactly, reproduced "maybe it can be some timing issue" against an old preview and closed as
+    /// fixed in 4.0 — and it is still reachable at 5.2.0.1603 under load.
+    /// </para>
+    /// <para>
+    /// It is <b>not this project's code</b>: the publisher set the retain flag (ADR-0019 §4) and the
+    /// broker stored it. It is also <b>not the product's broker</b>, which is Mosquitto — this type is
+    /// a test double, and nothing in this repository ships MQTTnet's server. So a test that waits for
+    /// this delivery is testing MQTTnet, not the project.
+    /// </para>
+    /// <para>
+    /// What a test should wait for instead is the thing it actually owns: that the cloud published,
+    /// retained, with the right content. <b>The retained set is the authoritative statement of that</b>
+    /// — the publisher was told the publish succeeded, and the broker is holding it. Delivery to a
+    /// later subscriber is then asserted where it is deterministic, in the test that publishes and
+    /// subscribes on the same connection.
+    /// </para>
+    /// </remarks>
+    internal async Task<bool> RetainsAsync(string topic, TimeSpan within)
+    {
+        var deadline = DateTime.UtcNow + within;
+        while (true)
+        {
+            var retained = await _server.GetRetainedMessagesAsync().ConfigureAwait(false);
+            if (retained.Any(message => message.Topic == topic))
+            {
+                return true;
+            }
+
+            if (DateTime.UtcNow > deadline)
+            {
+                return false;
+            }
+
+            await Task.Delay(50).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// The clients the broker believes are connected, with what it believes each has pending.
+    /// </summary>
+    /// <remarks>
+    /// The question a test asks when a client says it is connected and subscribed, a retained message
+    /// is sitting on the broker, and nothing is delivered. Those two accounts can disagree, and this
+    /// is the only way to find out that they do.
+    /// </remarks>
+    internal async Task<IReadOnlyList<string>> ClientSubscriptionsAsync()
+    {
+        var sessions = await _server.GetSessionsAsync().ConfigureAwait(false);
+
+        return sessions
+            .Select(session => $"{session.Id} pending={session.PendingApplicationMessagesCount}")
+            .ToList();
+    }
+
     public async ValueTask DisposeAsync()
     {
         try

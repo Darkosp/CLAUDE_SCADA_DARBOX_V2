@@ -32,6 +32,7 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
     private TestBroker? _broker;
     private IMqttClient? _cloud;
 
+
     public Task InitializeAsync() => Task.CompletedTask;
 
     public async Task DisposeAsync()
@@ -93,6 +94,15 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
         using var uplink = new UplinkService(Options.Create(UplinkOptions()), buffer, consumer, new EdgeUnreadableDevices(), new EdgeWriteExecutor(configuration, Drivers, NullLogger<EdgeWriteExecutor>.Instance), Drivers, NullLogger<UplinkService>.Instance);
 
         await uplink.StartAsync(CancellationToken.None);
+
+        // The configuration is published only once the edge is actually subscribed. It used to be
+        // published right after StartAsync and rely on an MQTTnet broker replaying a retained message
+        // to a subscription that did not exist yet — which that server does not reliably do, and which
+        // is not what this test is about. See TestBroker.WaitForSubscriptionAsync.
+        Assert.True(
+            await _broker!.WaitForSubscriptionAsync("scada/edge/plant-7/config", TimeSpan.FromSeconds(20)),
+            "the edge did not subscribe to its configuration topic");
+
         await PublishAsync(EdgeConfigurationPayload.Write(Devices(Pressure), Derived));
         await WaitUntilAsync(() => configuration.Revision is not null, "the edge to accept the configuration");
 
