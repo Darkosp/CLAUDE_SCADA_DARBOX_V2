@@ -142,8 +142,60 @@ public static class DemoConfigurationSeeder
         // caller asked for, and the seed is idempotent by asking whether the Site already has one
         // (ADR-0024 §7). A second run of the seeder therefore leaves the operator's own screens
         // alone, which is the behaviour that matters on an upgrade.
+        //
+        // Driven by the Sites the transaction just wrote rather than by a list written out here.
+        // It used to name Skopje and Bitola one call each, which meant the rule this exists for --
+        // "a new Site is not born empty" (ADR-0024 §5) -- held only for as long as nobody added a
+        // third Site to the statement above. A Site in this list and not in that one is a Site with
+        // no screen, and nothing would have said so.
         var screens = new ScreenRepository(dataSource);
-        await screens.SeedForSiteAsync(TenantId, SiteId, "Skopje", cancellationToken).ConfigureAwait(false);
-        await screens.SeedForSiteAsync(TenantId, SecondSiteId, "Bitola", cancellationToken).ConfigureAwait(false);
+
+        var toSeed = new List<(Guid Id, string Name)>();
+
+        await using (var reading = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false))
+        await using (var command = new NpgsqlCommand(
+            "SELECT id, name FROM site WHERE tenant_id = @tenant_id ORDER BY name", reading))
+        {
+            command.Parameters.AddWithValue("tenant_id", TenantId);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                toSeed.Add((reader.GetGuid(0), reader.GetString(1)));
+            }
+        }
+
+        foreach (var site in toSeed)
+        {
+            await screens.SeedForSiteAsync(TenantId, site.Id, site.Name, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Gives every one of <paramref name="sites"/> an Overview screen, if it has none.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Extracted from the seeder so that the rule it exists for can be tested without a race: **a new
+    /// Site is not born empty** (ADR-0024 §5). The seeder itself runs against an empty tenant and is
+    /// therefore hard to aim at one more Site; this takes the list.
+    /// </para>
+    /// <para>
+    /// Calling it twice is what makes it safe on an upgrade — <c>SeedForSiteAsync</c> asks whether the
+    /// Site already has a screen before writing one, so an operator's own screens are left alone.
+    /// </para>
+    /// </remarks>
+    public static async Task SeedScreensAsync(
+        NpgsqlDataSource dataSource,
+        Guid tenantId,
+        IReadOnlyList<(Guid Id, string Name)> sites,
+        CancellationToken cancellationToken)
+    {
+        var screens = new ScreenRepository(dataSource);
+
+        foreach (var site in sites)
+        {
+            await screens.SeedForSiteAsync(tenantId, site.Id, site.Name, cancellationToken).ConfigureAwait(false);
+        }
     }
 }
