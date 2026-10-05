@@ -15,6 +15,7 @@ import {
   TagHistory,
   TemplateTag,
 } from './models';
+import { Screen } from './screen';
 
 /** An error carrying the message the gateway gave, so the UI can show the real reason. */
 export class ApiError extends Error {
@@ -234,6 +235,18 @@ export class Api {
 
   removeSiteRole(userId: string, siteId: string): Promise<unknown> {
     return this.send('DELETE', `/api/users/${userId}/sites/${siteId}`, null);
+  }
+
+  // ---- screens (ADR-0024) -------------------------------------------------
+
+  /**
+   * Every screen of one Site, with its components already resolved for this session.
+   *
+   * Read-only here: a screen is created and changed through the same API this calls, and the
+   * builder that will do that writing is a later slice (`phase-plan.md`, Phase 8).
+   */
+  screens(siteId: string): Promise<Screen[]> {
+    return this.get<Screen[]>(`/api/sites/${siteId}/screens`);
   }
 
   // ---- transport ----------------------------------------------------------

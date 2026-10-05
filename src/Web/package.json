@@ -6,7 +6,7 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "tsc src/app/models.ts --ignoreConfig --outDir .node-test --module es2022 --target es2022 && node --test"
+    "test": "tsc src/app/models.ts src/app/tag.ts src/app/screen.ts --ignoreConfig --outDir .node-test --module node16 --target es2022 && node --test"
   },
   "private": true,
   "packageManager": "npm@11.17.0",

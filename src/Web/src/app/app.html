@@ -40,6 +40,8 @@
   </label>
 
   <nav class="views">
+    <button type="button" class="ghost" [class.current]="view() === 'screens'"
+            (click)="showScreens()">Screens</button>
     <button type="button" class="ghost" [class.current]="view() === 'browse'"
             (click)="view.set('browse')">Browse</button>
     <button type="button" class="ghost" [class.current]="view() === 'journal'"
@@ -117,7 +119,37 @@
   </div>
 }
 
-@if (view() === 'journal') {
+@if (view() === 'screens') {
+    <main class="screens">
+      <div class="pane-head">
+        <h2>{{ openScreen()?.name ?? 'Screens' }}</h2>
+        <button type="button" class="ghost" (click)="reloadScreens()" [disabled]="screensLoading()">
+          Refresh
+        </button>
+      </div>
+
+      @if (screens().length > 1) {
+        <!-- Which screen, when there is more than one. A single screen needs no picker, and a
+             picker with one entry is a control that does nothing. -->
+        <nav class="screen-picker">
+          @for (screen of screens(); track screen.id) {
+            <button type="button" class="ghost" [class.current]="screen.id === openScreen()?.id"
+                    (click)="openScreenById(screen.id)">{{ screen.name }}</button>
+          }
+        </nav>
+      }
+
+      @if (screensLoading() && screens().length === 0) {
+        <p class="muted">Reading…</p>
+      } @else if (openScreen(); as showing) {
+        <app-screen [screen]="showing"
+                    [snapshots]="snapshotsByTagId()"
+                    [alarms]="alarms()" />
+      } @else {
+        <p class="muted">This Site has no screens.</p>
+      }
+    </main>
+} @else if (view() === 'journal') {
   <main class="journal">
     <div class="pane-head">
       <h2>Alarm journal</h2>

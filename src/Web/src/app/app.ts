@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { Api, ApiError } from './api';
 import { Auth } from './auth';
 import { BrowseTree, Selection } from './browse-tree';
+import { Screen as OperatorScreen } from './screen';
+import { ScreenView } from './screen-view';
 import { TrendChart } from './trend-chart';
 import {
   Access,
@@ -130,7 +132,7 @@ interface UserDraft {
 
 @Component({
   selector: 'app-root',
-  imports: [BrowseTree, TrendChart, FormsModule, DatePipe],
+  imports: [BrowseTree, TrendChart, ScreenView, FormsModule, DatePipe],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -210,7 +212,35 @@ export class App implements OnInit {
   );
 
   /** Which part of the app is on screen. Templates, Users and Edges exist only for an Admin. */
-  protected readonly view = signal<'browse' | 'templates' | 'users' | 'journal' | 'edges'>('browse');
+  protected readonly view = signal<
+    'screens' | 'browse' | 'templates' | 'users' | 'journal' | 'edges'
+  >('screens');
+
+  /** This Site's operator screens (ADR-0024), and which one is open. */
+  protected readonly screens = signal<OperatorScreen[]>([]);
+
+  protected readonly screensLoading = signal(false);
+
+  protected readonly openScreenId = signal<string | null>(null);
+
+  /** The screen being drawn, or null while the list is still coming in. */
+  protected readonly openScreen = computed(() => {
+    const wanted = this.openScreenId();
+    const available = this.screens();
+
+    // Falls back to the first rather than to nothing: a Site always has at least one screen (the
+    // seed gives it "Overview"), and an operator who has just deleted the one they were looking at
+    // should see the next one rather than a blank page.
+    return available.find((screen) => screen.id === wanted) ?? available[0] ?? null;
+  });
+
+  /**
+   * Live values as the renderer wants them: a map by tag id, which is how every screen component
+   * names its tag (ADR-0001 — the id, never the display path).
+   */
+  protected readonly snapshotsByTagId = computed(
+    () => new Map<string, TagSnapshot>(this.stream.tags().map((snapshot) => [snapshot.tagId, snapshot])),
+  );
 
   /** The journal as last read. Not live: history does not change under the reader. */
   protected readonly journalEvents = signal<AlarmEvent[]>([]);
@@ -471,7 +501,13 @@ export class App implements OnInit {
     this.siteId.set(siteId);
     this.selection.set(null);
     this.history.set([]);
+
+    // Screens belong to a Site, so switching Site switches them. Done here rather than in an effect
+    // watching siteId, so that the reason is the operator's action and the order — tree first, then
+    // screens — stays something a reader can follow.
+    this.openScreenId.set(null);
     await this.reloadTree();
+    await this.reloadScreens();
   }
 
   protected async reloadTree(): Promise<void> {
@@ -1193,6 +1229,50 @@ export class App implements OnInit {
     await this.withErrorHandling(() => this.loadUsers());
   }
   /** Opens the journal and reads it once. */
+  /**
+   * This Site's screens, and the first one open (ADR-0024).
+   *
+   * Reloaded rather than pushed: a screen is configuration that changes when somebody edits it, not
+   * a measurement that changes on its own, so there is nothing to subscribe to. The *values* on it
+   * are live, and those come from the stream.
+   */
+  protected async showScreens(): Promise<void> {
+    this.view.set('screens');
+    await this.reloadScreens();
+  }
+
+  protected async reloadScreens(): Promise<void> {
+    const siteId = this.siteId();
+
+    if (!siteId) {
+      this.screens.set([]);
+      return;
+    }
+
+    this.screensLoading.set(true);
+
+    try {
+      const screens = await this.api.screens(siteId);
+      this.screens.set(screens);
+
+      // The screen that was open, if it is still there — and otherwise whatever comes first, which
+      // the computed handles. Set explicitly so that opening a screen is a decision the app made
+      // rather than a side effect of the list arriving.
+      const open = this.openScreenId();
+      if (!open || !screens.some((screen) => screen.id === open)) {
+        this.openScreenId.set(screens[0]?.id ?? null);
+      }
+    } catch (error) {
+      this.report(error);
+    } finally {
+      this.screensLoading.set(false);
+    }
+  }
+
+  protected openScreenById(screenId: string): void {
+    this.openScreenId.set(screenId);
+  }
+
   protected async showJournal(): Promise<void> {
     this.view.set('journal');
     this.journalLoading.set(true);
