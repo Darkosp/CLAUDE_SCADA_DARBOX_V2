@@ -1,3 +1,4 @@
+using ScadaDarbox.Core.Configuration;
 using ScadaDarbox.Core.Model;
 using ScadaDarbox.Persistence.TimescaleDb;
 
@@ -189,6 +190,22 @@ public sealed class ScreenStorageTests : IClassFixture<TestDatabase>
         var seeded = Assert.Single(first);
         Assert.NotEmpty(seeded.Components);
         Assert.All(seeded.Components, component => Assert.Null(component.TagId));
+
+        // The seeded screen has to be one the API would also accept. That is what a walk found on
+        // 2026-10-05: the seeder writes rows directly, so nothing had ever asked it for the text an
+        // `alarms` component was then required to carry, and every Site's screen was born unsaveable.
+        // An author opened it, changed anything, and the API answered "A 'alarms' component shows
+        // text and needs some".
+        Assert.Null(ScreenRules.ProblemWith(seeded));
+
+        // And the part the check above CANNOT catch, which is the part worth testing: every text field
+        // is actually filled in. `ScreenRules` now accepts an `alarms` component with no heading
+        // (ADR-0024's kinds table gives text as what a `label` shows and says nothing of the sort for
+        // `alarms`), so a seed that dropped the heading again would pass the validation and fail the
+        // reader -- which is precisely the mutation this assertion was added to catch.
+        Assert.All(seeded.Components, component => Assert.False(
+            string.IsNullOrWhiteSpace(component.Title),
+            $"the seeded '{component.Kind}' component carries no text"));
 
         // Idempotent by asking rather than by a fixed id: an operator who deleted the seeded screen
         // and built their own must not have it reappear.

@@ -214,38 +214,54 @@ public sealed class ScreenRepository : IScreenRepository
         // forget, and the empty Guid it would leave behind is not a value anything should ever see.
         var screenId = Guid.NewGuid();
 
-        await AddAsync(
-            new Screen
-            {
-                Id = screenId,
-                TenantId = tenantId,
-                SiteId = siteId,
-                Name = "Overview",
-                Position = 0,
-                Components =
-                [
-                    new ScreenComponent
-                    {
-                        Id = Guid.NewGuid(),
-                        ScreenId = screenId,
-                        RowIndex = 0,
-                        ColumnSpan = 12,
-                        Position = 0,
-                        Kind = ScreenComponentKinds.Label,
-                        Title = siteName,
-                    },
-                    new ScreenComponent
-                    {
-                        Id = Guid.NewGuid(),
-                        ScreenId = screenId,
-                        RowIndex = 1,
-                        ColumnSpan = 12,
-                        Position = 0,
-                        Kind = ScreenComponentKinds.Alarms,
-                    },
-                ],
-            },
-            cancellationToken).ConfigureAwait(false);
+        var screen = new Screen
+        {
+            Id = screenId,
+            TenantId = tenantId,
+            SiteId = siteId,
+            Name = "Overview",
+            Position = 0,
+            Components =
+            [
+                new ScreenComponent
+                {
+                    Id = Guid.NewGuid(),
+                    ScreenId = screenId,
+                    RowIndex = 0,
+                    ColumnSpan = 12,
+                    Position = 0,
+                    Kind = ScreenComponentKinds.Label,
+                    Title = siteName,
+                },
+                new ScreenComponent
+                {
+                    Id = Guid.NewGuid(),
+                    ScreenId = screenId,
+                    RowIndex = 1,
+                    ColumnSpan = 12,
+                    Position = 0,
+                    Kind = ScreenComponentKinds.Alarms,
+                    // A heading over the alarms, and optional by ADR-0024's kinds table — but supplied,
+                    // because a screen called "Overview" whose second row is a bare list reads better
+                    // with one and costs nothing. This is NOT why the line exists: the line exists
+                    // because this row used to have no title at all and the API refuses to save an
+                    // `alarms` component without one, which made every seeded screen unsaveable.
+                    Title = "Alarms",
+                },
+            ],
+        };
+
+        // Checked against the API's own rules before it is written, so that what a new Site is born
+        // with is a screen the API would also have accepted. A seed that bypasses validation is how
+        // the defect above got in: the rules tightened, the seed did not, and nothing said so until
+        // an author tried to save a screen they had only opened.
+        if (ScreenRules.ProblemWith(screen) is { } problem)
+        {
+            throw new InvalidOperationException(
+                $"The screen seeded for a new Site would be refused by the API: {problem}");
+        }
+
+        await AddAsync(screen, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DeleteAsync(Guid screenId, CancellationToken cancellationToken)

@@ -147,6 +147,31 @@ test('an alarms component shows this screen\'s Site and not the others', () => {
   );
 });
 
+test('an alarms component carries its heading through, because the view draws it', () => {
+  // The defect a walk found on 2026-10-05, in the half no server test can see. The heading was
+  // REQUIRED by the API and collected by the editor, and this function dropped it on the way to the
+  // template -- so an author had to invent text that no reader could ever see. It travels now.
+  const resolved = resolveComponent(
+    component({ kind: 'alarms', tagId: null, title: 'Standing alarms' }),
+    none,
+    [],
+    site,
+  );
+
+  assert.equal(resolved.kind, 'alarms');
+  assert.equal(resolved.title, 'Standing alarms');
+});
+
+test('an alarms component with no heading still resolves, and says so as null', () => {
+  // The control, and the reason the heading is optional rather than required: ADR-0024's kinds table
+  // gives text as what a `label` shows and says nothing of the sort for `alarms`. A screen a new Site
+  // is born with must not need a heading typed into it to be valid.
+  const resolved = resolveComponent(component({ kind: 'alarms', tagId: null, title: null }), none, [], site);
+
+  assert.equal(resolved.kind, 'alarms');
+  assert.equal(resolved.title, null);
+});
+
 test('a status component is the quality alone, with no value to misread', () => {
   const resolved = resolveComponent(
     component({ kind: 'status' }),

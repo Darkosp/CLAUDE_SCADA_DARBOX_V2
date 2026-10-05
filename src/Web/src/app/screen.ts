@@ -49,7 +49,7 @@ export type ResolvedScreenComponent =
     }
   | { kind: 'status'; id: string; quality: string }
   | { kind: 'trend'; id: string; tagId: string; path: string }
-  | { kind: 'alarms'; id: string; alarms: Alarm[] }
+  | { kind: 'alarms'; id: string; title: string | null; alarms: Alarm[] }
   | { kind: 'missing'; id: string; note: string }
   | { kind: 'unreadable'; id: string; note: string };
 
@@ -81,7 +81,17 @@ export function resolveComponent(
     // Only this screen's Site: an `alarms` component is the standing alarms of the Site the screen
     // belongs to, not of everything the session may see. Showing another Site's alarms on this
     // screen would be a summary of something the screen is not about.
-    return { kind: 'alarms', id: component.id, alarms: alarms.filter((alarm) => alarm.siteId === siteId) };
+    //
+    // The title travels with them. It is optional (ADR-0024's kinds table gives text as what a
+    // `label` shows and says nothing of the sort for `alarms`), and for a long time it was required,
+    // collected by the editor and then dropped here — a heading an author had to invent and no
+    // reader could ever see.
+    return {
+      kind: 'alarms',
+      id: component.id,
+      title: component.title,
+      alarms: alarms.filter((alarm) => alarm.siteId === siteId),
+    };
   }
 
   if (component.tagId === null) {

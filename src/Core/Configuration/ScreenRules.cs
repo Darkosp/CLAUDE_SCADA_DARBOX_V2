@@ -87,9 +87,15 @@ public static class ScreenRules
             return $"A '{component.Kind}' component does not read a tag, and one was given.";
         }
 
-        if (ScreenComponentKinds.TakesTitle(component.Kind) && string.IsNullOrWhiteSpace(component.Title))
+        if (ScreenComponentKinds.NeedsTitle(component.Kind) && string.IsNullOrWhiteSpace(component.Title))
         {
-            // A heading with no text is an empty row an author cannot see the point of.
+            // A `label` with no text is an empty box an author cannot explain -- it is nothing but
+            // its text (ADR-0024's kinds table).
+            //
+            // This used to read `TakesTitle`, which is the wider question "may this kind carry text".
+            // That made it fire for an `alarms` component as well, where the title is a heading over
+            // the alarms rather than the component itself -- and where it is what every Site's seeded
+            // screen fails on, because the seeder writes rows and had never been asked to supply one.
             return $"A '{component.Kind}' component shows text and needs some.";
         }
 

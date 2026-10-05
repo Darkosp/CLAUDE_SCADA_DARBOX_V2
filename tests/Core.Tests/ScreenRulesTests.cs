@@ -21,7 +21,7 @@ public sealed class ScreenRulesTests
     {
         // Empty is legal: a screen somebody has made and not filled in yet is not an error, and
         // making it one would mean they could not save their work as they went.
-        Assert.Null(ScreenRules.ProblemWith(Screen([], name: "Overview")));
+        Assert.Null(ScreenRules.ProblemWith(ScreenOf([], name: "Overview")));
     }
 
     [Theory]
@@ -45,7 +45,7 @@ public sealed class ScreenRulesTests
         // Named, so the author can see which one it was -- and the whole screen is refused, not the
         // component skipped: a screen saved with something nobody can draw is a screen silently
         // missing something.
-        var problem = ScreenRules.ProblemWith(Screen([Component("gauge", tagId: TagId)]));
+        var problem = ScreenRules.ProblemWith(ScreenOf([Component("gauge", tagId: TagId)]));
 
         Assert.NotNull(problem);
         Assert.Contains("gauge", problem, StringComparison.Ordinal);
@@ -81,15 +81,41 @@ public sealed class ScreenRulesTests
         Assert.Contains("does not read a tag", problem, StringComparison.Ordinal);
     }
 
-    [Theory]
-    [InlineData(ScreenComponentKinds.Label)]
-    [InlineData(ScreenComponentKinds.Alarms)]
-    public void A_kind_that_shows_text_is_refused_without_any(string kind)
+    [Fact]
+    public void A_label_is_refused_without_text()
     {
-        var problem = ScreenRules.ProblemWith(Component(kind, title: "  "));
+        // A `label` is nothing but its text (ADR-0024's kinds table), so a label with no text is an
+        // empty box an author cannot explain.
+        var problem = ScreenRules.ProblemWith(Component(ScreenComponentKinds.Label, title: "  "));
 
         Assert.NotNull(problem);
         Assert.Contains("needs some", problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_alarms_component_is_accepted_without_text_and_that_is_the_point()
+    {
+        // This used to be refused, and refusing it is what made every seeded screen unsaveable: the
+        // seeder writes rows directly, so nothing had ever given its `alarms` component a title, and
+        // an author who opened the screen a new Site is born with and changed anything was answered
+        // "A 'alarms' component shows text and needs some".
+        //
+        // ADR-0024's kinds table gives text as what a `label` shows and says nothing of the sort for
+        // `alarms`, whose subject is a Site's standing alarms. So the heading is optional, and this is
+        // the assertion that keeps it optional.
+        var screen = ScreenOf([Component(ScreenComponentKinds.Alarms, title: null)]);
+
+        Assert.Null(ScreenRules.ProblemWith(screen));
+    }
+
+    [Fact]
+    public void An_alarms_component_may_still_carry_a_heading()
+    {
+        // The control for the test above: optional is not the same as forbidden, and a heading is
+        // worth having when an author writes one.
+        var screen = ScreenOf([Component(ScreenComponentKinds.Alarms, title: "Standing alarms")]);
+
+        Assert.Null(ScreenRules.ProblemWith(screen));
     }
 
     [Theory]
@@ -114,7 +140,7 @@ public sealed class ScreenRulesTests
     [Fact]
     public void A_screen_with_no_name_is_refused()
     {
-        Assert.NotNull(ScreenRules.ProblemWith(Screen([], name: "   ")));
+        Assert.NotNull(ScreenRules.ProblemWith(ScreenOf([], name: "   ")));
     }
 
     [Fact]
@@ -130,7 +156,7 @@ public sealed class ScreenRulesTests
         // A caller fixing a screen fixes one thing at a time, and a list of refusals for one mistake
         // is worse than the one that matters. The kind comes first because a component nobody can
         // draw is a bigger problem than where it sits.
-        var screen = Screen(
+        var screen = ScreenOf(
         [
             Component(ScreenComponentKinds.Value, tagId: TagId, span: 99),
             Component("gauge", tagId: TagId),
@@ -142,7 +168,7 @@ public sealed class ScreenRulesTests
         Assert.Contains("99", problem, StringComparison.Ordinal);
     }
 
-    private static Screen Screen(IReadOnlyList<ScreenComponent> components, string name = "Overview") => new()
+    private static Screen ScreenOf(IReadOnlyList<ScreenComponent> components, string name = "Overview") => new()
     {
         Id = Guid.NewGuid(),
         TenantId = Guid.NewGuid(),

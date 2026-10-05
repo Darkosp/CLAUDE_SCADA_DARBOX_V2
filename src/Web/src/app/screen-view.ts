@@ -64,6 +64,9 @@ import { TrendChart } from './trend-chart';
                   }
                 }
                 @case ('alarms') {
+                  @if ($any(cell.resolved).title; as heading) {
+                    <h3 class="label">{{ heading }}</h3>
+                  }
                   @if ($any(cell.resolved).alarms.length === 0) {
                     <p class="muted">No standing alarms.</p>
                   } @else {

@@ -18,12 +18,24 @@ import {
 } from './screen';
 
 /** The five kinds, with what each needs, for the author's picker. The server refuses any other. */
-const KINDS: { kind: ScreenComponentKind; label: string; needsTag: boolean; takesTitle: boolean }[] = [
-  { kind: 'label', label: 'Text', needsTag: false, takesTitle: true },
-  { kind: 'value', label: 'Value', needsTag: true, takesTitle: false },
-  { kind: 'trend', label: 'Trend', needsTag: true, takesTitle: false },
-  { kind: 'status', label: 'Status', needsTag: true, takesTitle: false },
-  { kind: 'alarms', label: 'Alarms', needsTag: false, takesTitle: true },
+const KINDS: {
+  kind: ScreenComponentKind;
+  label: string;
+  needsTag: boolean;
+  /** Whether this kind is nothing but its text, so the server refuses it without any. */
+  needsTitle: boolean;
+  /** Whether this kind may carry a heading. Optional text: the server accepts it empty. */
+  wantsTitle: boolean;
+}[] = [
+  { kind: 'label', label: 'Text', needsTag: false, needsTitle: true, wantsTitle: true },
+  { kind: 'value', label: 'Value', needsTag: true, needsTitle: false, wantsTitle: false },
+  { kind: 'trend', label: 'Trend', needsTag: true, needsTitle: false, wantsTitle: false },
+  { kind: 'status', label: 'Status', needsTag: true, needsTitle: false, wantsTitle: false },
+  // The heading over a Site's alarms. Optional, and it was required until a walk found what that
+  // cost: ADR-0024's kinds table gives text as what a `label` shows and says nothing of the sort for
+  // `alarms`, and requiring one made an author invent a heading -- and made every Site's seeded
+  // screen unsaveable, because the seeder had never supplied one.
+  { kind: 'alarms', label: 'Alarms', needsTag: false, needsTitle: false, wantsTitle: true },
 ];
 
 /** The narrowest a reading still fits in, and the widest a screen is. */
@@ -80,7 +92,7 @@ const WIDEST = 12;
           </label>
         }
 
-        @if (chosen().takesTitle) {
+        @if (chosen().wantsTitle) {
           <label class="wide">
             <span>Text</span>
             <input type="text" [ngModel]="chosenTitle()" (ngModelChange)="chosenTitle.set($event)"
@@ -105,7 +117,7 @@ const WIDEST = 12;
                   }
                 </p>
 
-                @if (takesTitle(cell.kind)) {
+                @if (wantsTitle(cell.kind)) {
                   <input type="text" [ngModel]="cell.title ?? ''"
                          (ngModelChange)="retitle(cell.id, $event)" placeholder="Text" />
                 }
@@ -326,8 +338,8 @@ export class ScreenEditor {
     return KINDS.find((option) => option.kind === kind)?.label ?? kind;
   }
 
-  protected takesTitle(kind: ScreenComponentKind): boolean {
-    return KINDS.find((option) => option.kind === kind)?.takesTitle ?? false;
+  protected wantsTitle(kind: ScreenComponentKind): boolean {
+    return KINDS.find((option) => option.kind === kind)?.wantsTitle ?? false;
   }
 
   protected pathOf(tagId: string): string {
@@ -363,7 +375,7 @@ export class ScreenEditor {
       return;
     }
 
-    if (option.takesTitle && title.trim() === '') {
+    if (option.needsTitle && title.trim() === '') {
       this.problem.set(`A ${option.label.toLowerCase()} component shows text, so it needs some.`);
       return;
     }
@@ -372,7 +384,7 @@ export class ScreenEditor {
       ...draft,
       components: addComponent(
         draft.components,
-        newComponent(option.kind, option.needsTag ? tagId : null, option.takesTitle ? title : null),
+        newComponent(option.kind, option.needsTag ? tagId : null, option.wantsTitle ? title : null),
         rowIndex,
       ),
     }));

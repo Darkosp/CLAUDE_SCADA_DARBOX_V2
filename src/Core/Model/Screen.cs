@@ -151,5 +151,43 @@ public static class ScreenComponentKinds
     /// Whether a component of this kind shows text an author wrote. The complement of
     /// <see cref="NeedsTag"/>, and said separately because that is what it is about.
     /// </summary>
+    /// <remarks>
+    /// <b>This is not the same question as whether the text is required</b>, and conflating the two
+    /// produced a screen the API would not save. See <see cref="NeedsTitle"/> and
+    /// <see cref="WantsTitle"/>.
+    /// </remarks>
     public static bool TakesTitle(string kind) => kind is Label or Alarms;
+
+    /// <summary>
+    /// Whether a component of this kind is <i>nothing but</i> its text, and so cannot be saved without
+    /// it.
+    /// </summary>
+    /// <remarks>
+    /// A `label` is the text — a heading, a unit, an instruction (ADR-0024's kinds table) — and a
+    /// `label` with no text is an empty box an author cannot explain. That is the whole of this rule.
+    /// </remarks>
+    public static bool NeedsTitle(string kind) => kind is Label;
+
+    /// <summary>
+    /// Whether a component of this kind may carry text that is optional.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// First: an `alarms` component is the Site's standing alarms, and its title is a heading over
+    /// them — worth having, not worth requiring. **ADR-0024's kinds table gives text as what a `label`
+    /// shows and says nothing about it for `alarms`**, so requiring one put the code ahead of the ADR
+    /// and made an author invent a heading to save a screen.
+    /// </para>
+    /// <para>
+    /// Second, and this is the defect that was found by walking a screen rather than by reading one:
+    /// the seeder's screen — the one every new Site is born with, a `label` naming
+    /// the Site and an `alarms` component — was written with no title on the `alarms`, because the
+    /// seeder writes rows directly and nothing asked it. **The result was a screen that could not be
+    /// saved**: an author opened it, changed anything, and the API answered `A 'alarms' component
+    /// shows text and needs some`. The seeder now checks its own screen against these same rules, so
+    /// that particular shape cannot come back; this method is what makes the check pass with the
+    /// screen keeping its meaning.
+    /// </para>
+    /// </remarks>
+    public static bool WantsTitle(string kind) => kind is Label or Alarms;
 }
