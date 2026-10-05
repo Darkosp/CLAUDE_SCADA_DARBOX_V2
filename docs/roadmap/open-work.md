@@ -111,6 +111,74 @@ untouched: both hosts that walk used were x64.
 
 ## 2. Built, and walked on 2026-10-01
 
+### 2.0b Phase 8's first slice, written 2026-10-03
+
+**Screens are built and nothing has looked at one.** The storage, the API, the seeder and the
+client renderer all exist with tests behind them; what no run has done is put a screen in front of
+a person. This is the same split Phase 7's gate used between its terminal half and its screen half,
+and it is recorded here for the same reason: the parts a machine can check are checked, and the part
+that needs eyes has not happened.
+
+**What the tests do cover** — six Core rules, five storage tests, eleven through the API, and twelve
+on the client's resolver. Three things they pin that are worth knowing are pinned:
+
+- **the composite keys**, at the level they are enforced: a component naming a tag on another Site is
+  refused by the database, not by the API. Getting there took two keys rather than one, because a
+  tag has no Site of its own — its device does — and the migration records why adding a `site_id` to
+  `tag` was refused instead (it would mean recreating `tag_active`, and nothing reads a tag's Site);
+- **`readable` is decided by the server**, so every renderer gives the same answer and there is one
+  place to check. Mutating it to always-true fails the tag-has-gone test and the cross-Site test;
+- **the resolver's four cases**, which is where the client's honesty lives: Bad, unreadable, absent,
+  and no-tag-at-all are four different sentences and collapsing any two is the failure the client
+  tests exist to catch.
+
+**Two defects were found by writing the tests, and both are worth the record.** The migration granted
+nothing, so every read worked and every write failed — since 0009 a new table gets SELECT and INSERT
+only and has to ask for more, and the failure is invisible to a read path. And `UpdateAsync`
+soft-deleted a screen's components before inserting the new set, which collides the moment an author
+resends a component that kept its id; soft deletion exists so history can resolve a *name* (ADR-0009)
+and a component has no name, so it is a DELETE and an INSERT.
+
+**What has not happened:**
+
+- **A person has not looked at a screen.** Everything about how it reads — whether a Bad tile stands
+  out, whether an unreadable one is obvious without being alarming, whether the twelve-column grid is
+  enough for a real screen — is unjudged. Phase 5.5's walk found ten defects the suite had passed,
+  most of them only visible on screen, and this is the same kind of surface.
+- **No screen has been edited by anybody but a test.** Create, update, delete and replace-the-
+  component-set all have tests; none has been through the browser, and the client has no editing
+  affordance at all — that is the next slice.
+- **The client has never rendered against a live Gateway.** Its resolver is tested as a pure
+  function and the Angular build compiles the template, and no run has had the two together with a
+  real SignalR stream behind them.
+- **`trend` renders as a sentence, not a chart.** The component says which tag it is about and tells
+  the reader to open it in Browse. That is deliberate for this slice — the trend chart is bound to
+  one selected tag today — and it is the first thing the next slice should finish.
+
+### 2.0c A race in the demo seeder, found but not fixed
+
+**`DemoConfigurationSeeder.SeedIfEmptyAsync` can seed twice.** It asks `SELECT count(*) FROM tenant`
+and seeds if the answer is zero, which is a read followed by a write with nothing between them: two
+processes starting at once against an empty database both read zero and both insert. The observed
+consequence is a Site with more than one seeded screen, which is cosmetic — but the same race
+duplicates the whole demo dataset, including the tenant, and nothing in the seeder prevents it.
+
+It was found because `GatewayTestHost` starts the app once per test with the tests running in
+parallel against one database, which is a much better double-start generator than a deployment is.
+That is why it was noticed at all, and it is also why it is not being called a production defect: no
+deployment in this project has ever started two Gateways against an empty database, and the shape
+that would — a rolling start, or a K8s `Recreate` misconfigured as `RollingUpdate` — is exactly the
+shape Phase 6's packaging uses `depends_on` and one replica to avoid.
+
+**Not fixed here, and deliberately.** Every fix is a behaviour change and none is obviously right:
+a unique constraint on the demo names would make the second seeder fail loudly instead of quietly
+duplicating, which is better but turns a cosmetic race into a startup failure; an advisory lock is
+what `MigrationLock` already does and would be the consistent answer, but it is a mechanism for a
+seeder that only ever runs on a demo dataset. The test that noticed it now asserts what it is about
+(a new Site comes up with a screen) rather than the count, so the race is no longer hidden — it is
+recorded, and the decision about whether to close it belongs with the first deployment that starts
+more than one Gateway.
+
 ### 2.0 Written, and not yet walked
 
 Decided, implemented, tested — and waiting only for a run that exercises it. These are not
@@ -535,7 +603,9 @@ decided inside an implementation pull request.
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
 | TimescaleDB continuous aggregates and native compression | ADR-0006 | the legal review ADR-0006 asks for; the code deliberately does not use them |
 | Rollback of a schema migration (down-scripts) | ADR-0012, ADR-0014, `phase-plan.md` Phase 6 | **stays forward-only by decision**; the guide's backup-and-restore is the answer |
-| HMI editor and a component library, scripting (Jint), reporting | `phase-plan.md`, "Later (not yet scoped)" | a phase that creates a concrete need |
+| Authoring a screen: a builder a person can drag in | `phase-plan.md`, Phase 8 "What is left for the next slice" | the read half, which is built — see §2.0b for what it owes a browser |
+| Writing a tag from a screen | same place | an ADR: it puts the Operator check and the audit entry behind a button instead of a form |
+| Scripting (Jint), reporting | `phase-plan.md`, "Later (not yet scoped)" | a phase that creates a concrete need |
 | CI — any pipeline at all | not scoped by any phase | a phase that wants it; today every gate rests on a recorded hand walk |
 
 ## 4. Environment, not project

@@ -239,8 +239,8 @@ what it has **not** had — a walk on a real link:
   and a late command is a request to change a plant after the reason for it has
   passed.
 
-**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 502 .NET
-across seven projects with 0 skipped, and the client's 63.** It was *not* green
+**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 539 .NET
+across seven projects with 0 skipped, and the client's 75.** It was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
 the one that is a proven race from the one that is read off the failure. One more
 flake was seen on 2026-10-03 and recorded there as a **sighting, not a diagnosis**:
@@ -266,6 +266,16 @@ so the failure surfaced as a transport error instead. ADR-0023's honesty rule ho
 the operator is told it failed, not that it succeeded — but **the bound this path was
 believed to have, it does not have**. Whether it should is a decision nobody has
 made, and `open-work.md` §2.0 is where that is recorded.
+
+**Phase 8 is scoped and its first slice is built**: operator screens (HMI),
+`phase-plan.md`'s "Later (not yet scoped)" finally given a shape by ADR-0024. A screen
+is configuration and not code — two tables, an API, and a client renderer — and **the
+decision that shapes the code most is that a component shows its own quality**: there
+is no kind that can print a value with nowhere for its quality to go, and a binding the
+reader may not see renders as unreadable rather than disappearing, because hiding it
+would make a screen look complete while showing less. **What no run has done is put a
+screen in front of a person**, which `open-work.md` §2.0b records along with the four
+things the tests do pin.
 
 ## When Phase 1 (or any phase) begins
 
