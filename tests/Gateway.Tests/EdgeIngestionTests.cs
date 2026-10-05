@@ -35,27 +35,19 @@ public sealed class EdgeIngestionTests : IClassFixture<GatewayTestHost>, IAsyncL
     private static readonly TimeSpan Wide = TimeSpan.FromHours(2);
 
     private readonly GatewayTestHost _host;
-    private readonly int _port = FreePort();
     private readonly string _bufferPath = Path.Combine(Path.GetTempPath(), $"edge-buffer-{Guid.NewGuid():N}.db");
-    private MqttServer _broker = null!;
+    private TestBroker? _broker;
 
     public EdgeIngestionTests(GatewayTestHost host) => _host = host;
 
-    public async Task InitializeAsync()
-    {
-        var factory = new MqttServerFactory();
-        _broker = factory.CreateMqttServer(factory.CreateServerOptionsBuilder()
-            .WithDefaultEndpoint()
-            .WithDefaultEndpointBoundIPAddress(IPAddress.Loopback)
-            .WithDefaultEndpointPort(_port)
-            .Build());
-        await _broker.StartAsync();
-    }
+    public async Task InitializeAsync() => _broker = await TestBroker.StartAsync();
 
     public async Task DisposeAsync()
     {
-        await _broker.StopAsync();
-        _broker.Dispose();
+        if (_broker is not null)
+        {
+            await _broker.DisposeAsync();
+        }
 
         foreach (var file in new[] { _bufferPath, _bufferPath + "-wal", _bufferPath + "-shm" })
         {
@@ -264,7 +256,7 @@ public sealed class EdgeIngestionTests : IClassFixture<GatewayTestHost>, IAsyncL
                 new Dictionary<string, string>
                 {
                     ["host"] = "127.0.0.1",
-                    ["port"] = _port.ToString(CultureInfo.InvariantCulture),
+                    ["port"] = _broker!.Port.ToString(CultureInfo.InvariantCulture),
                     ["topic"] = topic,
                 },
                 ScanIntervalMs: null,
@@ -304,7 +296,7 @@ public sealed class EdgeIngestionTests : IClassFixture<GatewayTestHost>, IAsyncL
         Options.Create(new EdgeOptions
         {
             Id = edgeId,
-            Broker = new BrokerOptions { Host = "127.0.0.1", Port = _port },
+            Broker = new BrokerOptions { Host = "127.0.0.1", Port = _broker!.Port },
             Buffer = new BufferOptions { Path = _bufferPath },
         }),
         buffer,
@@ -330,7 +322,7 @@ public sealed class EdgeIngestionTests : IClassFixture<GatewayTestHost>, IAsyncL
     private async Task PublishAsync(string topic, string payload)
     {
         using var publisher = new MqttClientFactory().CreateMqttClient();
-        await publisher.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _port).Build());
+        await publisher.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _broker!.Port).Build());
         await publisher.PublishAsync(new MqttApplicationMessageBuilder()
             .WithTopic(topic)
             .WithPayload(payload)
@@ -375,12 +367,6 @@ public sealed class EdgeIngestionTests : IClassFixture<GatewayTestHost>, IAsyncL
     private static DateTimeOffset Truncate(DateTimeOffset time) =>
         new(time.UtcTicks / TimeSpan.TicksPerMillisecond * TimeSpan.TicksPerMillisecond, TimeSpan.Zero);
 
-    private static int FreePort()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        return ((IPEndPoint)probe.LocalEndpoint).Port;
-    }
 
     private sealed record EdgeDevice(Guid DeviceId, Guid TagId, string EdgeId, string Topic);
 

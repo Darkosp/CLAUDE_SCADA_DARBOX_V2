@@ -21,17 +21,40 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
     private static readonly Guid Pressure = new("44444444-4444-4444-8444-444444444401");
     private static readonly DriverTag[] Tags = [new(Pressure, "pressure", TagValueKind.Numeric)];
 
-    private readonly int _port = FreePort();
-    private MqttServer _broker = null!;
+    private TestBroker _broker = null!;
+
+    /// <summary>
+    /// The port the broker was started on.
+    /// </summary>
+    /// <remarks>
+    /// Held beside <see cref="_broker"/> rather than read from it, because one test replaces the
+    /// broker at the same port — a restart, with persistent sessions — and that test needs the number
+    /// after the old broker has been disposed and before the new one exists.
+    /// </remarks>
+    private int _port;
+
     private TaskCompletionSource _subscribed = NewSignal();
 
-    public async Task InitializeAsync() => _broker = await StartBrokerAsync();
-
-    public async Task DisposeAsync()
+    public async Task InitializeAsync()
     {
-        await _broker.StopAsync();
-        _broker.Dispose();
+        // Persistent sessions, because a queue that outlives the connection is the subject of
+        // several of these tests (ADR-0017). Passed in rather than assumed by the helper.
+        //
+        // And the subscription is armed before the server starts, because every test here waits for
+        // the driver to be listening rather than sleeping and hoping — which is the one thing this
+        // hook exists for.
+        _broker = await TestBroker.StartAsync(
+            options => options.WithPersistentSessions(true),
+            server => server.ClientSubscribedTopicAsync += _ =>
+            {
+                _subscribed.TrySetResult();
+                return Task.CompletedTask;
+            });
+
+        _port = _broker.Port;
     }
+
+    public async Task DisposeAsync() => await _broker.DisposeAsync();
 
     [Fact]
     public async Task A_sample_is_handed_over_with_the_time_the_source_measured_it()
@@ -177,11 +200,17 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
 
         // The broker goes away for long enough that at least one reconnection attempt fails, then
         // comes back on the same port.
-        await _broker.StopAsync();
-        _broker.Dispose();
+        // The old broker is torn down and a new one takes the SAME port: a restart, with persistent
+        // sessions, which is what the driver has to survive. That is why the number is held in
+        // _port rather than read from _broker, which is about to be a different one.
+        if (_broker is not null)
+        {
+            await _broker.DisposeAsync();
+        }
+
         await Task.Delay(TimeSpan.FromSeconds(3));
         _subscribed = NewSignal();
-        _broker = await StartBrokerAsync();
+        _broker = await RestartBrokerAsync();
 
         await _subscribed.Task.WaitAsync(TimeSpan.FromSeconds(15));
         await PublishAsync(Samples([new TagReading(Pressure, new TagValue.Numeric(2.5), DateTimeOffset.UtcNow, Quality.Good)]));
@@ -243,7 +272,7 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
         return new RunningDriver(driver, stop, run);
     }
 
-    private async Task<MqttServer> StartBrokerAsync()
+    private async Task<TestBroker> RestartBrokerAsync()
     {
         var factory = new MqttServerFactory();
         var options = factory.CreateServerOptionsBuilder()
@@ -261,7 +290,7 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
         };
 
         await broker.StartAsync();
-        return broker;
+        return TestBroker.Adopt(broker, _port);
     }
 
     private async Task PublishAsync(string payload, uint expiry = SamplePayload.MessageExpirySeconds)
@@ -285,12 +314,6 @@ public sealed class MqttPushingDriverTests : IAsyncLifetime
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    private static int FreePort()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        return ((IPEndPoint)probe.LocalEndpoint).Port;
-    }
 
     private sealed class RecordingSink : IPushedSampleSink
     {

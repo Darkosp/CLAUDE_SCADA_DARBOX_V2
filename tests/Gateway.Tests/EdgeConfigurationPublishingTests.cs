@@ -1,16 +1,14 @@
 using System.Collections.Concurrent;
-using System.Net;
-using System.Net.Sockets;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MQTTnet;
 using MQTTnet.Formatter;
 using MQTTnet.Protocol;
-using MQTTnet.Server;
 using ScadaDarbox.Core.Model;
 using ScadaDarbox.Core.Tags;
 using ScadaDarbox.Gateway.Configuration;
 using ScadaDarbox.Gateway.Provisioning;
+using ScadaDarbox.Gateway.Tests.Hosting;
 using ScadaDarbox.Modules.Drivers.Mqtt;
 
 namespace ScadaDarbox.Gateway.Tests;
@@ -26,26 +24,15 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
     private static readonly Guid PumpId = new("22222222-2222-4222-8222-222222222201");
     private static readonly Guid PressureId = new("33333333-3333-4333-8333-333333333301");
 
-    private readonly int _port = FreePort();
-    private MqttServer? _broker;
+    private TestBroker? _broker;
 
-    public async Task InitializeAsync()
-    {
-        var factory = new MqttServerFactory();
-        _broker = factory.CreateMqttServer(factory.CreateServerOptionsBuilder()
-            .WithDefaultEndpoint()
-            .WithDefaultEndpointBoundIPAddress(IPAddress.Loopback)
-            .WithDefaultEndpointPort(_port)
-            .Build());
-        await _broker.StartAsync();
-    }
+    public async Task InitializeAsync() => _broker = await TestBroker.StartAsync();
 
     public async Task DisposeAsync()
     {
         if (_broker is not null)
         {
-            await _broker.StopAsync();
-            _broker.Dispose();
+            await _broker.DisposeAsync();
         }
     }
 
@@ -122,7 +109,7 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
         var options = Options.Create(new EdgeProvisioningOptions
         {
             Host = "127.0.0.1",
-            Port = _port,
+            Port = _broker!.Port,
             UsesTls = false,
         });
 
@@ -183,7 +170,7 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
         };
 
         await client.ConnectAsync(new MqttClientOptionsBuilder()
-            .WithTcpServer("127.0.0.1", _port)
+            .WithTcpServer("127.0.0.1", _broker!.Port)
             .WithProtocolVersion(MqttProtocolVersion.V500)
             .Build());
         await client.SubscribeAsync(new MqttClientSubscribeOptionsBuilder()
@@ -212,12 +199,7 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
         }
     }
 
-    private static int FreePort()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        return ((IPEndPoint)probe.LocalEndpoint).Port;
-    }
+    
 
     /// <summary>An edge's side of the topic: everything it was sent, in order.</summary>
     private sealed class Subscription : IDisposable

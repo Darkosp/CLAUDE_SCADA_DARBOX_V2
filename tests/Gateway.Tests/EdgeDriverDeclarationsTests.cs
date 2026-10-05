@@ -28,27 +28,15 @@ public sealed class EdgeDriverDeclarationsTests : IAsyncLifetime
     private static readonly Guid EdgeId = new("11111111-1111-4111-8111-111111111102");
     private static readonly Guid ReadableId = new("22222222-2222-4222-8222-222222222202");
     private static readonly Guid UnreadableId = new("33333333-3333-4333-8333-333333333302");
+    private TestBroker? _broker;
 
-    private readonly int _port = FreePort();
-    private MqttServer? _broker;
-
-    public async Task InitializeAsync()
-    {
-        var factory = new MqttServerFactory();
-        _broker = factory.CreateMqttServer(factory.CreateServerOptionsBuilder()
-            .WithDefaultEndpoint()
-            .WithDefaultEndpointBoundIPAddress(IPAddress.Loopback)
-            .WithDefaultEndpointPort(_port)
-            .Build());
-        await _broker.StartAsync();
-    }
+    public async Task InitializeAsync() => _broker = await TestBroker.StartAsync();
 
     public async Task DisposeAsync()
     {
         if (_broker is not null)
         {
-            await _broker.StopAsync();
-            _broker.Dispose();
+            await _broker.DisposeAsync();
         }
     }
 
@@ -249,7 +237,7 @@ public sealed class EdgeDriverDeclarationsTests : IAsyncLifetime
         var options = Options.Create(new EdgeProvisioningOptions
         {
             Host = "127.0.0.1",
-            Port = _port,
+            Port = _broker!.Port,
             UsesTls = false,
         });
 
@@ -289,7 +277,7 @@ public sealed class EdgeDriverDeclarationsTests : IAsyncLifetime
     private async Task PublishAsync(string topic, string payload)
     {
         using var edge = new MqttClientFactory().CreateMqttClient();
-        await edge.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _port).Build());
+        await edge.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _broker!.Port).Build());
         await edge.PublishAsync(new MqttApplicationMessageBuilder()
             .WithTopic(topic)
             .WithPayload(payload)
@@ -327,12 +315,6 @@ public sealed class EdgeDriverDeclarationsTests : IAsyncLifetime
         }
     }
 
-    private static int FreePort()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        return ((IPEndPoint)probe.LocalEndpoint).Port;
-    }
 
     private sealed record Provisioned(
         FakeCatalogue Catalogue,

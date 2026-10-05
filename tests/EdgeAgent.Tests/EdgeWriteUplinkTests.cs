@@ -41,26 +41,18 @@ public sealed class EdgeWriteUplinkTests : IAsyncLifetime
 {
     private static readonly Guid PressureTag = new("44444444-4444-4444-8444-444444444444");
 
-    private readonly int _port = FreePort();
     private readonly string _bufferPath =
         Path.Combine(Path.GetTempPath(), $"scada-write-uplink-{Guid.NewGuid():N}.db");
 
-    private MqttServer? _broker;
+    private TestBroker? _broker;
     private IMqttClient? _cloud;
 
     public async Task InitializeAsync()
     {
-        var factory = new MqttServerFactory();
-        _broker = factory.CreateMqttServer(factory.CreateServerOptionsBuilder()
-            .WithDefaultEndpoint()
-            .WithDefaultEndpointBoundIPAddress(IPAddress.Loopback)
-            .WithDefaultEndpointPort(_port)
-            .Build());
-
-        await _broker.StartAsync();
+        _broker = await TestBroker.StartAsync();
 
         _cloud = new MqttClientFactory().CreateMqttClient();
-        await _cloud.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _port).Build());
+        await _cloud.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _broker.Port).Build());
     }
 
     public async Task DisposeAsync()
@@ -77,8 +69,7 @@ public sealed class EdgeWriteUplinkTests : IAsyncLifetime
 
         if (_broker is not null)
         {
-            await _broker.StopAsync();
-            _broker.Dispose();
+            await _broker.DisposeAsync();
         }
 
         foreach (var leftover in new[] { _bufferPath, _bufferPath + "-wal", _bufferPath + "-shm" })
@@ -242,7 +233,7 @@ public sealed class EdgeWriteUplinkTests : IAsyncLifetime
             Options.Create(new EdgeOptions
             {
                 Id = "plant-7",
-                Broker = new BrokerOptions { Host = "127.0.0.1", Port = _port },
+                Broker = new BrokerOptions { Host = "127.0.0.1", Port = _broker!.Port },
                 Buffer = new BufferOptions { Path = _bufferPath },
             }),
             buffer,
@@ -323,10 +314,4 @@ public sealed class EdgeWriteUplinkTests : IAsyncLifetime
         new OpcUaDriverFactory(TimeProvider.System),
     ];
 
-    private static int FreePort()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        return ((IPEndPoint)probe.LocalEndpoint).Port;
-    }
 }

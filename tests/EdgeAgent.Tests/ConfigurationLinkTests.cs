@@ -29,8 +29,7 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
     private static readonly DateTimeOffset Derived = new(2026, 9, 28, 20, 0, 0, TimeSpan.Zero);
 
     private readonly string _path = Path.Combine(Path.GetTempPath(), $"edge-buffer-{Guid.NewGuid():N}.db");
-    private readonly int _port = FreePort();
-    private MqttServer? _broker;
+    private TestBroker? _broker;
     private IMqttClient? _cloud;
 
     public Task InitializeAsync() => Task.CompletedTask;
@@ -45,8 +44,7 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
 
         if (_broker is not null)
         {
-            await _broker.StopAsync();
-            _broker.Dispose();
+            await _broker.DisposeAsync();
         }
 
         foreach (var file in new[] { _path, _path + "-wal", _path + "-shm" })
@@ -119,7 +117,7 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
     private EdgeOptions UplinkOptions() => new()
     {
         Id = "plant-7",
-        Broker = new BrokerOptions { Host = "127.0.0.1", Port = _port },
+        Broker = new BrokerOptions { Host = "127.0.0.1", Port = _broker!.Port },
         Buffer = new BufferOptions { Path = _path },
     };
 
@@ -135,17 +133,10 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
 
     private async Task StartBrokerAsync()
     {
-        var factory = new MqttServerFactory();
-        _broker = factory.CreateMqttServer(factory.CreateServerOptionsBuilder()
-            .WithDefaultEndpoint()
-            .WithDefaultEndpointBoundIPAddress(IPAddress.Loopback)
-            .WithDefaultEndpointPort(_port)
-            .Build());
-
-        await _broker.StartAsync();
+        _broker = await TestBroker.StartAsync();
 
         _cloud = new MqttClientFactory().CreateMqttClient();
-        await _cloud.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _port).Build());
+        await _cloud.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _broker.Port).Build());
     }
 
     /// <summary>The cloud's own publish: the edge's topic, retained, at least once (ADR-0019 §4).</summary>
@@ -184,10 +175,4 @@ public sealed class ConfigurationLinkTests : IAsyncLifetime
         new OpcUaDriverFactory(TimeProvider.System),
     ];
 
-    private static int FreePort()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        return ((IPEndPoint)probe.LocalEndpoint).Port;
-    }
 }

@@ -31,11 +31,22 @@ public sealed class UplinkTests : IAsyncLifetime
     private static readonly DateTimeOffset Start = new(2026, 9, 24, 5, 0, 0, TimeSpan.Zero);
 
     private readonly string _path = Path.Combine(Path.GetTempPath(), $"edge-buffer-{Guid.NewGuid():N}.db");
-    private readonly int _port = FreePort();
     private readonly ConcurrentQueue<TagReading> _received = new();
     private readonly ConcurrentQueue<string> _declared = new();
-    private MqttServer? _broker;
+    private TestBroker? _broker;
     private IMqttClient? _cloud;
+
+    /// <summary>
+    /// The port this test's broker is on, known a moment before the broker exists.
+    /// </summary>
+    /// <remarks>
+    /// This class builds its own <c>MqttServer</c> rather than letting
+    /// <see cref="TestBroker.StartAsync"/> build it, because one of its tests intercepts publishes
+    /// to refuse them — so it needs the number before the server, and MQTTnet will not bind zero and
+    /// say what it chose. <see cref="TestBroker.StartRawAsync"/> is what makes that safe: it
+    /// reserves a number and retries the bind if another test took it in the gap.
+    /// </remarks>
+    private int _port;
 
     public Task InitializeAsync() => Task.CompletedTask;
 
@@ -49,8 +60,7 @@ public sealed class UplinkTests : IAsyncLifetime
 
         if (_broker is not null)
         {
-            await _broker.StopAsync();
-            _broker.Dispose();
+            await _broker.DisposeAsync();
         }
 
         foreach (var file in new[] { _path, _path + "-wal", _path + "-shm" })
@@ -62,6 +72,11 @@ public sealed class UplinkTests : IAsyncLifetime
     [Fact]
     public async Task While_the_broker_is_away_nothing_leaves_the_buffer_and_when_it_is_back_everything_arrives()
     {
+        // The number is reserved before the uplink is built, because the uplink has to be told where
+        // to look while there is deliberately nothing there yet. Nothing is listening until
+        // StartBrokerAsync below.
+        _port = await TestBroker.ReservePortAsync();
+
         using var buffer = SampleBuffer.Open(_path, maxPending: 10_000);
         var samples = Samples(20);
         buffer.Append(samples);
@@ -241,24 +256,38 @@ public sealed class UplinkTests : IAsyncLifetime
 
     private async Task StartBrokerAsync(bool refuse)
     {
-        var factory = new MqttServerFactory();
-        _broker = factory.CreateMqttServer(factory.CreateServerOptionsBuilder()
-            .WithDefaultEndpoint()
-            .WithDefaultEndpointBoundIPAddress(IPAddress.Loopback)
-            .WithDefaultEndpointPort(_port)
-            .Build());
-
-        if (refuse)
+        // The port may already be reserved — the test where the broker is away for a while has to
+        // point the uplink at an address before there is anything there to point it at, and it does
+        // that by reserving the number first. Reserving again would move the broker somewhere the
+        // uplink is not looking, which is a test that hangs rather than one that fails.
+        if (_port == 0)
         {
-            _broker.InterceptingPublishAsync += args =>
-            {
-                args.ProcessPublish = false;
-                args.Response.ReasonCode = MqttPubAckReasonCode.NotAuthorized;
-                return Task.CompletedTask;
-            };
+            _port = await TestBroker.ReservePortAsync();
         }
 
-        await _broker.StartAsync();
+        // Built here rather than by TestBroker.StartAsync, because `refuse` adds an interceptor the
+        // helper knows nothing about. It binds the reserved number, and does not choose a new one.
+        _broker = await TestBroker.StartOnReservedAsync(_port, port =>
+        {
+            var server = new MqttServerFactory().CreateMqttServer(
+                new MqttServerOptionsBuilder()
+                    .WithDefaultEndpoint()
+                    .WithDefaultEndpointBoundIPAddress(IPAddress.Loopback)
+                    .WithDefaultEndpointPort(port)
+                    .Build());
+
+            if (refuse)
+            {
+                server.InterceptingPublishAsync += args =>
+                {
+                    args.ProcessPublish = false;
+                    args.Response.ReasonCode = MqttPubAckReasonCode.NotAuthorized;
+                    return Task.CompletedTask;
+                };
+            }
+
+            return server;
+        });
 
         // The cloud side, reading the edge's topic with the Gateway's own format.
         _cloud = new MqttClientFactory().CreateMqttClient();
@@ -310,10 +339,4 @@ public sealed class UplinkTests : IAsyncLifetime
         }
     }
 
-    private static int FreePort()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        return ((IPEndPoint)probe.LocalEndpoint).Port;
-    }
 }

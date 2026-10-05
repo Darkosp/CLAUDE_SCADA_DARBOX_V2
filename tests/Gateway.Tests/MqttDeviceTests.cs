@@ -22,26 +22,18 @@ namespace ScadaDarbox.Gateway.Tests;
 public sealed class MqttDeviceTests : IClassFixture<GatewayTestHost>, IAsyncLifetime
 {
     private readonly GatewayTestHost _host;
-    private readonly int _port = FreePort();
-    private MqttServer _broker = null!;
+    private TestBroker? _broker;
 
     public MqttDeviceTests(GatewayTestHost host) => _host = host;
 
-    public async Task InitializeAsync()
-    {
-        var factory = new MqttServerFactory();
-        _broker = factory.CreateMqttServer(factory.CreateServerOptionsBuilder()
-            .WithDefaultEndpoint()
-            .WithDefaultEndpointBoundIPAddress(IPAddress.Loopback)
-            .WithDefaultEndpointPort(_port)
-            .Build());
-        await _broker.StartAsync();
-    }
+    public async Task InitializeAsync() => _broker = await TestBroker.StartAsync();
 
     public async Task DisposeAsync()
     {
-        await _broker.StopAsync();
-        _broker.Dispose();
+        if (_broker is not null)
+        {
+            await _broker.DisposeAsync();
+        }
     }
 
     [RequiresDatabaseFact]
@@ -59,7 +51,7 @@ public sealed class MqttDeviceTests : IClassFixture<GatewayTestHost>, IAsyncLife
                 new Dictionary<string, string>
                 {
                     ["host"] = "127.0.0.1",
-                    ["port"] = _port.ToString(CultureInfo.InvariantCulture),
+                    ["port"] = _broker!.Port.ToString(CultureInfo.InvariantCulture),
                     ["topic"] = topic,
                     ["stalenessSeconds"] = "2",
                 },
@@ -106,7 +98,7 @@ public sealed class MqttDeviceTests : IClassFixture<GatewayTestHost>, IAsyncLife
     private async Task PublishAsync(string topic, string payload)
     {
         using var publisher = new MqttClientFactory().CreateMqttClient();
-        await publisher.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _port).Build());
+        await publisher.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", _broker!.Port).Build());
         await publisher.PublishAsync(new MqttApplicationMessageBuilder()
             .WithTopic(topic)
             .WithPayload(payload)
@@ -121,10 +113,4 @@ public sealed class MqttDeviceTests : IClassFixture<GatewayTestHost>, IAsyncLife
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<JsonElement>() : default;
     }
 
-    private static int FreePort()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        return ((IPEndPoint)probe.LocalEndpoint).Port;
-    }
 }
