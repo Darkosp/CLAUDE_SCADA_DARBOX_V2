@@ -233,10 +233,17 @@ public sealed class EdgeWriteExecutionTests
             Assert.NotNull(result.Reason);
             Assert.False(string.IsNullOrWhiteSpace(result.Reason));
 
-            // Nothing hung: whatever bounded it, a bounded failure came back well inside the minute.
+            // Nothing hung: whatever bounded it, a bounded failure came back.
+            //
+            // This was a minute when the test was written, because the bound was not understood: a
+            // dead device took about twenty seconds and nobody could say why. The why was NModbus's
+            // transport retrying a failed request three times, so the driver's five-second timeout
+            // was worth twenty. With the retry off (ADR-0023's finding) the arithmetic is one
+            // attempt times five seconds, and a loose bound is no longer the honest one -- a
+            // regression that put the retry back would pass a minute-wide assertion and fail this.
             Assert.True(
-                elapsed < TimeSpan.FromSeconds(60),
-                $"a dead device took {elapsed.TotalSeconds:0.0} s to report, which is not bounded in any useful sense");
+                elapsed < TimeSpan.FromSeconds(15),
+                $"a dead device took {elapsed.TotalSeconds:0.0} s to report; the driver's own bound is 5 s and anything near this is a retry the driver did not ask for");
         }
         finally
         {

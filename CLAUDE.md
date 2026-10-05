@@ -257,15 +257,22 @@ slave, the uplink's handling of a message off a real broker, the retain rule and
 the ACL against a real broker — so it is not read as "nothing is tested". What no
 run has done is cross all of them at once.
 
-**One finding from that work is open and is not a test gap.** A device that accepts
+**One finding from that work is now closed rather than open.** A device that accepts
 a connection and then says nothing was executed on the write path, and it came back
-as a failure with a reason after **about twenty seconds**. The executor's ten-second
-deadline and `ModbusTcpDriver`'s five-second socket timeout are both real, and
-**neither stopped it**: NModbus does not honour the cancellation token during a read,
-so the failure surfaced as a transport error instead. ADR-0023's honesty rule holds —
-the operator is told it failed, not that it succeeded — but **the bound this path was
-believed to have, it does not have**. Whether it should is a decision nobody has
-made, and `open-work.md` §2.0 is where that is recorded.
+as a failure with a reason after **about twenty seconds**. **That was NModbus's transport
+retrying a failed request three times**, which `ModbusTcpDriver` never set — so the
+driver's five-second timeout was worth four attempts, and every comment calling the
+read bound five seconds was wrong by a factor of four. `Retries = 0` now, measured:
+**20.9 s before, 5 s after.** Off rather than tuned because a retried **read** is safe
+and a retried **write** is a command sent twice, and a transport that cannot tell them
+apart has to take the safe side of both. What is given up is resilience to one
+corrupted packet, and the scan loop is the answer there.
+
+**Two defects were closed on 2026-10-05, both of them the kind that get worse as more
+is built on them.** The above, and `open-work.md` §2.0c: the demo seeder asked "is
+there a tenant yet" and then seeded, so two processes starting at once against an empty
+database both seeded — two tenants, two of every row, and every other entity hangs off
+a Site. It now takes a transaction-scoped advisory lock before asking.
 
 **Phase 8 is scoped and its first slice is built**: operator screens (HMI),
 `phase-plan.md`'s "Later (not yet scoped)" finally given a shape by ADR-0024. A screen

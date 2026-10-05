@@ -261,15 +261,30 @@ defects and not open questions: the work exists and nothing has been through it 
     the *read* path, now executed on the write path too. It came back as a failure with a reason,
     which is what ADR-0023 requires, and it took **about twenty seconds**.
 
-  **And that last one is a finding, not a tick.** The executor has a ten-second deadline and
-  `ModbusTcpDriver` sets a five-second socket read timeout, and **neither is what stopped it**: the
-  failure arrived as a transport error — `Unable to read data from the transport connection` — after
-  roughly twenty seconds. NModbus does not honour the cancellation token during a read, so a
-  cancelled token does not interrupt one. What the cloud is told is still correct and ADR-0023's
-  honesty rule holds, but **the bound this path was believed to have, it does not have.** Nothing
-  in the code claims otherwise now; the executor's remarks carry the measurement. Whether it should
-  have a real one — a socket timeout that works, or a driver contract that takes a deadline — is a
-  decision nobody has made, and it is the reason this entry stays open.
+  **And that last one was a finding, not a tick — closed on 2026-10-05.** The executor has a
+  ten-second deadline and `ModbusTcpDriver` sets a five-second socket read timeout, and **neither was
+  what stopped it**: the failure arrived as a transport error — `Unable to read data from the
+  transport connection` — after roughly twenty seconds. NModbus does not honour the cancellation
+  token during a read, so a cancelled token does not interrupt one.
+
+  **The cause was found and fixed, and it was neither of the two bounds.** NModbus's transport
+  retries a failed request **three times by default**, so the driver's five-second timeout was worth
+  four attempts — and `ModbusTcpDriver` never set `Retries`, so every comment in this repository that
+  called the read bound five seconds was wrong by a factor of four. Measured before: 20.9 s. Measured
+  after setting `Retries = 0`: **5 s**, which is one attempt times `ResponseTimeout`.
+
+  The retry is off rather than tuned, and the reason is the write path: a retried **read** is safe and
+  a retried **write** is a command sent twice. Most values tolerate that and a driver cannot know
+  which ones do not — a device whose write increments, toggles or acknowledges is actuated twice by a
+  helpful retry. A transport that cannot tell a read from a write has to take the safe side of both.
+  What is given up is resilience to one corrupted packet, and the scan loop is the answer there: it
+  asks again on its own schedule, and a tag that missed one scan reads Bad and then Good, which is
+  what the quality field is for. A write worth retrying is worth an operator deciding to retry it.
+
+  **Proved by mutation:** putting `Retries` back to 3 fails the dead-device test with `a dead device
+  took 20.9 s to report; the driver's own bound is 5 s`. The test's assertion was widened to 15 s,
+  having been a minute when the bound was not understood — a minute would have passed a regression
+  that put the retry back.
 
 
 ### 2.1 ADR-0019 configuration provisioning, end to end

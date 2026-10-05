@@ -41,14 +41,50 @@ public sealed class ModbusTcpDriver : IDeviceDriver
 
     /// <summary>How long a request waits for the device before it is given up on.</summary>
     /// <remarks>
+    /// <para>
     /// A socket read with no timeout waits forever, and that is the default: a device that
     /// accepts the connection and then stops answering — a wedged gateway, a firewall that
     /// takes the connection and drops what follows — used to leave the read hanging, so the
     /// scan loop never reached the next tag and the tags already read kept the values they
     /// had. Silence that looks like a live plant is the reading ADR-0003 refuses. Bounding
     /// the request is what turns it into a Bad reading with the runtime's own words beside it.
+    /// </para>
+    /// <para>
+    /// <b>This is the whole bound, and it only became the whole bound once <c>Retries</c> was
+    /// set.</b> NModbus's transport retries a failed request three times by default, so a device
+    /// that accepted the connection and then said nothing took four attempts rather than one —
+    /// measured on 2026-10-05 as **twenty seconds**, not five. That was found on the write path
+    /// (ADR-0023), where it mattered most: an operator waiting twenty seconds to be told "not
+    /// confirmed" about a plant that may or may not have changed. The retry is off for the reason
+    /// below, and the arithmetic is now one attempt times this value.
+    /// </para>
     /// </remarks>
     private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Whether a failed request is sent again before it is given up on.
+    /// </summary>
+    /// <remarks>
+    /// <b>No, and this replaces NModbus's default of three.</b> Two reasons, and the second is the
+    /// one that decides it.
+    ///
+    /// A retry hides how long a dead device takes. Four attempts times <see cref="ResponseTimeout"/>
+    /// is a bound four times what every comment in this repository said it was, and a bound nobody
+    /// can predict is not a bound.
+    ///
+    /// And a retried **write** is a command sent twice. For most values that is harmless — setting a
+    /// register to 5 twice leaves it at 5 — but a driver cannot know that: a device whose write
+    /// increments, toggles or acknowledges is actuated twice by a "helpful" retry, and this project
+    /// does not get to make that choice on a plant's behalf. A read is safe to repeat and a write is
+    /// not, and a driver that cannot tell them apart in its transport has to take the safe side of
+    /// both.
+    ///
+    /// What is given up is resilience to one corrupted packet. The scan loop is the answer there: it
+    /// asks again on its own schedule, and a tag that missed one scan reads Bad and then reads Good,
+    /// which is what the quality field is for. A write that is worth retrying is worth an operator
+    /// deciding to retry it.
+    /// </remarks>
+    private const int Retries = 0;
 
     private TcpClient? _tcpClient;
     private IModbusMaster? _master;
@@ -81,9 +117,12 @@ public sealed class ModbusTcpDriver : IDeviceDriver
         _master = new ModbusFactory().CreateMaster(client);
 
         // Bounded so a device that stops answering reads Bad instead of holding the scan loop
-        // (see ResponseTimeout). The transport carries the setting to the socket underneath.
+        // (see ResponseTimeout). The transport carries the setting to the socket underneath, and
+        // Retries is set beside it because the default retries the request three times -- which
+        // multiplied the bound by four and, on a write, sent the command more than once.
         _master.Transport.ReadTimeout = (int)ResponseTimeout.TotalMilliseconds;
         _master.Transport.WriteTimeout = (int)ResponseTimeout.TotalMilliseconds;
+        _master.Transport.Retries = Retries;
     }
 
     /// <remarks>
