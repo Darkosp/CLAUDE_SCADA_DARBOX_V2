@@ -54,6 +54,7 @@ they say about it.
 | [0021](0021-edge-reports-what-it-cannot-read.md) | An edge says which assigned devices it cannot read, on its driver declaration — the project's first payload version bump |
 | [0022](0022-derived-link-device.md) | An edge's link device is derived from the edge, is not overridable, and the edge names its staleness limit |
 | [0023](0023-routing-writes-to-an-edge.md) | A tag write is routed to the edge that reads the device, is never queued or retained, and a deployment may turn it off |
+| [0024](0024-a-screen-is-configuration.md) | An operator screen is configuration and not code, its component set is closed, and every component that reads a tag shows that tag's quality |
 
 ## Template
 
