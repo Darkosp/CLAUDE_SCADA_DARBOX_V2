@@ -25,10 +25,17 @@ internal static class AlarmEndpoints
         // The journal, newest first. The Site filter lives in the query rather than here:
         // filtering in memory would mean reading rows the caller may not see in order to
         // discard them, and the limit would then be applied to the wrong set.
+        //
+        // `tag` and `type` are the filters a reader actually reaches for, and both are repeatable so
+        // that "these two tags" and "raised or cleared" are one request each rather than a client-side
+        // loop. They narrow ADDITIONALLY, never instead of the Site filter — see AlarmJournalQuery for
+        // why an engine's own rows survive them.
         app.MapGet("/api/alarms/journal", async (
             DateTimeOffset? from,
             DateTimeOffset? to,
             int? limit,
+            Guid[]? tag,
+            string[]? type,
             Caller caller,
             IAlarmJournal journal) =>
         {
@@ -38,8 +45,28 @@ internal static class AlarmEndpoints
                 ? null
                 : caller.Access.SiteRoles.Keys.ToArray();
 
+            // An unreadable type in the query string is refused rather than ignored: silently
+            // dropping it would answer a narrower question than the one asked, and the reader would
+            // have no way to tell an empty result from a filter that never applied.
+            var types = new List<AlarmEventType>();
+            foreach (var name in type ?? [])
+            {
+                if (!Enum.TryParse<AlarmEventType>(name, ignoreCase: true, out var parsed))
+                {
+                    return Results.BadRequest(new { error = $"There is no alarm event type called '{name}'." });
+                }
+
+                types.Add(parsed);
+            }
+
             var events = await journal.ReadHistoryAsync(
-                new AlarmJournalQuery(sites, from, to, Math.Clamp(limit ?? 200, 1, 1000)),
+                new AlarmJournalQuery(
+                    sites,
+                    from,
+                    to,
+                    Math.Clamp(limit ?? 200, 1, 1000),
+                    tag is { Length: > 0 } ? tag : null,
+                    types.Count > 0 ? types : null),
                 CancellationToken.None);
 
             return Results.Ok(events.Select(AlarmEventDto.From));
@@ -162,13 +189,7 @@ internal static class AlarmEndpoints
                 return Results.BadRequest(new { error });
             }
 
-            var definition = new AlarmDefinition
-            {
-                Id = Guid.NewGuid(),
-                TagId = tagId,
-                HighLimit = request.HighLimit,
-                LowLimit = request.LowLimit,
-            };
+            var definition = ToDomain(Guid.NewGuid(), tagId, request);
 
             await definitions.AddAsync(definition, cancellationToken);
             await reloader.ReloadAsync(cancellationToken);
@@ -193,13 +214,7 @@ internal static class AlarmEndpoints
             try
             {
                 await definitions.UpdateAsync(
-                    new AlarmDefinition
-                    {
-                        Id = definitionId,
-                        TagId = tagId,
-                        HighLimit = request.HighLimit,
-                        LowLimit = request.LowLimit,
-                    },
+                    ToDomain(definitionId, tagId, request),
                     cancellationToken);
             }
             catch (ConfigurationConflictException exception)
@@ -284,6 +299,25 @@ internal static class AlarmEndpoints
         ]));
 
     /// <summary>
+    /// The definition a request describes.
+    /// </summary>
+    /// <remarks>
+    /// One place rather than two, because create and update have to agree about every field and the
+    /// two constructions had already drifted apart once — a field added to one and not the other
+    /// would make an edit silently reset it (ADR-0025's two settings are exactly the kind that would
+    /// go missing).
+    /// </remarks>
+    private static AlarmDefinition ToDomain(Guid id, Guid tagId, SaveAlarmDefinitionRequest request) => new()
+    {
+        Id = id,
+        TagId = tagId,
+        HighLimit = request.HighLimit,
+        LowLimit = request.LowLimit,
+        OnDelaySeconds = request.OnDelaySeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
+        Deadband = request.Deadband,
+    };
+
+    /// <summary>
     /// Why this threshold cannot be saved, or null when it can.
     /// </summary>
     private static string? Reject(
@@ -303,6 +337,29 @@ internal static class AlarmEndpoints
             // Every reading would be in alarm on one limit or the other, so the alarm
             // could never return to normal.
             return "The low limit must be below the high limit.";
+        }
+
+        // ADR-0025 §2, §3. Both are checked here as well as by the database, and for the reason the
+        // limit checks above are: a rejected insert surfaces as a constraint name rather than as
+        // something an operator can act on.
+        if (request.OnDelaySeconds is { } delay && (delay <= 0 || delay > 3600))
+        {
+            return "The delay before an alarm is raised must be more than zero and at most 3600 seconds "
+                + "(an hour). A longer suppression is what shelving is for.";
+        }
+
+        if (request.Deadband is { } band && band <= 0)
+        {
+            return "The deadband must be more than zero, or left blank for none.";
+        }
+
+        // A deadband wider than the gap between the limits would make one of them unreachable, which
+        // is an alarm that can never clear or never raise. Caught here rather than at the plant.
+        if (request.Deadband is { } width && request.HighLimit is { } top && request.LowLimit is { } bottom
+            && width >= top - bottom)
+        {
+            return "The deadband must be smaller than the gap between the low and high limits, "
+                + "or one of them could never be reached.";
         }
 
         var tag = catalogSource.Current.FindTag(tagId);

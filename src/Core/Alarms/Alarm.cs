@@ -75,4 +75,26 @@ public sealed record Alarm(
     /// likely began while nothing was watching.
     /// </summary>
     public bool DetectedAfterRestart { get; init; }
+
+    /// <summary>
+    /// The deadband this alarm was raised under, or null for none (ADR-0025 §3, §7).
+    /// </summary>
+    /// <remarks>
+    /// Carried on the alarm rather than read from the definition at clear time, for the reason
+    /// ADR-0025 §7 gives: a wait or a band that was in force when an alarm raised finishes under
+    /// that one, so an unrelated edit elsewhere cannot change what this alarm does. It is on the
+    /// standing alarm for the same reason <see cref="LimitValue"/> is — the alarm is the record of
+    /// the condition it was raised under, not a window onto whatever the configuration says now.
+    /// </remarks>
+    public double? Deadband { get; init; }
+
+    /// <summary>
+    /// How long this alarm waited before it announced itself, or null for none (ADR-0025 §2).
+    /// </summary>
+    /// <remarks>
+    /// On the alarm so a reader can tell an alarm that arrived instantly from one that was held
+    /// back, which is the only way the delay is visible: the journal holds the raise, and a raise
+    /// with no note of a wait looks exactly like an instant one.
+    /// </remarks>
+    public TimeSpan? OnDelay { get; init; }
 }

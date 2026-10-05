@@ -55,14 +55,39 @@ public sealed record AlarmDto(
 public sealed record ShelveRequest(int? DurationMinutes);
 
 /// <summary>Wire form of a configured threshold.</summary>
-public sealed record AlarmDefinitionDto(Guid Id, Guid TagId, double? HighLimit, double? LowLimit)
+/// <param name="OnDelaySeconds">
+/// How long the condition must hold before the alarm is raised, or null for none (ADR-0025 §2). Sent
+/// as seconds rather than as a duration because that is what the column holds and what an author
+/// types, so the client shows it in the same unit it was entered in.
+/// </param>
+/// <param name="Deadband">
+/// How far a value must come back past the limit before the alarm clears, or null for none
+/// (ADR-0025 §3).
+/// </param>
+public sealed record AlarmDefinitionDto(
+    Guid Id,
+    Guid TagId,
+    double? HighLimit,
+    double? LowLimit,
+    double? OnDelaySeconds,
+    double? Deadband)
 {
     public static AlarmDefinitionDto From(AlarmDefinition definition) =>
-        new(definition.Id, definition.TagId, definition.HighLimit, definition.LowLimit);
+        new(
+            definition.Id,
+            definition.TagId,
+            definition.HighLimit,
+            definition.LowLimit,
+            definition.OnDelaySeconds?.TotalSeconds,
+            definition.Deadband);
 }
 
 /// <summary>A threshold as submitted from the configuration UI.</summary>
-public sealed record SaveAlarmDefinitionRequest(double? HighLimit, double? LowLimit);
+public sealed record SaveAlarmDefinitionRequest(
+    double? HighLimit,
+    double? LowLimit,
+    double? OnDelaySeconds = null,
+    double? Deadband = null);
 
 /// <summary>Wire form of one journal entry (ADR-0013).</summary>
 /// <param name="SiteId">

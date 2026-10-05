@@ -55,6 +55,7 @@ they say about it.
 | [0022](0022-derived-link-device.md) | An edge's link device is derived from the edge, is not overridable, and the edge names its staleness limit |
 | [0023](0023-routing-writes-to-an-edge.md) | A tag write is routed to the edge that reads the device, is never queued or retained, and a deployment may turn it off |
 | [0024](0024-a-screen-is-configuration.md) | An operator screen is configuration and not code, its component set is closed, and every component that reads a tag shows that tag's quality |
+| [0025](0025-an-alarm-waits-before-it-announces-itself.md) | An alarm waits before it announces itself, and a deadband shifts where it clears but never where it raises |
 
 ## Template
 

@@ -172,6 +172,12 @@ public interface IAlarmJournal
 /// <param name="FromUtc">Inclusive lower bound on the recording time; null for no bound.</param>
 /// <param name="ToUtc">Exclusive upper bound on the recording time; null for no bound.</param>
 /// <param name="Limit">At most this many rows, newest first.</param>
+/// <param name="TagIds">
+/// Only events about these tags, or null for all of them. An event's tag is copied onto every row
+/// about its occurrence when it happens (ADR-0013), so this needs no join and still finds the
+/// history of a tag that has since been deleted.
+/// </param>
+/// <param name="Types">Only events of these types, or null for all of them.</param>
 /// <remarks>
 /// <para>
 /// Events that belong to no Site — <see cref="AlarmEventType.EvaluationStarted"/>,
@@ -181,6 +187,13 @@ public interface IAlarmJournal
 /// a Viewer on one Site still has to know the system was not watching (ADR-0013). A filter
 /// written as a bare <c>site_id = ANY(...)</c> drops them, and the outage then reads as a
 /// quiet period — the exact wrong answer this journal exists to prevent.
+/// </para>
+/// <para>
+/// <b>Narrowing by tag or by type does remove them, and the difference is that those are choices.</b>
+/// The Site filter is enforcement: a reader does not pick it and cannot see past it, so an engine row
+/// reaching them regardless of it is a rule rather than a surprise. A tag filter is something the
+/// reader picked, so it means "these rows only" — and a filter that quietly returned rows failing one
+/// of its two conditions would be one a reader could not reason about.
 /// </para>
 /// <para>
 /// This is not the same "no Site" as <see cref="Security.UserAccess.CanViewUnscoped"/>,
@@ -193,4 +206,6 @@ public sealed record AlarmJournalQuery(
     IReadOnlyList<Guid>? SiteIds,
     DateTimeOffset? FromUtc = null,
     DateTimeOffset? ToUtc = null,
-    int Limit = 200);
+    int Limit = 200,
+    IReadOnlyList<Guid>? TagIds = null,
+    IReadOnlyList<AlarmEventType>? Types = null);

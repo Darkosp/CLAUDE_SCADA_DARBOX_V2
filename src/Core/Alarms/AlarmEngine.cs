@@ -107,6 +107,21 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<Guid, Alarm> _byDefinition = [];
     private readonly HashSet<Guid> _awaitingFirstEvaluation = [];
+
+    /// <summary>
+    /// Breaches seen but not yet raised, because their definition has an on-delay (ADR-0025 §2).
+    /// </summary>
+    /// <remarks>
+    /// <b>In memory, and deliberately not in the journal</b> (ADR-0025 §4). The wait is state the
+    /// engine holds, not something that happened at the plant, and the journal records the second.
+    /// A row saying "evaluating, might raise" would fill the journal with the same noise this exists
+    /// to remove, one level up.
+    ///
+    /// The cost is real and is stated rather than hidden: **a restart resets every pending wait.** A
+    /// breach 40 seconds into a 60-second wait needs another 60 after the Gateway comes back.
+    /// </remarks>
+    private readonly Dictionary<Guid, PendingBreach> _pending = [];
+
     private IReadOnlyList<Alarm> _snapshot = [];
     private bool _started;
 
@@ -475,19 +490,44 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
             || snapshot.Value is not TagValue.Numeric numeric
             || snapshot.SourceTimestampUtc is not { } measuredAt)
         {
+            // A wait that was in progress is abandoned rather than paused (ADR-0025 §6). Pausing it
+            // would mean the Gateway counting time in which it was not watching — a device offline
+            // for ten minutes would satisfy a sixty-second delay while nothing was measured, which is
+            // an alarm raised on the strength of an outage. Starting again when readings resume is
+            // the honest reading of "the condition must hold", and a device that is silent is not a
+            // device holding a condition.
+            _pending.Remove(definition.Id);
             return false;
         }
 
         var afterRestart = _awaitingFirstEvaluation.Remove(definition.Id);
-        var breach = Breach(definition, numeric.Value);
+        var breaching = IsBreaching(definition, numeric.Value);
         _byDefinition.TryGetValue(definition.Id, out var standing);
         var now = _clock.GetUtcNow();
 
-        if (breach is null)
+        if (!breaching)
         {
-            return standing is not null
-                   && await ClearAsync(standing, snapshot, numeric.Value, afterRestart, catalog, now, cancellationToken)
-                       .ConfigureAwait(false);
+            // It stopped breaching. Whether that ends the alarm is a question about the DEADBAND,
+            // not about the limit, and it is only a question when something is standing.
+            if (standing is null)
+            {
+                // No alarm, and nothing out of range: any wait that was in progress is over without
+                // ever having raised anything, which is ADR-0025 §2 working exactly as intended --
+                // no journal row, and nothing an operator has to dismiss.
+                _pending.Remove(definition.Id);
+                return false;
+            }
+
+            if (!HasCleared(standing, numeric.Value))
+            {
+                // Inside the deadband: back across the limit, not yet far enough to clear
+                // (ADR-0025 §3). The alarm stands, and a reader who sees "4.45 bar" beside a
+                // standing High alarm with a 4.50 limit is not looking at a contradiction.
+                return false;
+            }
+
+            return await ClearAsync(standing, snapshot, numeric.Value, afterRestart, catalog, now, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (standing is { State: not AlarmState.Cleared })
@@ -496,6 +536,7 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
             // alarm stays as it is rather than re-announcing itself on every scan. A
             // cleared one is the exception, handled below — the value left its limits
             // again, which is a new excursion, not a continuation of the old one.
+            _pending.Remove(definition.Id);
             return false;
         }
 
@@ -504,14 +545,49 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
             return false;
         }
 
+        // The wait (ADR-0025 §2). A condition that stops holding inside the window raises nothing at
+        // all, which is checked above and is the half of this that matters most: what an on-delay
+        // removes is not a journal row but an alarm.
+        var delay = definition.OnDelaySeconds;
+        var waited = delay is { } value && value > TimeSpan.Zero;
+
+        if (waited)
+        {
+            if (!_pending.TryGetValue(definition.Id, out var pending) || pending.Limit != BreachLimit(definition, numeric.Value))
+            {
+                // First scan of this breach, or the value crossed to the OTHER limit. Starting over
+                // is right for both: a High excursion becoming a Low one is a different condition,
+                // not a continuation.
+                _pending[definition.Id] = new PendingBreach(
+                    BreachLimit(definition, numeric.Value),
+                    now,
+                    numeric.Value);
+
+                return false;
+            }
+
+            if (now - pending.SinceUtc < delay!.Value)
+            {
+                // Still waiting. The wait runs on the GATEWAY's clock from when the breach was first
+                // seen (ADR-0025 §5), not from the source timestamp: measuring from the source would
+                // let a device with a lagging clock, or a batch of buffered samples arriving at once,
+                // satisfy the wait instantly.
+                return false;
+            }
+        }
+
+        _pending.Remove(definition.Id);
+        var limit = BreachLimit(definition, numeric.Value);
+        var limitValue = limit == AlarmLimit.High ? definition.HighLimit!.Value : definition.LowLimit!.Value;
+
         var alarm = new Alarm(
             Guid.NewGuid(),
             definition.Id,
             snapshot.TagId,
             siteId,
             catalog.PathOf(snapshot.TagId),
-            breach.Value.Limit,
-            breach.Value.LimitValue,
+            limit,
+            limitValue,
             numeric.Value,
             snapshot.UnitSymbol,
             measuredAt,
@@ -520,6 +596,8 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
             ClearedAtUtc: null)
         {
             DetectedAfterRestart = afterRestart,
+            Deadband = definition.Deadband,
+            OnDelay = waited ? definition.OnDelaySeconds : null,
         };
 
         // The live list first, the journal second: an operator in front of a screen needs
@@ -821,20 +899,60 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
     private static Guid? SiteOf(Guid tagId, TagCatalog catalog) =>
         catalog.FindTag(tagId) is { } tag && catalog.FindDevice(tag.DeviceId) is { } device ? device.SiteId : null;
 
-    private static (AlarmLimit Limit, double LimitValue)? Breach(AlarmDefinition definition, double value)
+    private static bool IsBreaching(AlarmDefinition definition, double value)
     {
+        // The gate, unchanged by ADR-0025 §3: an alarm raises at exactly its limit, with or
+        // without a deadband. What the deadband moves is where it CLEARS, and that is HasCleared
+        // below.
         if (definition.HighLimit is { } high && value >= high)
         {
-            return (AlarmLimit.High, high);
+            return true;
         }
 
-        if (definition.LowLimit is { } low && value <= low)
-        {
-            return (AlarmLimit.Low, low);
-        }
-
-        return null;
+        return definition.LowLimit is { } low && value <= low;
     }
+
+    /// <summary>Which limit <paramref name="value"/> is breaching. Only called when one is.</summary>
+    private static AlarmLimit BreachLimit(AlarmDefinition definition, double value) =>
+        definition.HighLimit is { } high && value >= high ? AlarmLimit.High : AlarmLimit.Low;
+
+    /// <summary>
+    /// A breach that is being watched but has not been raised, because its definition waits
+    /// (ADR-0025 §2).
+    /// </summary>
+    /// <param name="SinceUtc">
+    /// When the engine first saw it, on the Gateway's clock (ADR-0025 §5) — not the sample's source
+    /// time, because an on-delay is a property of the evaluation and a lagging device clock or a
+    /// batch of buffered samples would otherwise satisfy a wait that never happened.
+    /// </param>
+    internal sealed record PendingBreach(AlarmLimit Limit, DateTimeOffset SinceUtc, double Value);
+
+    /// <summary>
+    /// The point the value has to come back past before a standing alarm clears (ADR-0025 §3).
+    /// </summary>
+    /// <remarks>
+    /// With no deadband this is the limit itself, so an alarm clears the moment the value is back
+    /// inside — which is what every alarm did before this ADR and must keep doing.
+    ///
+    /// With one, the clear point is the limit moved <i>away from</i> the alarm: a High alarm clears
+    /// below <c>limit - deadband</c>. The direction is the whole decision. Moving the raise point
+    /// instead would mean the configured limit is a number the alarm does not use.
+    /// </remarks>
+    private static double ClearPointAt(AlarmLimit limit, double limitValue, double? deadband)
+    {
+        if (deadband is not { } band || band <= 0)
+        {
+            return limitValue;
+        }
+
+        return limit == AlarmLimit.High ? limitValue - band : limitValue + band;
+    }
+
+    /// <summary>Whether <paramref name="value"/> has come back far enough for the alarm to clear.</summary>
+    private static bool HasCleared(Alarm standing, double value) =>
+        standing.Limit == AlarmLimit.High
+            ? value < ClearPointAt(standing.Limit, standing.LimitValue, standing.Deadband)
+            : value > ClearPointAt(standing.Limit, standing.LimitValue, standing.Deadband);
 
     /// <summary>Called with the gate held, after every change to the live list.</summary>
     private void PublishSnapshot() =>

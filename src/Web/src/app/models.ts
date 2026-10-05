@@ -133,6 +133,15 @@ export interface AlarmDefinition {
   tagId: string;
   highLimit: number | null;
   lowLimit: number | null;
+  /**
+   * How long the condition must hold before the alarm is raised, or null for none (ADR-0025 §2).
+   *
+   * `null` and `0` are different and the difference is not cosmetic: zero is not a legal delay — the
+   * server refuses it — and an alarm with no delay must not be shown as having one of zero.
+   */
+  onDelaySeconds: number | null;
+  /** How far a value must come back past the limit before clearing, or null for none (ADR-0025 §3). */
+  deadband: number | null;
 }
 
 /**
@@ -422,6 +431,80 @@ export interface LoginResponse {
  * SamplesLost and SourceClockSkew are about a pushing source — an edge (ADR-0017). They name
  * a device and its Site, and no alarm.
  */
+/**
+ * What a reader has narrowed the journal to, before it is sent.
+ *
+ * Every field is optional and an absent one means "no opinion" rather than "none of these", which is
+ * why the empty list is left out of the request entirely: `tag=` with nothing after it would be a
+ * filter matching nothing, and the reader would see an empty journal with no way to tell that from a
+ * quiet night.
+ */
+export interface JournalFilters {
+  readonly tagIds?: readonly string[];
+  readonly types?: readonly string[];
+  readonly from?: string | null;
+  readonly to?: string | null;
+  readonly limit?: number;
+}
+
+/**
+ * The event types a reader may narrow to, in the order they appear in the picker.
+ *
+ * The engine's own three are included on purpose rather than hidden. An operator looking for one
+ * alarm's history is still owed the news that nothing was being watched for part of the window, and
+ * a filter list that omitted them would make that row unreachable — the exact wrong answer ADR-0013
+ * exists to prevent.
+ */
+export const ALARM_EVENT_TYPES = [
+  'Raised',
+  'Acknowledged',
+  'Shelved',
+  'Unshelved',
+  'Cleared',
+  'Retired',
+  'EvaluationStarted',
+  'EvaluationStopped',
+  'JournalGap',
+  'SamplesLost',
+  'SourceClockSkew',
+] as const;
+
+/**
+ * The query string a set of journal filters becomes (Phase 5.5's deferred filtering).
+ *
+ * Pure, and here rather than in `api.ts`, because `api.ts` injects Angular and cannot be loaded by
+ * the Node test runner — and this is the part of a filter worth testing. **Two of its rules are the
+ * difference between a working filter and a silently broken one:**
+ *
+ * - an absent filter is left out entirely rather than sent empty. `tag=` with nothing after it is a
+ *   filter matching nothing, so a reader who had picked no tag would see an empty journal and
+ *   conclude the plant had been quiet.
+ * - a filter with several values is repeated rather than joined, because the server reads it as a
+ *   list and a comma-joined value is one unknown tag id.
+ */
+export function journalQuery(filters: JournalFilters = {}): string {
+  const query = new URLSearchParams();
+  query.set('limit', String(filters.limit ?? 200));
+
+  for (const tagId of filters.tagIds ?? []) {
+    query.append('tag', tagId);
+  }
+
+  for (const type of filters.types ?? []) {
+    query.append('type', type);
+  }
+
+  if (filters.from) {
+    query.set('from', filters.from);
+  }
+
+  if (filters.to) {
+    query.set('to', filters.to);
+  }
+
+  return query.toString();
+}
+
 export interface AlarmEvent {
   type: string;
   recordedAtUtc: string;

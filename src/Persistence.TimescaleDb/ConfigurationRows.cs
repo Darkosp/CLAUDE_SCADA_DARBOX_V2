@@ -139,7 +139,34 @@ internal static class ConfigurationRows
         };
     }
 
-    internal sealed record AlarmDefinitionRow(Guid Id, Guid TagId, double? HighLimit, double? LowLimit)
+    /// <summary>
+    /// Every column <see cref="AlarmDefinitionRow"/> needs, named once.
+    /// </summary>
+    /// <remarks>
+    /// <b>Two queries read this row and they drifted the moment a column was added.</b> Dapper
+    /// materialises by constructor signature, so a SELECT that omits one fails at run time with
+    /// <c>A parameterless default constructor or one matching signature … is required</c> — inside a
+    /// Gateway that then refuses to start, which is how it was found rather than by reading. Naming
+    /// the list here means the next column cannot be added to one query and forgotten in the other.
+    /// </remarks>
+    internal const string AlarmDefinitionColumns =
+        "id, tag_id, high_limit, low_limit, on_delay_seconds, deadband";
+
+    /// <summary>
+    /// One alarm threshold row.
+    /// </summary>
+    /// <param name="OnDelaySeconds">
+    /// Seconds as the column stores them, converted to a <see cref="TimeSpan"/> on the way into the
+    /// domain (ADR-0025 §2). The column is a number because a clock difference is a number; the
+    /// domain type is a duration because that is what it is.
+    /// </param>
+    internal sealed record AlarmDefinitionRow(
+        Guid Id,
+        Guid TagId,
+        double? HighLimit,
+        double? LowLimit,
+        double? OnDelaySeconds,
+        double? Deadband)
     {
         internal AlarmDefinition ToDomain() => new()
         {
@@ -147,6 +174,8 @@ internal static class ConfigurationRows
             TagId = TagId,
             HighLimit = HighLimit,
             LowLimit = LowLimit,
+            OnDelaySeconds = OnDelaySeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
+            Deadband = Deadband,
         };
     }
 

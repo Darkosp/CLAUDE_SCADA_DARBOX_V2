@@ -752,6 +752,257 @@ public class AlarmEngineTests
         TagPath = "Skopje/Pump House/Discharge Pressure",
     };
 
+    // ---- ADR-0025: an alarm waits before it announces itself, and a deadband shifts where it clears.
+
+    [Fact]
+    public async Task A_breach_that_stops_inside_the_delay_raises_nothing_at_all()
+    {
+        // This is the whole point of an on-delay and it is the hardest half to test, because it is a
+        // fact about something NOT happening. The Phase 5.5 walk recorded the shape it removes: one
+        // Site writing three journal rows every ~25 seconds while a value oscillated across a limit.
+        var rig = await Rig.StartedAsync(high: 4.5, onDelay: TimeSpan.FromSeconds(60));
+
+        await rig.FeedAsync(5.0);
+        rig.Advance(TimeSpan.FromSeconds(10));
+        await rig.FeedAsync(4.0);
+
+        // Nothing raised, and -- the half that matters to an operator -- nothing in the journal.
+        Assert.Empty(rig.Engine.GetCurrent());
+        Assert.Equal(0, rig.Raises);
+
+        // And the wait really was running rather than the breach never having been noticed, which is
+        // the control: the same value held past the delay does raise (the test below), so a zero here
+        // is the delay working and not the engine being blind.
+        Assert.Empty(rig.Journal.OccurrenceEvents());
+    }
+
+    [Fact]
+    public async Task A_breach_held_past_the_delay_raises_once_the_delay_is_over()
+    {
+        // The control for the test above. Without it, "raises nothing" would pass just as well on an
+        // engine that never raised anything.
+        var rig = await Rig.StartedAsync(high: 4.5, onDelay: TimeSpan.FromSeconds(60));
+
+        await rig.FeedAsync(5.0);
+
+        // Not yet: this is the delay doing its work.
+        rig.Advance(TimeSpan.FromSeconds(59));
+        await rig.FeedAsync(5.1);
+        Assert.Empty(rig.Engine.GetCurrent());
+
+        // And now it is.
+        rig.Advance(TimeSpan.FromSeconds(2));
+        await rig.FeedAsync(5.2);
+
+        var alarm = Assert.Single(rig.Engine.GetCurrent());
+        Assert.Equal(AlarmState.Active, alarm.State);
+        Assert.Equal(1, rig.Raises);
+    }
+
+    [Fact]
+    public async Task The_raise_carries_the_reading_that_confirmed_the_breach_and_the_wait_it_waited()
+    {
+        // ADR-0025 §2: SourceTimeUtc is the sample that CONFIRMED the breach, not the one that began
+        // it and not the moment the wait ended -- a reader comparing the alarm against the historian
+        // has to find the reading that caused it. And the alarm says how long it waited, because a
+        // raise with no note of a wait looks exactly like an instant one.
+        var rig = await Rig.StartedAsync(high: 4.5, onDelay: TimeSpan.FromSeconds(60));
+
+        var began = rig.Clock.Now;
+        await rig.FeedAsync(5.0, sourceTime: began);
+
+        var confirming = began.AddSeconds(65);
+        rig.Advance(TimeSpan.FromSeconds(65));
+        await rig.FeedAsync(5.2, sourceTime: confirming);
+
+        var alarm = Assert.Single(rig.Engine.GetCurrent());
+        Assert.Equal(confirming, alarm.RaisedAtUtc);
+        Assert.Equal(TimeSpan.FromSeconds(60), alarm.OnDelay);
+
+        var raised = Assert.Single(rig.Journal.Events, e => e.Type == AlarmEventType.Raised);
+        Assert.Equal(confirming, raised.SourceTimeUtc);
+        Assert.Equal(5.2, raised.Value);
+    }
+
+    [Fact]
+    public async Task A_value_that_crosses_to_the_other_limit_starts_its_wait_again()
+    {
+        // A High excursion becoming a Low one is a different condition, not a continuation of the
+        // first, so the wait does not carry over. Carrying it over would let a value that spent 59
+        // seconds high and one second low raise a Low alarm it never earned.
+        var rig = await Rig.StartedAsync(high: 4.5, low: 2.0, onDelay: TimeSpan.FromSeconds(60));
+
+        await rig.FeedAsync(5.0);
+        rig.Advance(TimeSpan.FromSeconds(59));
+        await rig.FeedAsync(1.0);
+
+        rig.Advance(TimeSpan.FromSeconds(2));
+        await rig.FeedAsync(1.0);
+
+        // Past the delay by now, but only from the switch: nothing has raised.
+        Assert.Empty(rig.Engine.GetCurrent());
+
+        rig.Advance(TimeSpan.FromSeconds(60));
+        await rig.FeedAsync(1.0);
+
+        var alarm = Assert.Single(rig.Engine.GetCurrent());
+        Assert.Equal(AlarmLimit.Low, alarm.Limit);
+    }
+
+    [Fact]
+    public async Task A_reading_that_is_not_Good_abandons_the_wait_rather_than_pausing_it()
+    {
+        // ADR-0025 §6. A standing alarm is unaffected by an outage -- a device going offline must not
+        // look like the value returning to normal, which is the rule the engine already follows. But a
+        // WAIT is not a standing alarm, and "paused" is the answer that looks right and is not:
+        // pausing would have the Gateway counting ten minutes in which it was not watching, and the
+        // alarm would raise on the strength of an outage.
+        var rig = await Rig.StartedAsync(high: 4.5, onDelay: TimeSpan.FromSeconds(60));
+
+        await rig.FeedAsync(5.0);
+
+        var began = rig.Clock.Now;
+
+        // A ten-minute outage. Bad readings carry no value to compare, so they are not evaluations.
+        rig.Advance(TimeSpan.FromMinutes(10));
+        await rig.FeedAsync(null, quality: Quality.Bad);
+
+        Assert.Empty(rig.Engine.GetCurrent());
+
+        // Readings resume and the wait starts again from here, so a moment later is still too soon --
+        // which is the assertion that fails if the outage was counted.
+        await rig.FeedAsync(5.0);
+        rig.Advance(TimeSpan.FromSeconds(30));
+        await rig.FeedAsync(5.0);
+        Assert.Empty(rig.Engine.GetCurrent());
+
+        // And a full delay after the outage, measured from when readings resumed, it raises.
+        rig.Advance(TimeSpan.FromSeconds(31));
+        await rig.FeedAsync(5.0);
+
+        var alarm = Assert.Single(rig.Engine.GetCurrent());
+        Assert.Equal(1, rig.Raises);
+        Assert.True(alarm.RaisedAtUtc > began.AddMinutes(10));
+    }
+
+    [Fact]
+    public async Task Without_a_delay_a_breach_raises_immediately_and_that_is_the_control()
+    {
+        // Every alarm configured before ADR-0025 behaves this way, and it has to keep behaving this
+        // way: the migration is nullable precisely so that an upgrade cannot change what an existing
+        // alarm means.
+        var rig = await Rig.StartedAsync(high: 4.5);
+
+        await rig.FeedAsync(5.0);
+
+        var alarm = Assert.Single(rig.Engine.GetCurrent());
+        Assert.Equal(AlarmState.Active, alarm.State);
+        Assert.Null(alarm.OnDelay);
+    }
+
+    [Fact]
+    public async Task A_deadband_does_not_delay_the_raise_it_only_moves_the_clear()
+    {
+        // ADR-0025 §3, and the reason the two settings are separate. An operator reading "High limit
+        // 4.50 bar" is reading the truth about when the alarm goes off; what the deadband changes is
+        // where it comes back.
+        var rig = await Rig.StartedAsync(high: 4.5, deadband: 0.2);
+
+        await rig.FeedAsync(4.6);
+
+        var alarm = Assert.Single(rig.Engine.GetCurrent());
+        Assert.Equal(AlarmState.Active, alarm.State);
+        Assert.Equal(0.2, alarm.Deadband);
+    }
+
+    [Fact]
+    public async Task A_deadband_holds_the_alarm_until_the_value_is_back_past_the_limit()
+    {
+        // The chatter this removes: a value hovering just under the limit used to clear on the first
+        // reading back inside and raise again on the next one, once a scan.
+        var rig = await Rig.StartedAsync(high: 4.5, deadband: 0.2);
+
+        await rig.FeedAsync(4.6);
+        Assert.Single(rig.Engine.GetCurrent());
+
+        // Back across the limit, not yet far enough to clear.
+        await rig.FeedAsync(4.35);
+        var held = Assert.Single(rig.Engine.GetCurrent());
+        Assert.Equal(AlarmState.Active, held.State);
+
+        // And now past it by the band.
+        await rig.FeedAsync(4.25);
+        var cleared = Assert.Single(rig.Engine.GetCurrent());
+        Assert.Equal(AlarmState.Cleared, cleared.State);
+    }
+
+    [Fact]
+    public async Task The_exact_clear_point_is_not_yet_clear()
+    {
+        // "Past the limit by the deadband" is strict, and this pins it: at exactly limit - band the
+        // alarm still stands. The alternative -- clearing at the boundary -- makes a value sitting
+        // precisely on the clear point flicker, which is the thing the band exists to stop.
+        var rig = await Rig.StartedAsync(high: 4.5, deadband: 0.2);
+
+        await rig.FeedAsync(4.6);
+
+        await rig.FeedAsync(4.3);
+        var held = Assert.Single(rig.Engine.GetCurrent());
+        Assert.Equal(AlarmState.Active, held.State);
+
+        await rig.FeedAsync(4.29);
+        Assert.Equal(AlarmState.Cleared, Assert.Single(rig.Engine.GetCurrent()).State);
+    }
+
+    [Fact]
+    public async Task A_deadband_on_a_low_alarm_clears_upwards_which_is_the_mirror()
+    {
+        // The direction is the whole decision (ADR-0025 §3), and it is easy to get right for High and
+        // wrong for Low. A Low alarm clears when the value has come back UP past limit + deadband.
+        var rig = await Rig.StartedAsync(low: 2.0, deadband: 0.2);
+
+        await rig.FeedAsync(1.9);
+        Assert.Equal(AlarmState.Active, Assert.Single(rig.Engine.GetCurrent()).State);
+
+        // Back above the limit, not yet far enough.
+        await rig.FeedAsync(2.1);
+        Assert.Equal(AlarmState.Active, Assert.Single(rig.Engine.GetCurrent()).State);
+
+        await rig.FeedAsync(2.25);
+        Assert.Equal(AlarmState.Cleared, Assert.Single(rig.Engine.GetCurrent()).State);
+    }
+
+    [Fact]
+    public async Task A_restart_resets_a_wait_in_progress_because_a_wait_is_not_journalled()
+    {
+        // ADR-0025 §4, and the cost is stated there rather than hidden. The wait is state the engine
+        // holds, not something that happened at the plant: the journal records the second. So a
+        // breach 40 seconds into a 60-second wait needs another 60 afterwards -- and, the half worth
+        // pinning, the abandoned wait left nothing behind.
+        var journal = new RecordingAlarmJournal();
+
+        var first = await Rig.StartedAsync(high: 4.5, onDelay: TimeSpan.FromSeconds(60), journal: journal);
+        await first.FeedAsync(5.0);
+        first.Advance(TimeSpan.FromSeconds(40));
+        await first.FeedAsync(5.0);
+
+        // The abandoned wait is invisible: no raise, and nothing else about it either.
+        Assert.Empty(first.Engine.GetCurrent());
+        Assert.Empty(journal.OccurrenceEvents());
+
+        // A restart. The same breach, and the wait starts again from nothing.
+        var second = await Rig.StartedAsync(high: 4.5, onDelay: TimeSpan.FromSeconds(60), journal: journal);
+
+        await second.FeedAsync(5.0);
+        second.Advance(TimeSpan.FromSeconds(30));
+        await second.FeedAsync(5.0);
+        Assert.Empty(second.Engine.GetCurrent());
+
+        second.Advance(TimeSpan.FromSeconds(31));
+        await second.FeedAsync(5.0);
+        Assert.Equal(1, second.Raises);
+    }
+
     private sealed class Rig
     {
         private Rig(TagCatalogSource catalogSource, RecordingAlarmJournal journal, TimeSpan? maxShelve)
@@ -781,8 +1032,13 @@ public class AlarmEngineTests
             double? low = null,
             bool configured = true,
             RecordingAlarmJournal? journal = null,
-            TimeSpan? maxShelve = null) =>
-            new(new TagCatalogSource(Catalog(high, low, configured)), journal ?? new RecordingAlarmJournal(), maxShelve);
+            TimeSpan? maxShelve = null,
+            TimeSpan? onDelay = null,
+            double? deadband = null) =>
+            new(
+                new TagCatalogSource(Catalog(high, low, configured, onDelay, deadband)),
+                journal ?? new RecordingAlarmJournal(),
+                maxShelve);
 
         public static async Task<Rig> StartedAsync(
             double? high = null,
@@ -790,15 +1046,23 @@ public class AlarmEngineTests
             bool configured = true,
             RecordingAlarmJournal? journal = null,
             TimeSpan? maxShelve = null,
-            DateTimeOffset? lastAlive = null)
+            DateTimeOffset? lastAlive = null,
+            TimeSpan? onDelay = null,
+            double? deadband = null)
         {
-            var rig = Unstarted(high, low, configured, journal, maxShelve);
+            var rig = Unstarted(high, low, configured, journal, maxShelve, onDelay, deadband);
             var before = rig.Journal.Count;
             await rig.Engine.StartAsync(lastAlive, CancellationToken.None);
             rig.Journal.StartedAt(before);
             rig.Subscriber.Publications.Clear();
             return rig;
         }
+
+        /// <summary>Moves the Gateway's clock, which is what an on-delay is measured against.</summary>
+        public void Advance(TimeSpan by) => Clock.Now = Clock.Now + by;
+
+        /// <summary>How many Raise events are in the journal. The count, not "did one happen".</summary>
+        public int Raises => Journal.Events.Count(e => e.Type == AlarmEventType.Raised);
 
         public Task FeedAsync(
             double? value,
@@ -816,7 +1080,12 @@ public class AlarmEngineTests
                 ],
                 CancellationToken.None).AsTask();
 
-        public static TagCatalog Catalog(double? high = null, double? low = null, bool configured = true)
+        public static TagCatalog Catalog(
+            double? high = null,
+            double? low = null,
+            bool configured = true,
+            TimeSpan? onDelay = null,
+            double? deadband = null)
         {
             var tenant = new Tenant { Id = new Guid("55555555-2222-4555-8555-555555555555"), Name = "Darbo" };
             var site = new Site { Id = SiteId, TenantId = tenant.Id, Name = "Skopje" };
@@ -838,7 +1107,17 @@ public class AlarmEngineTests
             };
 
             AlarmDefinition[] alarms = configured
-                ? [new AlarmDefinition { Id = DefinitionId, TagId = TagId, HighLimit = high, LowLimit = low }]
+                ? [
+                    new AlarmDefinition
+                    {
+                        Id = DefinitionId,
+                        TagId = TagId,
+                        HighLimit = high,
+                        LowLimit = low,
+                        OnDelaySeconds = onDelay,
+                        Deadband = deadband,
+                    },
+                ]
                 : [];
 
             return new TagCatalog(tenant, [site], [], [device], [tag], alarms);

@@ -115,7 +115,7 @@ public sealed class PostgresConfigurationStore : IConfigurationStore
 
         var rows = await connection.QueryAsync<AlarmDefinitionRow>(
             new CommandDefinition(
-                "SELECT id, tag_id, high_limit, low_limit FROM alarm_definition_active",
+                $"SELECT {AlarmDefinitionColumns} FROM alarm_definition_active",
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
 

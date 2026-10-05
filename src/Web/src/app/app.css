@@ -273,6 +273,26 @@ button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
    21:59:12" — the count and the window meeting as one word. */
 .tag { margin-right: 0.4rem; }
 
+/* The journal's filters. Laid out on one line with the Clear button beside them, because a filter
+   the reader has forgotten about is how an empty journal gets misread as a quiet night. */
+.journal-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.journal-filters label { display: block; }
+
+.journal-filters span {
+  display: block;
+  font-size: 0.78rem;
+  color: #5b6672;
+}
+
+.journal-filters select { min-width: 12rem; }
+
 /* --- templates ---------------------------------------------------------- */
 
 .views {

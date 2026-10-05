@@ -102,6 +102,113 @@ public sealed class AlarmJournalTests : IClassFixture<TestDatabase>
         Assert.Equal(recent, await historian.LastIngestedAtAsync(CancellationToken.None));
     }
 
+    /// <summary>
+    /// Filtering the journal by tag and by event type (Phase 5.5's deferred work, done 2026-10-05).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Sent to the server rather than applied to what arrived, and this is why that matters:</b>
+    /// the query carries a row limit, so filtering in the browser would answer "which of the newest
+    /// two hundred rows are about this tag" rather than "this tag's history".
+    /// </para>
+    /// <para>
+    /// <b>The two filters are ANDed, including for the engine's own rows, and that is a deliberate
+    /// choice between two defensible ones.</b> A Site filter is never a choice — it is enforcement, and
+    /// an engine row reaching every reader regardless of it is ADR-0013's rule that a Viewer on one
+    /// Site still has to know the system was not watching. A tag filter IS a choice: the reader typed
+    /// or picked it, so it means "these rows only" and the engine rows are not those rows. The first
+    /// version of this test asserted the opposite, and the argument that changed it is that a filter
+    /// which quietly returns rows failing one of its two conditions is a filter a reader cannot
+    /// reason about.
+    /// </para>
+    /// </remarks>
+    [RequiresDatabaseFact]
+    public async Task Filtering_by_tag_narrows_to_that_tags_rows()
+    {
+        var mine = await SeedAsync();
+        var other = await SeedAsync();
+        var journal = new AlarmJournal(_database.ApplicationDataSource);
+
+        await journal.AppendAsync(Event(mine, AlarmEventType.Raised), CancellationToken.None);
+        await journal.AppendAsync(Event(mine, AlarmEventType.Cleared), CancellationToken.None);
+        await journal.AppendAsync(Event(other, AlarmEventType.Raised), CancellationToken.None);
+        await journal.AppendAsync(EngineEvent(AlarmEventType.EvaluationStarted), CancellationToken.None);
+
+        var read = await journal.ReadHistoryAsync(
+            new AlarmJournalQuery(SiteIds: null, TagIds: [mine.TagId]),
+            CancellationToken.None);
+
+        // This tag's two rows, and nothing else: not the other tag's, and not the engine's -- which
+        // belongs to no tag and is therefore not what "this tag only" means.
+        Assert.Equal(2, read.Count(e => e.TagId == mine.TagId));
+        Assert.DoesNotContain(read, e => e.TagId == other.TagId);
+        Assert.DoesNotContain(read, e => e.Type == AlarmEventType.EvaluationStarted);
+
+        // The control, and it is the half that keeps ADR-0013's rule: with no tag filter the engine's
+        // row is there, and the other Site's reader sees it too. Without this the assertion above
+        // would pass just as well on a journal that had lost the row entirely.
+        var all = await journal.ReadHistoryAsync(new AlarmJournalQuery(SiteIds: null), CancellationToken.None);
+        Assert.Contains(all, e => e.TagId == other.TagId);
+        Assert.Contains(all, e => e.Type == AlarmEventType.EvaluationStarted);
+
+        var otherSite = await journal.ReadHistoryAsync(
+            new AlarmJournalQuery(SiteIds: [Guid.NewGuid()]),
+            CancellationToken.None);
+        Assert.Contains(otherSite, e => e.Type == AlarmEventType.EvaluationStarted);
+        Assert.DoesNotContain(otherSite, e => e.TagId == mine.TagId);
+    }
+
+    [RequiresDatabaseFact]
+    public async Task Filtering_by_type_narrows_to_those_types_and_leaves_the_rest_alone()
+    {
+        var seeded = await SeedAsync();
+        var journal = new AlarmJournal(_database.ApplicationDataSource);
+
+        await journal.AppendAsync(Event(seeded, AlarmEventType.Raised), CancellationToken.None);
+        await journal.AppendAsync(Event(seeded, AlarmEventType.Acknowledged), CancellationToken.None);
+        await journal.AppendAsync(Event(seeded, AlarmEventType.Cleared), CancellationToken.None);
+
+        var read = await journal.ReadHistoryAsync(
+            new AlarmJournalQuery(SiteIds: null, Types: [AlarmEventType.Raised, AlarmEventType.Cleared]),
+            CancellationToken.None);
+
+        var types = read.Where(e => e.TagId == seeded.TagId).Select(e => e.Type).ToList();
+        Assert.Contains(AlarmEventType.Raised, types);
+        Assert.Contains(AlarmEventType.Cleared, types);
+        Assert.DoesNotContain(AlarmEventType.Acknowledged, types);
+    }
+
+    [RequiresDatabaseFact]
+    public async Task The_two_filters_are_intersected_rather_than_alternatives()
+    {
+        // "This tag AND these types", not "this tag OR these types". Getting it wrong would show a
+        // reader a row that fails one of the two things they asked for, and they would have no way to
+        // tell -- the row looks like a legitimate answer.
+        var mine = await SeedAsync();
+        var other = await SeedAsync();
+        var journal = new AlarmJournal(_database.ApplicationDataSource);
+
+        await journal.AppendAsync(Event(mine, AlarmEventType.Raised), CancellationToken.None);
+        await journal.AppendAsync(Event(mine, AlarmEventType.Acknowledged), CancellationToken.None);
+        await journal.AppendAsync(Event(other, AlarmEventType.Raised), CancellationToken.None);
+
+        var read = await journal.ReadHistoryAsync(
+            new AlarmJournalQuery(SiteIds: null, TagIds: [mine.TagId], Types: [AlarmEventType.Raised]),
+            CancellationToken.None);
+
+        // One row: the other tag's raise fails the tag, and this tag's acknowledgement fails the type.
+        var row = Assert.Single(read.Where(e => e.TagId is not null));
+        Assert.Equal(mine.TagId, row.TagId);
+        Assert.Equal(AlarmEventType.Raised, row.Type);
+    }
+
+    /// <summary>An event the engine wrote about itself: no Site and no occurrence (ADR-0013).</summary>
+    private static AlarmEvent EngineEvent(AlarmEventType type) => new()
+    {
+        Type = type,
+        RecordedAtUtc = At,
+    };
+
     private static AlarmEvent Event(Seeded seeded, AlarmEventType type) => new()
     {
         Type = type,

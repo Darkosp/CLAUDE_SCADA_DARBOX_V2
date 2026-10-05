@@ -140,6 +140,12 @@ public sealed class AlarmJournal : IAlarmJournal
         // never equals anything, and an evaluation outage would read as a quiet period.
         // Both halves are required: an alarm event has a Site by CHECK, so "no Site and no
         // occurrence" cannot match anything but an engine event even if that ever changes.
+        //
+        // The tag and type filters are ADDITIONAL conditions rather than alternatives to the Site
+        // one, and they do narrow the engine's own rows away -- which is the difference between
+        // enforcement and a choice. The Site filter is enforcement: a reader does not pick it and
+        // cannot see past it, so an engine row surviving it is ADR-0013's rule rather than a
+        // surprise. A tag filter is something the reader picked, so it means "these rows only".
         await using var command = _dataSource.CreateCommand(
             $"""
             SELECT {Columns}
@@ -149,6 +155,8 @@ public sealed class AlarmJournal : IAlarmJournal
                    OR (e.site_id IS NULL AND e.occurrence_id IS NULL))
               AND (@from IS NULL OR e.recorded_at >= @from)
               AND (@to IS NULL OR e.recorded_at < @to)
+              AND (@tags IS NULL OR e.tag_id = ANY(@tags))
+              AND (@types IS NULL OR e.event_type = ANY(@types))
             ORDER BY e.recorded_at DESC, e.id DESC
             LIMIT @limit
             """);
@@ -156,6 +164,12 @@ public sealed class AlarmJournal : IAlarmJournal
         Add(command.Parameters, "sites", NpgsqlDbType.Array | NpgsqlDbType.Uuid, query.SiteIds?.ToArray());
         Add(command.Parameters, "from", NpgsqlDbType.TimestampTz, query.FromUtc);
         Add(command.Parameters, "to", NpgsqlDbType.TimestampTz, query.ToUtc);
+        Add(command.Parameters, "tags", NpgsqlDbType.Array | NpgsqlDbType.Uuid, query.TagIds?.ToArray());
+        Add(
+            command.Parameters,
+            "types",
+            NpgsqlDbType.Array | NpgsqlDbType.Text,
+            query.Types?.Select(type => type.ToString()).ToArray());
         command.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, query.Limit);
 
         var events = new List<AlarmEvent>();

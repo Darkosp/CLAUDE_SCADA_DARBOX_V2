@@ -177,10 +177,48 @@
       <button type="button" class="ghost" (click)="showJournal()" [disabled]="journalLoading()">Refresh</button>
     </div>
 
+    <!--
+      The filters Phase 5.5's walk asked for: by tag, by event type. Sent to the server rather than
+      applied to what arrived, because the Gateway returns the newest two hundred rows and filtering
+      those answers a different question from the one a reader is asking.
+    -->
+    <div class="journal-filters">
+      <label>
+        <span>Tag</span>
+        <select [value]="journalTagIds()[0] ?? ''"
+                (change)="filterJournalByTag($any($event.target).value)">
+          <option value="">Any tag</option>
+          @for (tag of allTags(); track tag.tagId) {
+            <option [value]="tag.tagId">{{ tag.path }}</option>
+          }
+        </select>
+      </label>
+
+      <label>
+        <span>Event</span>
+        <select [value]="journalTypes()[0] ?? ''"
+                (change)="filterJournalByTypes($any($event.target).value === '' ? [] : [$any($event.target).value])">
+          <option value="">Any event</option>
+          @for (type of journalEventTypes; track type) {
+            <option [value]="type">{{ type }}</option>
+          }
+        </select>
+      </label>
+
+      @if (journalFiltered()) {
+        <button type="button" class="ghost" (click)="clearJournalFilters()">Clear filters</button>
+      }
+    </div>
+
     @if (journalLoading()) {
       <p class="muted">Reading…</p>
     } @else if (journalEvents().length === 0) {
-      <p class="muted">Nothing recorded yet.</p>
+      <!-- Filtered and unfiltered are different sentences: "nothing happened" and "nothing matched"
+           are not the same news, and a reader who cannot tell them apart will conclude the plant was
+           quiet when they have simply filtered everything out. -->
+      <p class="muted">
+        {{ journalFiltered() ? 'Nothing matches these filters. The plant may still have been busy.' : 'Nothing recorded yet.' }}
+      </p>
     } @else {
       <table class="journal-rows">
         <thead>
@@ -794,6 +832,18 @@
               <label>Low limit (blank for none)
                 <input name="low" type="number" step="any" [(ngModel)]="draft.low" />
               </label>
+              <!-- ADR-0025. Both blank for none, and neither takes zero: zero is not a legal delay
+                   and not a legal band, so the server refuses it and the box says "none" by being
+                   empty rather than by holding a value that would mean two things. -->
+              <label>Wait before raising, seconds (blank for none)
+                <input name="onDelay" type="number" step="any" min="1" max="3600"
+                       [(ngModel)]="draft.onDelay" />
+              </label>
+              <label>Deadband before clearing (blank for none)
+                <input name="deadband" type="number" step="any" min="0"
+                       [(ngModel)]="draft.deadband" />
+              </label>
+
               <div class="actions">
                 <button type="submit">Save</button>
                 <button type="button" class="ghost" (click)="alarmDraft.set(null)">Cancel</button>
@@ -804,6 +854,8 @@
               @if (definition.highLimit !== null) { High ≥ {{ definition.highLimit }} }
               @if (definition.highLimit !== null && definition.lowLimit !== null) { · }
               @if (definition.lowLimit !== null) { Low ≤ {{ definition.lowLimit }} }
+              @if (definition.onDelaySeconds !== null) { · waits {{ definition.onDelaySeconds }} s }
+              @if (definition.deadband !== null) { · clears {{ definition.deadband }} past the limit }
             </p>
           } @else {
             <p class="muted">No threshold configured.</p>

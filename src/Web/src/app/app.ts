@@ -47,6 +47,7 @@ import {
   NameField,
   SingleFlight,
   mapToSettings,
+  ALARM_EVENT_TYPES,
   nameConflictMessage,
   parseNumberField,
   pathWithinSite,
@@ -251,6 +252,26 @@ export class App implements OnInit {
 
   protected readonly journalLoading = signal(false);
 
+  /**
+   * What the reader has narrowed the journal to (Phase 5.5's deferred filtering).
+   *
+   * Held here and sent to the server rather than applied to the rows that arrived. **That is the
+   * whole point**: the Gateway returns the newest two hundred, so filtering in the browser would
+   * answer "which of the last two hundred rows are about this tag" — which is not the question
+   * anyone is asking when they go looking for one alarm's history.
+   */
+  protected readonly journalTagIds = signal<readonly string[]>([]);
+
+  protected readonly journalTypes = signal<readonly string[]>([]);
+
+  /** Every event type, for the picker. The engine's own are included — see ALARM_EVENT_TYPES. */
+  protected readonly journalEventTypes = ALARM_EVENT_TYPES;
+
+  /** Whether anything is narrowing the journal, so the screen can offer a way back. */
+  protected readonly journalFiltered = computed(
+    () => this.journalTagIds().length > 0 || this.journalTypes().length > 0,
+  );
+
   /** The user's role on the Site being browsed, for the header. */
   protected readonly roleHere = computed(() => {
     const access = this.auth.access();
@@ -274,7 +295,7 @@ export class App implements OnInit {
   protected readonly propagationNote = signal<string | null>(null);
 
   protected readonly tagAlarm = signal<AlarmDefinition | null>(null);
-  protected readonly alarmDraft = signal<{ high: NumberField; low: NumberField } | null>(null);
+  protected readonly alarmDraft = signal<{ high: NumberField; low: NumberField; onDelay: NumberField; deadband: NumberField } | null>(null);
 
   protected readonly writeDraft = signal('');
   protected readonly writeNote = signal<string | null>(null);
@@ -801,6 +822,10 @@ export class App implements OnInit {
     this.alarmDraft.set({
       high: existing?.highLimit?.toString() ?? '',
       low: existing?.lowLimit?.toString() ?? '',
+      // ADR-0025's two settings. Blank rather than zero when unset, because they mean different
+      // things and the server refuses zero for both.
+      onDelay: existing?.onDelaySeconds?.toString() ?? '',
+      deadband: existing?.deadband?.toString() ?? '',
     });
   }
 
@@ -816,9 +841,19 @@ export class App implements OnInit {
     // zero is a perfectly ordinary threshold, so the two must not collapse together.
     const high = parseNumberField(draft.high);
     const low = parseNumberField(draft.low);
+    const onDelay = parseNumberField(draft.onDelay);
+    const deadband = parseNumberField(draft.deadband);
 
     if (!high.ok || !low.ok) {
       this.error.set('A limit must be a number, or blank for no limit on that side.');
+      return;
+    }
+
+    // The delay and the band are the same kind of field and get the same treatment: blank means
+    // "none", and something unreadable is a refusal rather than a silent "none" — which is the
+    // defect the Phase 5.5 walk found behind the very first one it hit.
+    if (!onDelay.ok || !deadband.ok) {
+      this.error.set('The delay and the deadband must be numbers, or blank for neither.');
       return;
     }
 
@@ -826,6 +861,8 @@ export class App implements OnInit {
       await this.api.saveAlarm(tag.id, this.tagAlarm()?.id ?? null, {
         highLimit: high.value,
         lowLimit: low.value,
+        onDelaySeconds: onDelay.value,
+        deadband: deadband.value,
       });
 
       this.alarmDraft.set(null);
@@ -1402,12 +1439,36 @@ export class App implements OnInit {
     this.journalLoading.set(true);
 
     try {
-      this.journalEvents.set(await this.api.journal());
+      this.journalEvents.set(
+        await this.api.journal({
+          tagIds: this.journalTagIds(),
+          types: this.journalTypes(),
+        }),
+      );
     } catch (error) {
       this.report(error);
     } finally {
       this.journalLoading.set(false);
     }
+  }
+
+  /** Narrows the journal to one tag, or widens it back when given nothing. */
+  protected filterJournalByTag(tagId: string): void {
+    this.journalTagIds.set(tagId === '' ? [] : [tagId]);
+    void this.showJournal();
+  }
+
+  /** Narrows the journal to the chosen event types. */
+  protected filterJournalByTypes(types: readonly string[]): void {
+    this.journalTypes.set(types);
+    void this.showJournal();
+  }
+
+  /** Clears every filter, which is what the reader wants after a search that found nothing. */
+  protected clearJournalFilters(): void {
+    this.journalTagIds.set([]);
+    this.journalTypes.set([]);
+    void this.showJournal();
   }
 
   /**

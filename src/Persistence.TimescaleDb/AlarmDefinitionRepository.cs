@@ -27,7 +27,7 @@ public sealed class AlarmDefinitionRepository : IAlarmDefinitionRepository
 
         var rows = await connection.QueryAsync<AlarmDefinitionRow>(
             new CommandDefinition(
-                "SELECT id, tag_id, high_limit, low_limit FROM alarm_definition_active WHERE tag_id = @tagId",
+                $"SELECT {AlarmDefinitionColumns} FROM alarm_definition_active WHERE tag_id = @tagId",
                 new { tagId },
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
@@ -41,10 +41,10 @@ public sealed class AlarmDefinitionRepository : IAlarmDefinitionRepository
 
         await connection.ExecuteAsync(new CommandDefinition(
             """
-            INSERT INTO alarm_definition (id, tag_id, high_limit, low_limit)
-            VALUES (@Id, @TagId, @HighLimit, @LowLimit)
+            INSERT INTO alarm_definition (id, tag_id, high_limit, low_limit, on_delay_seconds, deadband)
+            VALUES (@Id, @TagId, @HighLimit, @LowLimit, @OnDelaySeconds, @Deadband)
             """,
-            definition,
+            Parameters(definition),
             cancellationToken: cancellationToken))
             .ConfigureAwait(false);
     }
@@ -58,10 +58,13 @@ public sealed class AlarmDefinitionRepository : IAlarmDefinitionRepository
         var updated = await connection.ExecuteAsync(new CommandDefinition(
             """
             UPDATE alarm_definition
-            SET high_limit = @HighLimit, low_limit = @LowLimit
+            SET high_limit = @HighLimit,
+                low_limit = @LowLimit,
+                on_delay_seconds = @OnDelaySeconds,
+                deadband = @Deadband
             WHERE id = @Id AND deleted_at IS NULL
             """,
-            definition,
+            Parameters(definition),
             cancellationToken: cancellationToken))
             .ConfigureAwait(false);
 
@@ -86,4 +89,23 @@ public sealed class AlarmDefinitionRepository : IAlarmDefinitionRepository
             throw new ConfigurationConflictException($"Alarm definition {definitionId} no longer exists.");
         }
     }
+
+    /// <summary>
+    /// A definition as the columns hold it.
+    /// </summary>
+    /// <remarks>
+    /// The conversion from <see cref="TimeSpan"/> to seconds lives here rather than in the domain,
+    /// for the reason ADR-0008 gives: the domain has no business knowing what a column looks like.
+    /// <c>null</c> survives as <c>null</c> in both directions, which is the property that matters —
+    /// an alarm with no on-delay must not acquire one of zero.
+    /// </remarks>
+    private static object Parameters(AlarmDefinition definition) => new
+    {
+        definition.Id,
+        definition.TagId,
+        definition.HighLimit,
+        definition.LowLimit,
+        OnDelaySeconds = definition.OnDelaySeconds?.TotalSeconds,
+        definition.Deadband,
+    };
 }

@@ -8,6 +8,8 @@ import {
   DeviceTemplate,
   DriverShape,
   Edge,
+  JournalFilters,
+  journalQuery,
   LoginResponse,
   Site,
   SiteRole,
@@ -128,10 +130,22 @@ export class Api {
     return this.get<AlarmDefinition[]>(`/api/tags/${tagId}/alarms`);
   }
 
+  /**
+   * Saves a threshold.
+   *
+   * `onDelaySeconds` and `deadband` travel with it (ADR-0025) and are `null` rather than `0` when
+   * unset, because the two are different: zero is not a legal delay — the server refuses it — and an
+   * alarm with no delay must not acquire one of zero, which would be a value the client invented.
+   */
   saveAlarm(
     tagId: string,
     definitionId: string | null,
-    body: { highLimit: number | null; lowLimit: number | null },
+    body: {
+      highLimit: number | null;
+      lowLimit: number | null;
+      onDelaySeconds: number | null;
+      deadband: number | null;
+    },
   ): Promise<unknown> {
     return definitionId === null
       ? this.send('POST', `/api/tags/${tagId}/alarms`, body)
@@ -189,9 +203,19 @@ export class Api {
 
   // ---- alarms (Operator) --------------------------------------------------
 
-  /** The journal, newest first. The Gateway filters it to the caller's Sites (ADR-0011). */
-  journal(limit = 200): Promise<AlarmEvent[]> {
-    return this.get<AlarmEvent[]>(`/api/alarms/journal?limit=${limit}`);
+  /**
+   * The journal, newest first. The Gateway filters it to the caller's Sites (ADR-0011).
+   *
+   * `tagIds` and `types` are sent to the server rather than applied here, and that is the whole
+   * point: filtering in the browser would filter the page that arrived, so a reader looking for one
+   * alarm's history would see only whichever of its rows happened to fall inside the newest two
+   * hundred. Empty lists are left out, so the request says exactly what it means.
+   */
+  journal(filters: JournalFilters = {}): Promise<AlarmEvent[]> {
+    // The query string itself is built by `models.ts`'s `journalQuery`, which is pure and therefore
+    // testable without a browser — and the two rules it holds (leave an absent filter out, repeat a
+    // filter with several values) are the ones that would fail silently here.
+    return this.get<AlarmEvent[]>(`/api/alarms/journal?${journalQuery(filters)}`);
   }
 
   alarms(): Promise<Alarm[]> {
