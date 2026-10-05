@@ -1,6 +1,8 @@
 import { Component, computed, input, linkedSignal, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Alarm, HistorySample } from './models';
 import { TagSnapshot } from './tag';
+import { ScreenView } from './screen-view';
 import {
   addComponent,
   changeComponent,
@@ -42,7 +44,7 @@ const WIDEST = 12;
  */
 @Component({
   selector: 'app-screen-editor',
-  imports: [FormsModule],
+  imports: [FormsModule, ScreenView],
   template: `
     <div class="editor">
       @if (problem(); as message) {
@@ -133,6 +135,31 @@ const WIDEST = 12;
         <p class="problem">{{ errors() }}</p>
       }
 
+      <!--
+        What the operator will see, drawn by the operator's own component.
+
+        This is the same app-screen the read view uses, given the draft instead of the saved screen,
+        so there is no second renderer to drift: whatever is wrong here is wrong there, and a fix to
+        one is a fix to both. The draft's components carry readable: true while an author is working
+        on them (see newComponent), which is what lets a binding added a second ago show a value
+        rather than "Not available to you" — and it is not a claim the client is allowed to make to the
+        server, which is why toSaveScreen drops it.
+      -->
+      <section class="preview">
+        <p class="preview-head">
+          <strong>Preview</strong>
+          <span class="muted">what an operator on this Site sees — live values, not a mock-up</span>
+        </p>
+        @if (components().length === 0) {
+          <p class="muted">Nothing to preview yet.</p>
+        } @else {
+          <app-screen [screen]="draft()"
+                      [snapshots]="snapshots()"
+                      [alarms]="alarms()"
+                      [history]="history()" />
+        }
+      </section>
+
       <div class="actions">
         <button type="button" (click)="save()" [disabled]="saving() || !changed()">
           {{ saving() ? 'Saving…' : 'Save' }}
@@ -194,6 +221,15 @@ const WIDEST = 12;
     .danger { color: #99201f; }
     .problem { color: #99201f; margin: 6px 0; }
     .muted { color: #5b6672; }
+    .preview {
+      margin-top: 18px;
+      padding: 12px 14px 14px;
+      background: #f7f9fb;
+      border: 1px solid #dde3ea;
+      border-radius: 8px;
+    }
+    .preview-head { display: flex; gap: 10px; align-items: baseline; margin: 0 0 10px; }
+    .preview-head .muted { font-size: 0.78rem; }
   `,
 })
 export class ScreenEditor {
@@ -202,6 +238,23 @@ export class ScreenEditor {
 
   /** Every tag this session may see, for the author to bind to. */
   readonly tags = input.required<readonly TagSnapshot[]>();
+
+  /** The live values the preview draws with — the operator's own inputs, not copies. */
+  readonly snapshots = input.required<ReadonlyMap<string, TagSnapshot>>();
+
+  /** Every standing alarm this session may see, for the preview's `alarms` components. */
+  readonly alarms = input.required<readonly Alarm[]>();
+
+  /**
+   * History for the preview's `trend` components, by component id.
+   *
+   * Empty while an author is working, and that is honest rather than lazy: history is fetched by the
+   * read view for the components of a *saved* screen, and a component added a moment ago has an id
+   * the server has never seen. A trend in the preview therefore says "Reading…" — which is what the
+   * read view says too, for a screen whose history has not arrived. Wiring a fetch for draft ids
+   * would mean asking the server about components that do not exist yet.
+   */
+  readonly history = input<ReadonlyMap<string, HistorySample[]>>(new Map());
 
   readonly saving = input(false);
 

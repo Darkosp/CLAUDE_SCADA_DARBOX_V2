@@ -153,6 +153,9 @@
              to and a failed save leaves the author's work in the editor to fix. -->
         <app-screen-editor [screen]="showing"
                            [tags]="allTags()"
+                           [snapshots]="snapshotsByTagId()"
+                           [alarms]="alarms()"
+                           [history]="screenHistory()"
                            [saving]="screenSaving()"
                            [errors]="screenError()"
                            (saveRequested)="saveScreen($event)"
