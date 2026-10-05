@@ -239,7 +239,7 @@ what it has **not** had — a walk on a real link:
   and a late command is a request to change a plant after the reason for it has
   passed.
 
-**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 501 .NET
+**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 502 .NET
 across seven projects with 0 skipped, and the client's 63.** It was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
 the one that is a proven race from the one that is read off the failure. One more
@@ -255,9 +255,17 @@ or an operator was told it was. ADR-0023's own entry lists what its tests *do*
 cover — the cloud's half, the wire format, the edge's half against a real Modbus
 slave, the uplink's handling of a message off a real broker, the retain rule and
 the ACL against a real broker — so it is not read as "nothing is tested". What no
-run has done is cross all of them at once, and one path is still unexecuted
-anywhere: a device that accepts a connection and then stops answering, so the
-executor's ten-second bound has never fired.
+run has done is cross all of them at once.
+
+**One finding from that work is open and is not a test gap.** A device that accepts
+a connection and then says nothing was executed on the write path, and it came back
+as a failure with a reason after **about twenty seconds**. The executor's ten-second
+deadline and `ModbusTcpDriver`'s five-second socket timeout are both real, and
+**neither stopped it**: NModbus does not honour the cancellation token during a read,
+so the failure surfaced as a transport error instead. ADR-0023's honesty rule holds —
+the operator is told it failed, not that it succeeded — but **the bound this path was
+believed to have, it does not have**. Whether it should is a decision nobody has
+made, and `open-work.md` §2.0 is where that is recorded.
 
 ## When Phase 1 (or any phase) begins
 

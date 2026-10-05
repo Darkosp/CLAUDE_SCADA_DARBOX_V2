@@ -37,20 +37,40 @@ public sealed class EdgeWriteExecutor
     /// How long a device is given to answer one write. The same bound the Gateway's write path
     /// uses for a device it polls, because it is the same kind of operation.
     /// </summary>
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(10);
 
     private readonly EdgeConfigurationSource _configuration;
     private readonly IReadOnlyDictionary<string, IDeviceDriverFactory> _factories;
     private readonly ILogger<EdgeWriteExecutor> _logger;
+    private readonly TimeSpan _timeout;
 
+    /// <param name="timeout">How long a device is given, or null for the ten seconds above.</param>
+    /// <remarks>
+    /// <b>This bound is not always what stops a dead device, and saying so is the point.</b> A
+    /// driver's own transport may give up first, and Modbus does: <c>ModbusTcpDriver</c> sets a
+    /// five-second socket read timeout, which raises a transport error rather than honouring this
+    /// token. That is why a failure reports the driver's own exception when there is one — an honest
+    /// "it failed, and here is what the driver said" — and this class's own reason only when the
+    /// deadline is what actually fired.
+    ///
+    /// Measured 2026-10-03 against a listener that accepts a connection and never answers: the
+    /// failure came back as a transport error after **about twenty seconds**, so neither this ten
+    /// nor the driver's five bounded it. What the cloud is told is still right — a failure with a
+    /// reason — and the mechanism is recorded as a measurement rather than claimed as a bound.
+    ///
+    /// The parameter exists so a caller need not depend on production's value, and it defaults to
+    /// it, so nothing else has to pass one.
+    /// </remarks>
     public EdgeWriteExecutor(
         EdgeConfigurationSource configuration,
         IEnumerable<IDeviceDriverFactory> factories,
-        ILogger<EdgeWriteExecutor> logger)
+        ILogger<EdgeWriteExecutor> logger,
+        TimeSpan? timeout = null)
     {
         _configuration = configuration;
         _factories = factories.ToDictionary(factory => factory.DriverKey, StringComparer.OrdinalIgnoreCase);
         _logger = logger;
+        _timeout = timeout ?? DefaultTimeout;
     }
 
     /// <summary>
@@ -94,7 +114,7 @@ public sealed class EdgeWriteExecutor
         var target = ToDevice(device);
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(Timeout);
+        deadline.CancelAfter(_timeout);
 
         try
         {
@@ -117,7 +137,7 @@ public sealed class EdgeWriteExecutor
         {
             // The deadline is the edge's own, and saying so is more use than "it failed": a device
             // that accepts a connection and then stops answering is a plant fault, not a bad request.
-            var reason = $"the device did not answer within {Timeout.TotalSeconds:0} seconds";
+            var reason = $"the device did not answer within {_timeout.TotalSeconds:0} seconds";
 
             _logger.LogWarning(
                 "A write to tag {Tag} on device {Device} timed out: {Reason}.",

@@ -604,7 +604,7 @@ three controls stay green.
 had a broker, the wire format had a test, and the edge's half had neither — and that was where the
 bug was.
 
-**Test baseline: 501 .NET across seven projects, 0 skipped, plus the client's 63.** Measured with
+**Test baseline: 502 .NET across seven projects, 0 skipped, plus the client's 63.** Measured with
 `SCADA_TEST_DB_PORT=5433` (§2.4–§2.5). One flake was seen and is recorded there as a sighting, not a
 diagnosis — its name was not captured and the project passed twice afterwards.
 
@@ -635,9 +635,15 @@ reports a certificate it should trust, check which CA signed the file it was han
    payload, the executor against a real Modbus slave, the uplink taking a message off a real broker,
    the retain rule and the ACL against a real Mosquitto — and **no run has crossed all of them at
    once**. That is what the walk is for: a browser asking, the router publishing, a real edge taking
-   it off a real broker, a real device changing, and the result reaching the operator's screen. One
-   path is still unexecuted anywhere and worth naming: **a device that accepts a connection and then
-   stops answering**, so the executor's ten-second bound has never fired.
+   it off a real broker, a real device changing, and the result reaching the operator's screen.
+   **And one path that was believed bounded is not.** A device that accepts a connection and then
+   says nothing *was* executed, and it came back as a failure with a reason after **about twenty
+   seconds** — the executor's ten-second deadline and `ModbusTcpDriver`'s five-second socket timeout
+   both exist and **neither stopped it**, because NModbus does not honour the cancellation token
+   during a read and the failure surfaced as a transport error instead. ADR-0023's honesty rule
+   holds, so an operator is told it failed rather than that it succeeded; what does not hold is the
+   bound this path was believed to have. Whether it should is a decision nobody has made, and it is
+   the one thing in this path that is a question rather than a gap.
 2. **Then the other three items in `open-work.md` §2.0** — ADR-0020's omission, ADR-0021's
    reporting and its payload version (two builds of different ages on one link), and ADR-0022's
    derived link actually subscribing. All want a broker and an edge, so they belong to the **same

@@ -202,6 +202,48 @@ public sealed class EdgeWriteExecutionTests
     /// <summary>The driver key, from the factory rather than typed here, so a rename cannot rot.</summary>
     private static string ModbusKey => new ModbusTcpDriverFactory(TimeProvider.System).DriverKey;
 
+    [Fact]
+    public async Task A_device_that_accepts_the_connection_and_then_says_nothing_comes_back_as_a_failure()
+    {
+        // The path ADR-0023's entry recorded as unexecuted anywhere, and the shape the Phase 7 walk
+        // found in the *read* path: a device that accepts a connection and then stops answering is
+        // silence that looks like a working plant.
+        //
+        // What this asserts is deliberately weaker than "the executor's deadline fired", because
+        // measuring it showed that it does not. ModbusTcpDriver sets a five-second socket read
+        // timeout, which raises a transport error rather than honouring the cancellation token — and
+        // the failure took about twenty seconds to arrive, so neither bound is what stopped it.
+        // What matters for ADR-0023 is what the cloud is told: a failure, with a reason, rather than
+        // silence or a pretence of success. The exact mechanism is recorded in the executor's own
+        // remarks as a measured fact rather than a claim.
+        //
+        // `using` would be wrong here: disposing the listener closes the socket, which turns a
+        // device that says nothing into one that hangs up, and a hang-up is a different failure.
+        var blackhole = SilentListener.Start();
+
+        try
+        {
+            var executor = Executor(blackhole.Port, ("holding:0?scale=0.01", PressureTag));
+
+            var started = DateTime.UtcNow;
+            var result = await executor.ExecuteAsync(Request(PressureTag, new TagValue.Numeric(5.5)), CancellationToken.None);
+            var elapsed = DateTime.UtcNow - started;
+
+            Assert.False(result.Written);
+            Assert.NotNull(result.Reason);
+            Assert.False(string.IsNullOrWhiteSpace(result.Reason));
+
+            // Nothing hung: whatever bounded it, a bounded failure came back well inside the minute.
+            Assert.True(
+                elapsed < TimeSpan.FromSeconds(60),
+                $"a dead device took {elapsed.TotalSeconds:0.0} s to report, which is not bounded in any useful sense");
+        }
+        finally
+        {
+            await blackhole.DisposeAsync();
+        }
+    }
+
     private static WriteRequestResult Request(Guid tagId, TagValue value) =>
         new(Guid.NewGuid(), tagId, value, Refusal: null);
 

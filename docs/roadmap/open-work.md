@@ -183,10 +183,20 @@ defects and not open questions: the work exists and nothing has been through it 
     gap the executor's defect hid behind. Restoring that defect now fails a test **here** as well as
     the executor's own, which is the point: the silence it caused was visible from both ends and
     only one of them was being watched.
+  - **a device that accepts a connection and then says nothing** — the shape Phase 7's walk found in
+    the *read* path, now executed on the write path too. It came back as a failure with a reason,
+    which is what ADR-0023 requires, and it took **about twenty seconds**.
 
-  **Still unrun, and worth naming:** a device that accepts a connection and then stops answering, so
-  the executor's own ten-second bound is never exercised. Everything else on this path has been
-  executed by something.
+  **And that last one is a finding, not a tick.** The executor has a ten-second deadline and
+  `ModbusTcpDriver` sets a five-second socket read timeout, and **neither is what stopped it**: the
+  failure arrived as a transport error — `Unable to read data from the transport connection` — after
+  roughly twenty seconds. NModbus does not honour the cancellation token during a read, so a
+  cancelled token does not interrupt one. What the cloud is told is still correct and ADR-0023's
+  honesty rule holds, but **the bound this path was believed to have, it does not have.** Nothing
+  in the code claims otherwise now; the executor's remarks carry the measurement. Whether it should
+  have a real one — a socket timeout that works, or a driver contract that takes a deadline — is a
+  decision nobody has made, and it is the reason this entry stays open.
+
 
 ### 2.1 ADR-0019 configuration provisioning, end to end
 
@@ -447,14 +457,15 @@ with the client's 60 passed beside them. The count is 425 plus the four ADR-0020
 green, at **447 passed, 0 skipped**, with the client's 63. The two flakes above have not been seen
 since the fix.
 
-**Measured again 2026-10-03, after ADR-0023 and its edge-side tests: 501 passed, 0 skipped across
+**Measured again 2026-10-03, after ADR-0023 and its edge-side tests: 502 passed, 0 skipped across
 seven projects**, with the client's 63. Whole-solution runs produced it as it grew: **465** before the
 edge-side tests, which is the baseline above plus ADR-0023's cloud and wire halves (21 payload tests
 in the MQTT module and 7 router tests in the Gateway, one existing Gateway test rewritten to assert
 the routing instead of the refusal it replaced); then **492** after the edge's half went in (7
 executor tests against a real Modbus slave); then **498** after the broker rules (6 more: 4 write-ACL
 tests against a real Mosquitto, and 2 for the retain rule); then **501** after the uplink's own
-handling of a write message (3 tests, the last joint nothing had crossed). The intermediate numbers
+handling of a write message (3 tests, the last joint nothing had crossed); then **502** after a
+device that accepts a connection and then says nothing. The intermediate numbers
 were undercounted in an earlier draft of this note by six, because it tried to reconcile them by
 adding up per-project deltas instead of reading what the runs printed; the printed numbers are these
 and the deltas are not offered as corroboration.
