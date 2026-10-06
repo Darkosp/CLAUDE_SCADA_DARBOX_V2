@@ -329,7 +329,15 @@ import { SymbolView } from './symbol';
     /* The write control. Understated on purpose: it sits beside a value an operator reads, and a
        control that looked like the most important thing on the screen would make an operating
        action look like the normal state of the screen. */
-    .operate { margin-top: 9px; font-size: 0.76rem; }
+    /* ADR-0026: the control that writes. **"align-self" is the whole reason this rule is not one
+       line.** ".row > .cell" is a flex column, whose default "align-items: stretch" makes EVERY child
+       as wide as the tile — so this button ran the full width of the value tile and read as an empty
+       input rather than as a button. It was always that way; nothing saw it until a tag was made
+       writable on 2026-10-06, because until then this control never rendered at all. A defect that
+       only exists on a screen is only found by looking at one.
+       Sized to its own text rather than stretched, and left as the loud control it is: a write
+       changes a plant, and a tile that offers one should not have it look like part of the reading. */
+    .operate { margin-top: 9px; font-size: 0.76rem; align-self: start; }
 
     /* No backdrop-click to dismiss: it is the gesture most likely to be accidental, and this is the
        one dialog whose accidental dismissal leaves the operator unsure whether the write happened. */
