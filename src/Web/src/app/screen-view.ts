@@ -7,6 +7,7 @@ import {
   ResolvedScreenComponent,
   Screen,
   ScreenComponent,
+  trendFreshness,
 } from './screen';
 import { TagSnapshot } from './tag';
 import { TrendChart } from './trend-chart';
@@ -119,7 +120,18 @@ import { SymbolView } from './symbol';
                     @if (samples.length < 2) {
                       <p class="muted">Not enough history yet.</p>
                     } @else {
+                      <!--
+                        A trend that has stopped growing says so, and is drawn faded (ADR-0003).
+                        Without this it is the one tile an outage does not change: the value tiles go
+                        Bad and show a dash while the line keeps its shape and its sample count, so a
+                        screen with a dead instrument beside it goes on looking like a running plant.
+                        The same failure as the fabricated line Phase 1's walk found in this chart.
+                      -->
+                      @if (isStale(samples)) {
+                        <p class="stale-note" role="status">{{ staleNote(samples) }}</p>
+                      }
                       <app-trend-chart [samples]="samples"
+                                       [class.stale]="isStale(samples)"
                                        [unitSymbol]="snapshots().get($any(cell.resolved).tagId)?.unitSymbol ?? ''" />
                     }
                   } @else {
@@ -252,6 +264,17 @@ import { SymbolView } from './symbol';
       color: var(--text-muted);
     }
     .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* A trend whose history has stopped arriving (ADR-0003). Faded AND captioned: the fade is what
+       catches the eye from across a room, and the sentence is what tells a reader who noticed the
+       fade what it means. Either alone leaves the other to be guessed. */
+    .stale-note {
+      margin: 0 0 5px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--status-warn-ink);
+    }
+    .chart.stale { opacity: 0.45; }
     /* The reading is what the tile is for, so it is the largest thing in it and scales with the
        viewport: on a 1920 panel a fixed 1.7rem is a number read from two metres away, which was the
        first thing the large-screen look found on 2026-10-06. */
@@ -391,6 +414,21 @@ export class ScreenView {
 
   protected historyFor(tagId: string | null): HistorySample[] | null {
     return tagId === null ? null : (this.history().get(tagId) ?? null);
+  }
+
+  /**
+   * Whether this trend's history has stopped growing (ADR-0003).
+   *
+   * Evaluated on every change detection rather than resolved once, because **age is a fact about
+   * now** — a component resolved when the screen loaded would carry that moment's answer forever,
+   * which is the shape of the defect being fixed.
+   */
+  protected isStale(samples: HistorySample[]): boolean {
+    return trendFreshness(samples).stale;
+  }
+
+  protected staleNote(samples: HistorySample[]): string | null {
+    return trendFreshness(samples).note;
   }
 
   /**
