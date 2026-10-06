@@ -163,7 +163,7 @@ test('an alarms component carries its heading through, because the view draws it
 });
 
 test('a writable tag is marked writable, and that is all this phase does with it', () => {
-  // ADR-0024 ง9: a writable tag is MARKED writable on a screen; acting on it is not built here,
+  // ADR-0024 ยง9: a writable tag is MARKED writable on a screen; acting on it is not built here,
   // because putting a write behind a button means putting the Operator check, the audit entry and the
   // write path's own refusals behind that button too. The marker travels through the resolver so the
   // view can draw it, and nothing about it is pressable.

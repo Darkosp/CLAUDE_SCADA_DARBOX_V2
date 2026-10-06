@@ -1,13 +1,13 @@
 import { Alarm, HistorySample } from './models';
 import { formatValue, Quality, TagSnapshot, TagValue } from './tag';
 
-/** The component kinds this build renders. The server refuses any other (ADR-0024 Â§3). */
+/** The component kinds this build renders. The server refuses any other (ADR-0024 §3). */
 export type ScreenComponentKind = 'label' | 'value' | 'trend' | 'alarms' | 'status' | 'symbol';
 
 /**
  * The symbols this build can draw (ADR-0027), and the states each can be drawn in.
  *
- * Duplicated from Core's `Symbols`, and that duplication is deliberate rather than careless â€” see
+ * Duplicated from Core's `Symbols`, and that duplication is deliberate rather than careless — see
  * `deriveSymbolState` below for why the evaluation lives here as well as there, and this is the same
  * decision: a drawing's states are the drawing's, and the drawing is this file's.
  */
@@ -49,11 +49,11 @@ export interface ScreenComponent {
    * Whether this session may see the value behind `tagId`.
    *
    * Decided by the server, not here, so that every renderer gives the same answer and there is one
-   * place to check (ADR-0024 Â§5). Always true for a component that reads no tag.
+   * place to check (ADR-0024 §5). Always true for a component that reads no tag.
    */
   readable: boolean;
   /**
-   * Whether this session could write the tag behind `tagId` (ADR-0026 Â§2).
+   * Whether this session could write the tag behind `tagId` (ADR-0026 §2).
    *
    * Decided by the server for the same reason `readable` is, and false for a reader who cannot
    * operate the Site even when the tag itself is writable.
@@ -67,7 +67,7 @@ export interface ScreenComponent {
 export interface DerivedSymbolState {
   /** One of the symbol's own states. Never null: there is always something to draw. */
   state: string;
-  /** Whether it came from the reading's quality rather than from the mapping (ADR-0027 Â§4). */
+  /** Whether it came from the reading's quality rather than from the mapping (ADR-0027 §4). */
   fromQuality: boolean;
   /** Which rule decided it, or null when quality did or nothing matched. For an author debugging. */
   matchedRule: number | null;
@@ -82,18 +82,18 @@ export interface DerivedSymbolState {
  * The alternative was to have the server send the derived state with each screen read. It cannot:
  * a screen is fetched once and its readings arrive afterwards and continuously over the hub, so the
  * server has no moment at which it knows both. A per-read change stream would be a second push
- * channel carrying a derived value â€” more moving parts than the rule it would save, and it would make
+ * channel carrying a derived value — more moving parts than the rule it would save, and it would make
  * a screen's appearance depend on a subscription having arrived.
  *
  * What makes the duplication tolerable is that **the shape of the mapping is fixed by the API**, so
  * the two implementations cannot drift in what they accept: the server refuses a comparison it does
  * not evaluate (ADR-0027's consequences), which means this one only ever sees `equals`, `above` and
  * `below`. The two are cross-checked by the client's own tests naming the same cases as the Core ones
- * â€” including the one that matters most, that quality wins over the value.
+ * — including the one that matters most, that quality wins over the value.
  *
- * **Quality before mapping** (Â§4): a reading that is not Good has no state, whatever it says. A boolean
+ * **Quality before mapping** (§4): a reading that is not Good has no state, whatever it says. A boolean
  * tag that has gone Bad still carries its last value, and a pump drawn as running because of a reading
- * nothing measured is the failure ADR-0003 exists to prevent â€” in the medium where it is hardest to
+ * nothing measured is the failure ADR-0003 exists to prevent — in the medium where it is hardest to
  * notice, because a turning pump looks like news rather than like a missing reading.
  */
 export function deriveSymbolState(
@@ -169,7 +169,7 @@ function matchesRule(rule: SymbolStateRule, value: TagValue): boolean {
  * Whether a reading's value equals what an author typed.
  *
  * Compared by parsing rather than by string equality, so that `4.50` and `4.5` are the same threshold
- * and `True` and `true` are the same boolean â€” an author lining a form up should not thereby create a
+ * and `True` and `true` are the same boolean — an author lining a form up should not thereby create a
  * state nothing reaches. This mirrors Core's `SymbolStates.Equals` case for case, including its
  * case-insensitive text comparison.
  */
@@ -197,13 +197,13 @@ function equalsValue(value: TagValue, typed: string | null): boolean {
  *
  * Extracted from the app component so it is pure and testable, and so the read view and the
  * editor's preview agree about what a trend needs **by construction** rather than by two filters
- * that happen to look alike today â€” the shape of defect Phase 8's walk found twice.
+ * that happen to look alike today — the shape of defect Phase 8's walk found twice.
  *
  * Three exclusions, each for its own reason:
  *
  * - **not a `trend`**: nothing else draws a series.
  * - **not `readable`**: this session may not see the tag, so asking the server for its history is a
- *   request that can only fail â€” and the component says "unreadable" rather than "Readingâ€¦".
+ *   request that can only fail — and the component says "unreadable" rather than "Reading…".
  * - **no `tagId`**: a trend an author has added but not yet bound to anything. Asking for history
  *   for `null` is not a question the API has an answer to.
  *
@@ -251,7 +251,7 @@ export type ResolvedScreenComponent =
       valueKind: TagValue['kind'];
       text: string;
       quality: string;
-      /** Whether this is an exact zero. Marked, not judged â€” many tags sit at zero and mean it. */
+      /** Whether this is an exact zero. Marked, not judged — many tags sit at zero and mean it. */
       zero: boolean;
       /**
        * What the tile is called: the author's `title` if they set one, otherwise the tag's own name.
@@ -266,12 +266,12 @@ export type ResolvedScreenComponent =
       sourceTimestampUtc: string | null;
       path: string;
       /**
-       * Whether this session could write this tag, decided by the server (ADR-0024 Â§5, ADR-0026 Â§2).
+       * Whether this session could write this tag, decided by the server (ADR-0024 §5, ADR-0026 §2).
        *
        * False for a kind that reads no tag, for a tag that is not writable, for a tag this session
        * may not see, and for a reader who cannot operate the Site. **What it gates is the offer of a
-       * control, not the write itself** â€” the API refuses an unpermitted write whatever a client
-       * draws. See ADR-0026 Â§2 for why the flag is still worth having.
+       * control, not the write itself** — the API refuses an unpermitted write whatever a client
+       * draws. See ADR-0026 §2 for why the flag is still worth having.
        */
       writable: boolean;
     }
@@ -291,7 +291,7 @@ export type ResolvedScreenComponent =
       /**
        * Whether the state came from the reading's quality rather than from the mapping.
        *
-       * The drawing does not need it â€” `bad` and `stale` are drawn as themselves â€” but a screen whose
+       * The drawing does not need it — `bad` and `stale` are drawn as themselves — but a screen whose
        * pump says "no reading" is answering a question an operator will ask, so it is carried rather
        * than re-derived in the template.
        */
@@ -306,18 +306,18 @@ export type ResolvedScreenComponent =
   | { kind: 'unreadable'; id: string; note: string };
 
 /**
- * What one component shows, given what this session currently has (ADR-0024 Â§5).
+ * What one component shows, given what this session currently has (ADR-0024 §5).
  *
  * The order of the checks is the whole of the honesty rule and is deliberate:
  *
- * 1. **Not readable** â€” the server said this session may not see the tag. It renders as unreadable
+ * 1. **Not readable** — the server said this session may not see the tag. It renders as unreadable
  *    rather than disappearing, because hiding it would make a screen look complete while showing
  *    less than it was built to show, and an operator cannot know a tile is missing from a screen
  *    they did not author.
- * 2. **Readable but absent** â€” the server said it may be seen and this client does not have it. That
+ * 2. **Readable but absent** — the server said it may be seen and this client does not have it. That
  *    is a tag that has gone, or a push that has not arrived, and either way there is nothing to
  *    print. It says so rather than showing a dash, because a dash is what a Bad reading looks like.
- * 3. **Present** â€” and then the value's own quality travels with it, always.
+ * 3. **Present** — and then the value's own quality travels with it, always.
  */
 export function resolveComponent(
   component: ScreenComponent,
@@ -336,7 +336,7 @@ export function resolveComponent(
     //
     // The title travels with them. It is optional (ADR-0024's kinds table gives text as what a
     // `label` shows and says nothing of the sort for `alarms`), and for a long time it was required,
-    // collected by the editor and then dropped here â€” a heading an author had to invent and no
+    // collected by the editor and then dropped here — a heading an author had to invent and no
     // reader could ever see.
     return {
       kind: 'alarms',
@@ -371,7 +371,7 @@ export function resolveComponent(
         tagId: component.tagId,
         valueKind: snapshot.value.kind,
         // formatValue is the one place a value becomes text, and it already refuses to print a
-        // number for a Bad reading â€” which is the guarantee every component here inherits rather
+        // number for a Bad reading — which is the guarantee every component here inherits rather
         // than re-implements.
         text: formatValue(snapshot),
         quality: snapshot.quality,
@@ -385,7 +385,7 @@ export function resolveComponent(
         sourceTimestampUtc: snapshot.sourceTimestampUtc,
         path: snapshot.path,
         // Marks the control, and the write is refused again by the API if anyone gets here without
-        // the role (ADR-0026 Â§2).
+        // the role (ADR-0026 §2).
         writable: component.writable,
       };
     case 'status':
@@ -434,12 +434,12 @@ export function resolveComponent(
 }
 
 /**
- * The last segment of a display path â€” a tag's own name.
+ * The last segment of a display path — a tag's own name.
  *
  * `Skopje/Pump House/Discharge Pressure` becomes `Discharge Pressure`, and that is what a tile is
  * captioned with. The full path is right for a tree, where a reader is choosing between tags with
  * the same name under different devices; on a screen built for one Site it is three quarters
- * repetition, and at 1920 it wrapped onto a second line in every tile â€” found by looking at
+ * repetition, and at 1920 it wrapped onto a second line in every tile — found by looking at
  * 2026-10-06. A component's own `title`, when an author sets one, wins over this.
  */
 export function tagNameOf(path: string): string {
@@ -453,7 +453,7 @@ export function tagNameOf(path: string): string {
  *
  * **A timestamp on every tile is noise, and on a screen it is noise that repeats.** What a reader
  * needs to know is when a reading stopped being trustworthy, so this returns null for a fresh Good
- * reading and the time otherwise â€” which makes the presence of a time on one tile the signal, rather
+ * reading and the time otherwise — which makes the presence of a time on one tile the signal, rather
  * than its absence meaning nothing. The threshold is deliberately generous: a scan every second and
  * a clock on a wall do not need reconciling, but half an hour does.
  *
@@ -483,7 +483,7 @@ export function stalenessNote(
   return now.getTime() - measured > staleAfterMs ? `at ${clockTime(sourceTimestampUtc)}` : null;
 }
 
-/** An ISO timestamp as the wall clock reads it, with no date and no seconds â€” a screen is not a log. */
+/** An ISO timestamp as the wall clock reads it, with no date and no seconds — a screen is not a log. */
 function clockTime(iso: string): string {
   const at = new Date(iso);
 
@@ -496,19 +496,19 @@ function clockTime(iso: string): string {
  * Whether a trend's history has stopped growing, and what to say about it (ADR-0003).
  *
  * **This is a different question from a reading's quality, and the difference is the defect it fixes.**
- * A trend draws only Good numeric samples, which is right â€” a Bad sample carries no value to plot. But
+ * A trend draws only Good numeric samples, which is right — a Bad sample carries no value to plot. But
  * that means **a trend is not stopped by an outage, it is frozen by one**: the line keeps its shape,
  * the sample count keeps its number, and the tile goes on looking like a plant that is running. Found
  * on 2026-10-06 by making a whole Site go Bad and looking at the screen: every value tile said `BAD`
  * and showed a dash, and the trend beside them was unchanged.
  *
- * It is **the same failure Phase 1's walk found in this same chart** â€” a line drawn through a
- * Gateway-downtime gap, which made an outage look like steady data â€” in its second form. Then the lie
+ * It is **the same failure Phase 1's walk found in this same chart** — a line drawn through a
+ * Gateway-downtime gap, which made an outage look like steady data — in its second form. Then the lie
  * was a straight line; now it is an old line left on screen.
  *
  * **The test is the newest sample's age, not the tag's reading quality**, and that distinction is the
- * whole design. A trend can be stale while its tag reads Good â€” a driver that stops delivering
- * without saying so â€” and that is the case nothing else on the screen catches. A trend with no
+ * whole design. A trend can be stale while its tag reads Good — a driver that stops delivering
+ * without saying so — and that is the case nothing else on the screen catches. A trend with no
  * samples at all is not stale, it is empty, and the chart already says so.
  *
  * Rendered by the view rather than resolved into the component, because **age is a fact about now**:
@@ -546,7 +546,7 @@ export function trendFreshness(
 /**
  * Whether a reading is exactly zero, for a numeric tag.
  *
- * A zero is the reading most easily missed and the one most often worth noticing â€” a flow that has
+ * A zero is the reading most easily missed and the one most often worth noticing — a flow that has
  * stopped, a level that has emptied. Marking it is **not** a judgement about whether zero is wrong:
  * many tags sit at zero all day and mean it. It is the same rule as the `noDataSince` note and the
  * quality pill, that a reading which is unusual for a screen should not have to be spotted by
@@ -562,7 +562,7 @@ export function isZeroReading(snapshot: { quality: string; value: { kind: string
 /**
  * A screen's components laid out as rows, in the order the renderer should consider them.
  *
- * The layout model is a row and a span of a twelve-column grid and nothing else (ADR-0024 Â§2), so
+ * The layout model is a row and a span of a twelve-column grid and nothing else (ADR-0024 §2), so
  * this is the whole of it: group by row, order within the row by position, and let the template put
  * the span on each cell.
  */
@@ -622,7 +622,7 @@ export interface SaveScreen {
  *
  * `readable` is deliberately dropped: it is the server's answer about the *reader*, not something an
  * author states, and sending it would invite a client that believes it can grant itself a binding.
- * A placeholder id is dropped too â€” for the server it means "this is new", which is what it is.
+ * A placeholder id is dropped too — for the server it means "this is new", which is what it is.
  */
 export function toSaveComponent(component: ScreenComponent): SaveScreenComponent {
   return {
@@ -674,7 +674,7 @@ export function newComponent(
     title,
     tagId,
     // A new symbol starts as a pump with two rules: `running` when its tag is true, and a fallback of
-    // `stopped` for anything else. That is a decision rather than a default â€” the API refuses a symbol
+    // `stopped` for anything else. That is a decision rather than a default — the API refuses a symbol
     // with no states, so "start empty and let the author fill it in" would hand them a component that
     // cannot be saved until they have understood the mapping. A pump that runs when its tag is true is
     // what most of them are, and every part of it is editable.
@@ -712,7 +712,7 @@ export function isNew(component: ScreenComponent): boolean {
  * The component set with one added, at the end of a row.
  *
  * Half width when the row already holds something: a full-width component beside another would be
- * twenty-four columns of a twelve-column grid, and the server refuses that â€” so a client that
+ * twenty-four columns of a twelve-column grid, and the server refuses that — so a client that
  * defaulted to full width would produce a screen it could not save.
  */
 export function addComponent(
@@ -770,7 +770,7 @@ export function changeComponent(
  *
  * The whole set is rebuilt in row order with the moved component spliced in, rather than appended
  * and trusted to sort itself out. That is because `renumber` reads array order as the order within a
- * row â€” which is what makes every other operation's numbering true by construction â€” so a component
+ * row — which is what makes every other operation's numbering true by construction — so a component
  * appended to the array would become the last of its row whatever the caller asked for.
  */
 export function moveComponent(
@@ -859,8 +859,8 @@ export function reorderComponent(
  * Positions: assigned from the order of the array within each row, which is what makes every
  * operation's "append to the end of the row" and "swap these two" true by construction rather than
  * by each operation maintaining the numbering itself. Without this a move leaves the position it
- * vacated empty â€” `moveComponent` hands the moved component `inTarget.length`, and the component it
- * displaced keeps the number it had â€” so the next render would order the row by a hole.
+ * vacated empty — `moveComponent` hands the moved component `inTarget.length`, and the component it
+ * displaced keeps the number it had — so the next render would order the row by a hole.
  */
 function renumber(components: readonly ScreenComponent[]): ScreenComponent[] {
   const rows = [...new Set(components.map((component) => component.rowIndex))].sort(

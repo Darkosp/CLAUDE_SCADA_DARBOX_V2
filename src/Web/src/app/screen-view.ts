@@ -18,7 +18,7 @@ import { SymbolView } from './symbol';
  *
  * The whole of the rendering decision is made by `screen.ts`'s resolver, which is pure and tested
  * without a browser. This component only puts the answer on the page, which is why there is no
- * branch here about quality or readability â€” a template that decided those for itself would be a
+ * branch here about quality or readability — a template that decided those for itself would be a
  * second place for the honesty rule to live, and the second place is the one that drifts.
  */
 @Component({
@@ -61,7 +61,7 @@ import { SymbolView } from './symbol';
 
                   <!--
                     The write control (ADR-0026). Offered only where the server said it was writable,
-                    and only on a value component â€” decision 1's "one component writes, nothing else
+                    and only on a value component — decision 1's "one component writes, nothing else
                     does". The button is not the guard: the API refuses an unpermitted write whatever
                     a client draws, and the flag's job is to not offer what would be refused.
 
@@ -71,7 +71,7 @@ import { SymbolView } from './symbol';
                   -->
                   @if ($any(cell.resolved).writable && writableAsANumberOrAFlag($any(cell.resolved).valueKind)) {
                     <button type="button" class="operate" (click)="beginWrite(cell.resolved)">
-                      Writeâ€¦
+                      Write…
                     </button>
                   }
                 }
@@ -135,7 +135,7 @@ import { SymbolView } from './symbol';
                                        [unitSymbol]="snapshots().get($any(cell.resolved).tagId)?.unitSymbol ?? ''" />
                     }
                   } @else {
-                    <p class="muted">Readingâ€¦</p>
+                    <p class="muted">Reading…</p>
                   }
                 }
                 @case ('alarms') {
@@ -195,7 +195,7 @@ import { SymbolView } from './symbol';
               <!-- A picker, not free text: there are two answers and neither is a typo away. -->
               <select name="writeValue" [ngModel]="writeDraft()"
                       (ngModelChange)="writeDraft.set($event)" [disabled]="writing()">
-                <option value="">Chooseâ€¦</option>
+                <option value="">Choose…</option>
                 <option value="true">true</option>
                 <option value="false">false</option>
               </select>
@@ -217,7 +217,7 @@ import { SymbolView } from './symbol';
               which is what an operator expects from a form. Escape closes without writing.
             -->
             <button type="submit" [disabled]="writing()">
-              {{ writing() ? 'Writingâ€¦' : 'Write' }}
+              {{ writing() ? 'Writing…' : 'Write' }}
             </button>
             <button type="button" class="ghost" (click)="cancelWrite()" [disabled]="writing()">
               Cancel
@@ -245,7 +245,7 @@ import { SymbolView } from './symbol';
     }
     /* A grid row's cells share a height, tallest wins, so the row reads as one band. Without the
        flex column a tile's content sat at the top of a stretched cell and a trend beside an alarm
-       list left the two halves of the screen visibly different heights â€” obvious at 1920. */
+       list left the two halves of the screen visibly different heights — obvious at 1920. */
     .row > .cell { display: flex; flex-direction: column; }
     .cell > .chart { flex: 1; min-height: 120px; height: auto; }
     /* The reading row takes a share of the viewport rather than only what its text needs, so a
@@ -293,7 +293,7 @@ import { SymbolView } from './symbol';
     .reading.zero { color: var(--text-muted); }
 
     /* The state, written under the drawing. Not decoration: bad and stopped are different facts
-       â€” "the plant says this machine is off" against "nothing is measuring it" â€” and a drawing that
+       — "the plant says this machine is off" against "nothing is measuring it" — and a drawing that
        told them apart only by a shade of grey would be ADR-0003's failure where it is hardest to
        notice. A word is what a reader who does not know this palette has to go on. */
     .symbol-state {
@@ -310,7 +310,7 @@ import { SymbolView } from './symbol';
     .t-stale { color: var(--status-warn-ink); }
 
     /* The quality pill. Its colours are the semantic status tokens and nothing else, so "green"
-       means Good and never merely "a nice colour" â€” see styles.css. */
+       means Good and never merely "a nice colour" — see styles.css. */
     .quality {
       border-radius: var(--radius-pill);
       padding: 2px 8px;
@@ -321,7 +321,7 @@ import { SymbolView } from './symbol';
       background: var(--status-nodata-bg);
       color: var(--status-nodata-ink);
     }
-    /* ADR-0026: the tag could be written. Deliberately not a button â€” the control that acts is
+    /* ADR-0026: the tag could be written. Deliberately not a button — the control that acts is
        .operate below, on the value component alone, and a marker that looked pressable would
        promise an action this element does not perform. */
     .writable {
@@ -354,7 +354,7 @@ import { SymbolView } from './symbol';
        action look like the normal state of the screen. */
     /* ADR-0026: the control that writes. **"align-self" is the whole reason this rule is not one
        line.** ".row > .cell" is a flex column, whose default "align-items: stretch" makes EVERY child
-       as wide as the tile â€” so this button ran the full width of the value tile and read as an empty
+       as wide as the tile — so this button ran the full width of the value tile and read as an empty
        input rather than as a button. It was always that way; nothing saw it until a tag was made
        writable on 2026-10-06, because until then this control never rendered at all. A defect that
        only exists on a screen is only found by looking at one.
@@ -402,9 +402,9 @@ export class ScreenView {
    * History for the `trend` components on this screen, **by tag id**.
    *
    * Keyed by tag rather than by component because the history of a trend is the history of its tag
-   * â€” two trend components bound to one tag are two views of one series â€” and because a component an
+   * — two trend components bound to one tag are two views of one series — and because a component an
    * author has just added to a draft has an id the server has never seen, so a preview keyed by
-   * component could only ever say "Readingâ€¦".
+   * component could only ever say "Reading…".
    *
    * A map rather than one array, because a screen may hold several trends about different tags. A
    * tag with no entry is still being read and says so, which is not the same as one whose history
@@ -435,7 +435,7 @@ export class ScreenView {
    * Whether a tag of this kind has a value the write dialog can collect.
    *
    * Numeric and boolean only. A **text** tag would need its own field, a **discrete** tag is a code
-   * whose meaning lives in the device, and **none** is a tag with no value at all â€” and the API
+   * whose meaning lives in the device, and **none** is a tag with no value at all — and the API
    * refuses a value of the wrong kind in every one of those cases, so offering the control would
    * offer a write that cannot succeed. That is the same rule as decision 2, applied to the tag
    * rather than to the reader.
@@ -458,7 +458,7 @@ export class ScreenView {
    * The write in progress, or null (ADR-0026).
    *
    * Held here rather than in the app so that **the same dialog serves the read view and the editor's
-   * preview**, the same way one renderer serves both â€” a second dialog is a second set of rules about
+   * preview**, the same way one renderer serves both — a second dialog is a second set of rules about
    * when it closes and what it keeps.
    */
   protected readonly writeTarget = signal<Extract<ResolvedScreenComponent, { kind: 'value' }> | null>(null);
@@ -466,13 +466,13 @@ export class ScreenView {
   /** What the operator has typed, as text. Parsed on submit so a typo is refused rather than coerced. */
   protected readonly writeDraft = signal('');
 
-  /** True while the request is in flight, which disables the dialog (ADR-0026 Â§3). */
+  /** True while the request is in flight, which disables the dialog (ADR-0026 §3). */
   protected readonly writing = signal(false);
 
   /** What the server said when a write failed. Kept so the dialog stays open with its value. */
   protected readonly writeProblem = signal<string | null>(null);
 
-  /** A write the operator has confirmed. The parent performs it â€” this component calls no API. */
+  /** A write the operator has confirmed. The parent performs it — this component calls no API. */
   readonly writeRequested = output<{ tagId: string; value: number | boolean }>();
 
   protected beginWrite(resolved: Extract<ResolvedScreenComponent, { kind: 'value' }>): void {
@@ -484,7 +484,7 @@ export class ScreenView {
 
   protected cancelWrite(): void {
     // Refused while a request is out, because the answer is coming either way and closing the dialog
-    // would leave the operator with no way to hear it (ADR-0026 Â§3).
+    // would leave the operator with no way to hear it (ADR-0026 §3).
     if (this.writing()) {
       return;
     }
@@ -535,7 +535,7 @@ export class ScreenView {
   /**
    * Called by the parent when the write has finished, successfully or not.
    *
-   * A failure keeps the dialog and the value (ADR-0026 Â§5): the operator corrects a typo or presses
+   * A failure keeps the dialog and the value (ADR-0026 §5): the operator corrects a typo or presses
    * Write again, rather than re-typing a setpoint because the message closed the box.
    */
   finishWrite(problem: string | null): void {
