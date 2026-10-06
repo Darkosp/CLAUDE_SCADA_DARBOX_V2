@@ -556,6 +556,54 @@ nothing was lost, which was checked before the push rather than assumed — and 
 commits halves the same change. Recorded here because the rule exists to stop silent rewrites, and a
 recorded one is not silent.
 
+### 2.0k What the walk found on 2026-10-06, and one defect in the walk itself
+
+**The walk is being taken, and it found a defect on its own second step.** Recorded separately from
+§2.0j because this was found by a person using the application, not by anything written in this
+session — which is the whole reason walks exist here.
+
+**The defect: a tag could be added and deleted from the browser and never changed.**
+
+The walk's step 4 asks the reader to make a tag writable, because the write control only appears on a
+writable tag and the demo's `Pump Running` is not one. The instruction did not work, and **it could
+not**: there was no `Edit tag` control at all. The Browse view offered `Edit device`, `Add tag` and
+`Delete tag` — everything except changing a tag that already existed.
+
+Everything needed was already present and unreachable. The API has
+`PUT /api/devices/{deviceId}/tags/{tagId}`. The client has `saveTag(deviceId, tagId, …)`, which has
+always taken a tag id. What did not exist was anything that **opened an existing tag into the draft**,
+so `saveTag` was only ever called with `null` and every tag save was a create. The two halves were each
+correct and the path between them was missing — the same shape as the four defects Phase 8's walk
+found, and it is worth noting that **this one was found faster than any of them, by trying to follow an
+instruction rather than by reading code.**
+
+Fixed: `TagDraft` carries the tag's id (null meaning "being added"), `editTag()` fills the form from
+the selected tag, and `saveTag` passes that id instead of a hard-coded `null`. Verified against the
+running stack by driving the real browser (`tools/check-tag-edit.mjs`), which does not assert that the
+button exists but **reads the HTTP method the page actually sends**: the form arrives filled from the
+tag, and saving sends `PUT /api/devices/{deviceId}/tags/{tagId}`.
+
+**The walk also found a defect in itself, and that is the more useful lesson.** Its step 4 told the
+reader to check a box on a form that did not exist. A walk whose instructions cannot be carried out is
+a walk that will be abandoned, and the person following it has no way to tell a missing control from
+their own mistake — which is exactly what happened: the question asked was *"where do I type `false`"*,
+and then *"there is no edit tag"*, and both were reasonable readings of a document that was wrong.
+
+**Two more things the walk produced, neither a defect:**
+
+- **The pump animates, and it is worth recording that this could only be learned from a person.** The
+  pump runs and says `RUNNING`, and after a while it stops by itself and says `STOPPED` — the simulator
+  cycles the tag. **A screenshot cannot show rotation**, so the single most important thing about the
+  symbol was unverifiable by every instrument in this repository and was settled in one sentence by
+  someone looking at it. It also proved more than a manual write would have: the animation followed a
+  **real change from the plant**, not a value typed into a form.
+- **`Tank 3 Level` read `464.00 %`**, which is impossible. That is this session's demo data rather
+  than a product defect — the tag was seeded without scaling and the simulator writes raw counts into
+  that register — but it raises a real question the walk should keep asking: **nothing marks a value
+  that cannot be true.** `464 %` is drawn exactly like `4.79 bar`. Whether the product should have an
+  opinion about a percentage above 100 is a design question, and it is not answered by the units work
+  in ADR-0005, which is about dimension and factor rather than plausibility.
+
 ### 2.0 Written, and not yet walked
 
 Decided, implemented, tested — and waiting only for a run that exercises it. These are not

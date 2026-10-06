@@ -731,6 +731,15 @@
         @if (isAdmin()) {
           <div class="actions">
             <button type="button" class="ghost" (click)="editDevice(chosen.device)">Edit device</button>
+            @if (chosen.tag) {
+              <!--
+                Until 2026-10-06 this did not exist: a tag could be added and deleted from the browser
+                and never changed, because nothing opened an existing one into the draft. Found by
+                walking the app rather than by reading it — an operator was asked to make a tag
+                writable, went looking for the control, and there was nowhere to look.
+              -->
+              <button type="button" class="ghost" (click)="editTag()">Edit tag</button>
+            }
             <button type="button" (click)="startNewTag()">Add tag</button>
             @if (chosen.tag) {
               <button

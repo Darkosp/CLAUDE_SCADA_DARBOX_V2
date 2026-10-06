@@ -124,6 +124,16 @@ interface TagDraft {
   unitSymbol: string;
   sourceAddress: string;
   isWritable: boolean;
+  /**
+   * The tag being edited, or null for one being added.
+   *
+   * The API's `PUT` and `POST` are the same body with a different address, which is why one draft
+   * serves both — but the difference has to be carried somewhere, and putting it in the draft is what
+   * lets one form and one `saveTag` do either. **This was missing and it made a tag uneditable**: the
+   * client had `saveTag(deviceId, tagId, …)` and the API had the `PUT`, but nothing opened an existing
+   * tag into the draft, so the only reachable operations were add and delete.
+   */
+  id: string | null;
 }
 
 interface UserDraft {
@@ -1032,11 +1042,39 @@ export class App implements OnInit {
 
   protected startNewTag(): void {
     this.tagDraft.set({
+      id: null,
       name: '',
       valueKind: 'Numeric',
       unitSymbol: 'bar',
       sourceAddress: 'holding:0?scale=0.01',
       isWritable: false,
+    });
+  }
+
+  /**
+   * Opens the selected tag for editing.
+   *
+   * Everything the form can change is filled from the tag, and `id` is what makes `saveTag` send a
+   * `PUT` rather than a `POST`. Until this existed a tag could be created and deleted from the
+   * browser and **never changed** — which is how a walk found it: an operator asked to make a tag
+   * writable, went looking for the control, and there was nowhere to look.
+   */
+  protected editTag(): void {
+    const tag = this.selection()?.tag;
+
+    if (!tag) {
+      return;
+    }
+
+    this.tagDraft.set({
+      id: tag.id,
+      name: tag.name,
+      // A tag's kind is not editable in this form — the value union changes what every stored reading
+      // means — so this is carried for the unit field's sake rather than offered as a choice.
+      valueKind: tag.valueKind === 'Boolean' ? 'Boolean' : 'Numeric',
+      unitSymbol: tag.unit?.symbol ?? '',
+      sourceAddress: tag.sourceAddress,
+      isWritable: tag.isWritable,
     });
   }
 
@@ -1053,7 +1091,7 @@ export class App implements OnInit {
       // sending one anyway would just produce an error the operator cannot act on.
       const unit = draft.valueKind === 'Numeric' ? unitBySymbol(draft.unitSymbol) : null;
 
-      await this.api.saveTag(device.id, null, {
+      await this.api.saveTag(device.id, draft.id, {
         name: draft.name,
         valueKind: draft.valueKind,
         unit,
