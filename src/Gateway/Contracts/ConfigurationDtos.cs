@@ -227,6 +227,11 @@ public sealed record ScreenDto(
 /// and "this cannot be done" are different sentences, and a screen that conflated them would be lying
 /// to one of the two people reading it.
 /// </param>
+/// <param name="States">
+/// A symbol's mapping from its tag's reading to a state to draw (ADR-0027), or empty for every other
+/// kind.
+/// </param>
+/// <param name="Symbol">Which drawing, for a symbol. Null for every other kind.</param>
 public sealed record ScreenComponentDto(
     Guid Id,
     int RowIndex,
@@ -236,7 +241,22 @@ public sealed record ScreenComponentDto(
     string? Title,
     Guid? TagId,
     bool Readable,
-    bool Writable);
+    bool Writable,
+    string? Symbol,
+    IReadOnlyList<SymbolStateDto> States);
+
+/// <summary>One rule of a symbol's mapping, on the wire (ADR-0027).</summary>
+/// <param name="State">Which state to draw. One the symbol can be drawn in, or the save is refused.</param>
+/// <param name="When">One of <c>equals</c>, <c>above</c>, <c>below</c>; null on the fallback rule.</param>
+/// <param name="Value">What to compare against, exactly as the author typed it.</param>
+/// <param name="Otherwise">Whether this rule is the fallback. At most one may be.</param>
+public sealed record SymbolStateDto(string State, string? When, string? Value, bool Otherwise)
+{
+    public static SymbolStateDto From(SymbolState state) =>
+        new(state.State, state.When, state.Value, state.Otherwise);
+
+    public SymbolState ToDomain() => new(State, When, Value, Otherwise);
+}
 
 /// <summary>
 /// A screen as an author sends it. The whole component set travels with every save, and one that is
@@ -253,6 +273,11 @@ public sealed record SaveScreenRequest(
     IReadOnlyList<SaveScreenComponentRequest> Components);
 
 /// <param name="Id">The component's existing id, or null for one being added.</param>
+/// <param name="States">
+/// A symbol's mapping (ADR-0027). Empty for every other kind; a symbol without one is refused,
+/// because a symbol with no mapping can only ever draw `unknown`.
+/// </param>
+/// <param name="Symbol">Which drawing, for a symbol. Null for every other kind.</param>
 public sealed record SaveScreenComponentRequest(
     Guid? Id,
     int RowIndex,
@@ -260,4 +285,6 @@ public sealed record SaveScreenComponentRequest(
     int Position,
     string Kind,
     string? Title,
-    Guid? TagId);
+    Guid? TagId,
+    string? Symbol = null,
+    IReadOnlyList<SymbolStateDto>? States = null);

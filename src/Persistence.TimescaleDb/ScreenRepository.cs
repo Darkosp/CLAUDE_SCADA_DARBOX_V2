@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Dapper;
 using Npgsql;
 using ScadaDarbox.Core.Configuration;
@@ -47,7 +48,8 @@ public sealed class ScreenRepository : IScreenRepository
             new CommandDefinition(
                 """
                 SELECT component.id, component.screen_id, component.row_index, component.column_span,
-                       component.position, component.kind, component.title, component.tag_id, component.device_id
+                       component.position, component.kind, component.title, component.tag_id,
+                       component.device_id, component.symbol, component.states
                 FROM screen_component_active component
                 JOIN screen_active screen ON screen.id = component.screen_id
                 WHERE screen.site_id = @siteId
@@ -86,8 +88,9 @@ public sealed class ScreenRepository : IScreenRepository
 
         var components = await connection.QueryAsync<ScreenComponentRow>(
             new CommandDefinition(
-                """
-                SELECT id, screen_id, row_index, column_span, position, kind, title, tag_id, device_id
+                $"""
+                SELECT id, screen_id, row_index, column_span, position, kind, title, tag_id,
+                       {ScreenComponentColumns}
                 FROM screen_component_active
                 WHERE screen_id = @screenId
                 ORDER BY row_index, position
@@ -304,9 +307,9 @@ public sealed class ScreenRepository : IScreenRepository
         await connection.ExecuteAsync(new CommandDefinition(
             """
             INSERT INTO screen_component
-                (id, site_id, screen_id, row_index, column_span, position, kind, title, tag_id, device_id)
+                (id, site_id, screen_id, row_index, column_span, position, kind, title, tag_id, device_id, symbol, states)
             VALUES
-                (@Id, @SiteId, @ScreenId, @RowIndex, @ColumnSpan, @Position, @Kind, @Title, @TagId, @DeviceId)
+                (@Id, @SiteId, @ScreenId, @RowIndex, @ColumnSpan, @Position, @Kind, @Title, @TagId, @DeviceId, @Symbol, @States::jsonb)
             """,
             screen.Components.Select(component => new
             {
@@ -321,7 +324,12 @@ public sealed class ScreenRepository : IScreenRepository
                 component.Kind,
                 component.Title,
                 component.TagId,
-            component.DeviceId,
+                component.DeviceId,
+                component.Symbol,
+                // A jsonb column, so the mapping travels as its JSON text. Serialised by what the
+                // column's shape actually is rather than by a serializer configured somewhere else —
+                // the property names ARE the column's keys (see migration 0019).
+                States = JsonSerializer.Serialize(component.States),
             }),
             transaction,
             cancellationToken: cancellationToken)).ConfigureAwait(false);

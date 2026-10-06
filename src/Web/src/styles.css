@@ -1,1 +1,249 @@
-/* You can add global styles to this file, and also import other style files */
+/*
+ * SCADA_DARBOX — the design tokens.
+ *
+ * Every colour, radius, shadow and text size in the client comes from here. Nothing else in
+ * `src/app` writes a raw colour, and that is the whole point of this file: before it, the client
+ * held **45 distinct hex values across five files**, including near-duplicates that had drifted
+ * apart (`#1c6b3a` beside `#1d6b39`, `#99201f` beside `#96261f`) — the same defect Phase 8's walk
+ * found twice, in its visual form. A rule and every place that applies it have to move together,
+ * and a colour is a rule.
+ *
+ * Two consequences worth knowing before adding to this list:
+ *
+ * 1. **Status is semantic, not decorative.** `--status-good/warn/bad/nodata` mean Good, Uncertain
+ *    or Stale, Bad, and "no reading" (ADR-0003). They are the only strong colours in the palette,
+ *    which is why the accent is near-black rather than a hue: an accent that competed with them
+ *    would make "green" mean two things at once, and on a screen whose whole job is to say whether
+ *    a number can be trusted, that is not a style question.
+ *
+ * 2. **A token is a decision, not a variable.** Adding `--surface-7` because one card wanted to be
+ *    slightly different is how the 45 came back. If a new surface is genuinely needed, it earns a
+ *    name that says what it is for.
+ */
+
+:root {
+  /* ---- surfaces -------------------------------------------------------- */
+  /* The page is the darkest surface and things sit ON it, lighter as they come forward. That
+     ordering is what makes the layout read as layers rather than as boxes drawn on a background. */
+  --surface-page: #f4f5f7;
+  --surface-sunken: #eef0f3;
+  --surface: #ffffff;
+  --surface-hover: #f7f8fa;
+  --surface-raised: #ffffff;
+
+  /* ---- text ------------------------------------------------------------ */
+  /*
+   * Three levels, and there was a fourth until 2026-10-06: `--text-faint` sat one step below
+   * `--text-muted` and failed WCAG AA on the page background (2.82:1 on `--surface-page`, where 4.5
+   * is the floor for text this size). It was doing the job `--text-muted` already did, badly, so it
+   * was removed rather than darkened — a near-duplicate that fails a contrast check is a duplicate.
+   */
+  --text: #14181c;
+  --text-body: #3c4650;
+  --text-muted: #626c77;
+  --text-on-accent: #ffffff;
+
+  /* ---- borders --------------------------------------------------------- */
+  /* Used sparingly: a soft shadow separates a card from the page, and a border is for things that
+     genuinely have an edge (an input, a divider, a selected row). */
+  --border: #e2e5ea;
+  --border-strong: #cbd3dc;
+  --divider: #eef0f3;
+
+  /* ---- accent ---------------------------------------------------------- */
+  /* Near-black, deliberately. See the note at the top: a coloured accent would compete with the
+     status colours, and here a colour has to mean something. */
+  --accent: #14181c;
+  --accent-hover: #2a3138;
+  --accent-soft: #eef0f3;
+  --accent-soft-border: #dfe3e8;
+  --focus: #2f6feb;
+
+  /* ---- status ---------------------------------------------------------- */
+  /* Each has a background (a pill behind text) and an ink (the text on it). */
+  --status-good-bg: #e3f3e8;
+  --status-good-ink: #1d6b39;
+  --status-warn-bg: #fdf2dc;
+  --status-warn-ink: #8a6100;
+  --status-bad-bg: #fbe6e6;
+  --status-bad-ink: #9b2c25;
+  --status-nodata-bg: #eef0f3;
+  --status-nodata-ink: #5b6672;
+  --status-dot: #7c8794;
+
+  /* ---- equipment symbols ------------------------------------------------- */
+  /*
+   * A drawing gets three inputs and no more (ADR-0027 §5): the metal, what moves inside it, and what
+   * it says. That is deliberately fewer than a palette — a symbol is a claim about a plant, so its
+   * appearance has to come from the state it is in rather than from a colour an author picked.
+   */
+  --equipment-body: #ffffff;
+  --equipment-line: #3c4650;
+  --equipment-moving: #14181c;
+
+  /* ---- alarm banner ---------------------------------------------------- */
+  /* Its own set, because the banner is the one thing on the page allowed to demand attention. */
+  --alarm-surface: #fff6f5;
+  --alarm-border: #f0c7c4;
+  --alarm-ink: #9b2c25;
+  --alarm-cleared-surface: #fbf7ee;
+  --alarm-cleared-bg: #8a6d1f;
+
+  /* ---- notice (a template edit, a device an edge cannot read) ----------- */
+  --notice-surface: #e8f2ec;
+  --notice-border: #c6ddd0;
+  --notice-ink: #1d6b39;
+  --warn-surface: #fdf3dc;
+  --warn-border: #d9a441;
+  --warn-ink: #8a5a00;
+
+  /* ---- radius ---------------------------------------------------------- */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 11px;
+  --radius-pill: 999px;
+
+  /* ---- elevation ------------------------------------------------------- */
+  /* Two shadows per level: a hairline ring that reads as an edge without being a border, and a
+     soft drop that reads as height. That pairing is what makes a card look modern rather than
+     outlined. */
+  --shadow-sm: 0 1px 2px rgba(18, 24, 32, 0.05), 0 0 0 1px rgba(18, 24, 32, 0.045);
+  --shadow: 0 1px 3px rgba(18, 24, 32, 0.06), 0 0 0 1px rgba(18, 24, 32, 0.045);
+  --shadow-md: 0 4px 14px rgba(18, 24, 32, 0.08), 0 0 0 1px rgba(18, 24, 32, 0.04);
+  --shadow-lg: 0 12px 40px rgba(20, 28, 38, 0.3);
+
+  /* ---- type ------------------------------------------------------------ */
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-xs: 0.7rem;
+  --text-sm: 0.78rem;
+  --text-base: 0.85rem;
+  --text-md: 0.95rem;
+  --text-lg: 1.05rem;
+  --text-xl: 1.7rem;
+
+  /* ---- spacing --------------------------------------------------------- */
+  --space-1: 0.25rem;
+  --space-2: 0.4rem;
+  --space-3: 0.6rem;
+  --space-4: 0.8rem;
+  --space-5: 1.1rem;
+  --space-6: 1.5rem;
+
+  /* ---- surfaces that are not a token but a value of one ---------------- */
+  /* The modal backdrop, and the chart's line. Tokens rather than literals because both have to
+     change with the theme: an ink line is invisible on a dark chart, and a dark scrim over a dark
+     page is not a scrim. */
+  --scrim: rgba(20, 28, 38, 0.45);
+  --chart-line: #14181c;
+
+  /*
+   * Tells the browser which way round its own furniture is — form controls, scrollbars, the caret.
+   * Without it a dark page gets a white scrollbar and a light-themed `<select>`, which is the detail
+   * that makes a dark mode look unfinished.
+   */
+  color-scheme: light;
+}
+
+/*
+ * The dark theme: **the same tokens with different values, and nothing else.**
+ *
+ * That is the whole reason this file exists in the shape it does. A theme is not a second stylesheet;
+ * it is a second column of a table, and the test of whether the token layer was built properly is
+ * whether adding one touched a component. This one did not.
+ *
+ * What changed besides the inversion, and why:
+ *
+ * - **Surfaces get *lighter* as they come forward, exactly as in the light theme.** A dark theme that
+ *   dimmed its panels would put the content behind the page it sits on, which is the commonest way a
+ *   dark mode ends up looking wrong.
+ * - **The status inks are the light-theme *backgrounds*, and the backgrounds are mixed much darker.**
+ *   A pill that is a pale tint with dark text cannot simply be inverted: on a dark surface a pale
+ *   block is the loudest thing on the screen, and a Bad alarm would shout for the wrong reason.
+ * - **The shadows are heavier and the rings are lighter.** A black drop shadow is invisible on a
+ *   near-black page, so the ring does the separating and the shadow only adds depth.
+ * - **The accent becomes near-white**, because the accent is defined as "the ink that contrasts with
+ *   the page" rather than as a colour — which is the payoff of having chosen it without a hue.
+ */
+[data-theme='dark'] {
+  --surface-page: #14161a;
+  --surface-sunken: #1b1e23;
+  --surface: #1e2126;
+  --surface-hover: #24272d;
+  --surface-raised: #262a30;
+
+  --text: #f2f4f7;
+  --text-body: #c8ced6;
+  --text-muted: #8b939d;
+  --text-on-accent: #14161a;
+
+  --border: #2e333a;
+  --border-strong: #454b54;
+  --divider: #272b31;
+
+  --accent: #f2f4f7;
+  --accent-hover: #ffffff;
+  --accent-soft: #2a2f36;
+  --accent-soft-border: #3b414a;
+  --focus: #79a8ff;
+
+  --status-good-bg: #14301f;
+  --status-good-ink: #7fd6a0;
+  --status-warn-bg: #33280d;
+  --status-warn-ink: #e8bf6a;
+  --status-bad-bg: #3a1c1a;
+  --status-bad-ink: #f09a92;
+  --status-nodata-bg: #2a2f36;
+  --status-nodata-ink: #a8b0ba;
+  --status-dot: #7a828c;
+
+  /* The metal is darker than the surface in the dark theme, so a symbol reads as a thing standing on
+     the page rather than as a light patch cut out of it. */
+  --equipment-body: #262a30;
+  --equipment-line: #aab2bc;
+  --equipment-moving: #e8ecf1;
+
+  --alarm-surface: #2a1a19;
+  --alarm-border: #5a322e;
+  --alarm-ink: #f09a92;
+  --alarm-cleared-surface: #2b2618;
+  --alarm-cleared-bg: #6d5620;
+
+  --notice-surface: #162c1f;
+  --notice-border: #2c5138;
+  --notice-ink: #7fd6a0;
+  --warn-surface: #322812;
+  --warn-border: #7a6023;
+  --warn-ink: #e8bf6a;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.055);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.65);
+
+  --scrim: rgba(0, 0, 0, 0.6);
+  --chart-line: #9db8e8;
+
+  color-scheme: dark;
+}
+
+/*
+ * The page's own defaults, so that anything outside a component (a bare `<p>`, a scrollbar gutter)
+ * inherits the same palette rather than the browser's.
+ */
+html,
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--surface-page);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* One focus treatment for the whole product, and visible: a keyboard user on a console has to be
+   able to see where they are, and the browser default disappears against a shadowed card. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

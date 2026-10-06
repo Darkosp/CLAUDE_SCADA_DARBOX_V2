@@ -231,6 +231,35 @@ internal static class ConfigurationRows
         };
     }
 
+    /// <summary>
+    /// The columns <see cref="ScreenComponentRow"/> needs beyond the ones a query names itself,
+    /// listed once.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is the second time a row in this file has been read by two queries and the column list
+    /// has drifted.</b> Dapper materialises by constructor signature, so a SELECT omitting a column
+    /// fails at run time — and the component queries are easy to change one at a time. Naming the list
+    /// here means the next column cannot be added to one and forgotten in another.
+    ///
+    /// **Unqualified, so it is only for a query that does not alias the table.** The one query that
+    /// joins `screen_active` writes its columns out instead, because it must qualify them — which is
+    /// the price of the alias and is worth knowing before adding a third reader.
+    /// </remarks>
+    internal const string ScreenComponentColumns = "device_id, symbol, states";
+
+    /// <summary>
+    /// One component row.
+    /// </summary>
+    /// <param name="States">
+    /// The symbol's state mapping exactly as the jsonb column holds it — **raw text, converted in
+    /// <see cref="ToDomain"/>**.
+    /// </param>
+    /// <remarks>
+    /// Read as a string and deserialised here rather than through a Dapper type handler, because a
+    /// handler is process-global state that every Dapper user in this process would have to agree
+    /// about. The conversion belongs beside the column it is about, and putting it here gives the
+    /// malformed case one place to be handled.
+    /// </remarks>
     internal sealed record ScreenComponentRow(
         Guid Id,
         Guid ScreenId,
@@ -240,7 +269,9 @@ internal static class ConfigurationRows
         string Kind,
         string? Title,
         Guid? TagId,
-        Guid? DeviceId)
+        Guid? DeviceId,
+        string? Symbol,
+        string? States)
     {
         internal ScreenComponent ToDomain() => new()
         {
@@ -253,6 +284,23 @@ internal static class ConfigurationRows
             Title = Title,
             TagId = TagId,
             DeviceId = DeviceId,
+            Symbol = Symbol,
+            States = ReadStates(States),
         };
+
+        /// <summary>
+        /// The mapping, or an empty one when the column holds something that is not one.
+        /// </summary>
+        /// <remarks>
+        /// **Empty rather than throwing**, and the choice matters: a malformed mapping becomes a
+        /// component that draws `unknown`, which is visible on the screen and fixable by its author
+        /// (ADR-0027 §3). Throwing would take down the whole screen — and every other screen on the
+        /// Site with it, since they are read in one query — for one bad row. Migration 0019's CHECK
+        /// makes this unreachable through the API; it is here for a row that arrived another way.
+        /// </remarks>
+        private static IReadOnlyList<SymbolState> ReadStates(string? states) =>
+            string.IsNullOrWhiteSpace(states)
+                ? []
+                : System.Text.Json.JsonSerializer.Deserialize<List<SymbolState>>(states) ?? [];
     }
 }

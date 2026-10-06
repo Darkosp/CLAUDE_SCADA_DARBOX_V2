@@ -1,145 +1,192 @@
+/*
+ * The application shell. Every value below is a token from `src/styles.css`; there are no raw
+ * colours here on purpose — see that file's header for why.
+ */
+
 :host {
   display: block;
-  font-family: system-ui, sans-serif;
-  color: #1c2024;
-  background: #f6f7f9;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--surface-page);
   min-height: 100vh;
 }
 
 header {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.9rem 1.25rem;
-  background: #fff;
-  border-bottom: 1px solid #dfe3e8;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
 
 h1 {
-  font-size: 1.05rem;
-  font-weight: 600;
+  font-size: var(--text-lg);
+  font-weight: 650;
   margin: 0;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
 }
 
-h2 { font-size: 0.95rem; margin: 0; }
-h3 { font-size: 0.85rem; margin: 0; font-weight: 600; }
+h2 { font-size: var(--text-md); margin: 0; letter-spacing: -0.011em; }
+h3 { font-size: var(--text-base); margin: 0; font-weight: 600; }
 
 .site-picker {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-  color: #6b7580;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 .state {
   margin-left: auto;
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
+  font-weight: 600;
   padding: 0.2rem 0.55rem;
-  border-radius: 999px;
-  background: #e4e7eb;
-  color: #4a5560;
+  border-radius: var(--radius-pill);
+  background: var(--status-nodata-bg);
+  color: var(--status-nodata-ink);
 }
 
-.state.connected { background: #dcf1e3; color: #1d6b39; }
-.state.disconnected { background: #fbe0e0; color: #96261f; }
+.state.connected { background: var(--status-good-bg); color: var(--status-good-ink); }
+.state.disconnected { background: var(--status-bad-bg); color: var(--status-bad-ink); }
 
 .error {
   margin: 0;
-  padding: 0.7rem 1.25rem;
-  background: #fbe0e0;
-  color: #96261f;
-  font-size: 0.85rem;
+  padding: var(--space-4) var(--space-6);
+  background: var(--status-bad-bg);
+  color: var(--status-bad-ink);
+  font-size: var(--text-base);
 }
 
 /* A device an edge is assigned and cannot read (ADR-0021). Not an error — the assignment is
    legitimate and deliberate — but not muted either: it is the one line on the panel that explains
    why tags are reading Bad, and nothing else would. */
 .warn {
-  margin: 0.3rem 0;
-  padding: 0.5rem 0.7rem;
-  background: #fdf3dc;
-  color: #8a5a00;
-  border-left: 3px solid #d9a441;
-  font-size: 0.8rem;
+  margin: var(--space-1) 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--warn-surface);
+  color: var(--warn-ink);
+  border-left: 3px solid var(--warn-border);
+  font-size: var(--text-sm);
 }
 
 main {
   display: grid;
   grid-template-columns: minmax(15rem, 22rem) 1fr;
-  gap: 1.25rem;
-  padding: 1.25rem;
+  gap: var(--space-5);
+  padding: var(--space-5);
   align-items: start;
 }
 
+/* A pane is a layer on the page, so it is a soft shadow rather than an outlined box. */
 aside, section {
-  background: #fff;
-  border: 1px solid #e3e7ec;
-  border-radius: 10px;
-  padding: 1rem;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
 }
 
+/*
+ * The journal and the screens view are full-width pages rather than two-pane ones.
+ *
+ * **The journal is a card; the screens view deliberately is not.** The journal is a table of rows and
+ * needs a frame to sit in. A screen is already made of cells that each carry their own surface and
+ * shadow, so wrapping it in a card produced a shadow inside a shadow and read as a box drawn around
+ * the thing rather than as the thing.
+ *
+ * The journal gets horizontal room because its rows are a table with a timestamp in the first column;
+ * without it the date wrapped and every row became two lines tall.
+ */
+main.journal {
+  grid-template-columns: 1fr;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5) var(--space-6);
+  margin: 0 var(--space-5) var(--space-5);
+}
+
+main.screens {
+  grid-template-columns: 1fr;
+}
+
+/*
+ * A pane's heading with its controls on the right.
+ *
+ * The controls are pushed over as a GROUP rather than spread apart: with `space-between` and three
+ * children — a title, Edit and Refresh — the middle one landed in the centre of the page, which read
+ * as a stray button rather than as one of a pair. Pushing the first control right keeps them
+ * together whatever their number.
+ */
 .pane-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.6rem;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
 }
+
+.pane-head > h2,
+.pane-head > h3 { margin-right: auto; }
 
 button {
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   padding: 0.35rem 0.7rem;
-  border-radius: 6px;
-  border: 1px solid #2f6f4f;
-  background: #2f6f4f;
-  color: #fff;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
   cursor: pointer;
 }
 
+button:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 button:disabled { opacity: 0.45; cursor: default; }
-button.ghost { background: #fff; color: #3c4550; border-color: #d6dbe1; }
+button.ghost { background: var(--surface); color: var(--text-body); border-color: var(--border); }
+button.ghost:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-strong); }
 
 .inline {
   display: flex;
-  gap: 0.4rem;
-  margin-bottom: 0.5rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 input, select {
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--text-base);
   padding: 0.35rem 0.5rem;
-  border: 1px solid #d6dbe1;
-  border-radius: 6px;
-  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
   min-width: 0;
 }
+
+input:focus, select:focus { border-color: var(--accent); }
 
 .inline input { flex: 1; }
 
 .form {
   display: grid;
-  gap: 0.6rem;
+  gap: var(--space-3);
   max-width: 26rem;
-  margin: 0.8rem 0 1rem;
+  margin: var(--space-4) 0 var(--space-5);
 }
 
 .form label {
   display: grid;
   gap: 0.2rem;
-  font-size: 0.75rem;
-  color: #6b7580;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
-.actions { display: flex; gap: 0.5rem; }
+.actions { display: flex; gap: var(--space-2); }
 
-button.danger { border-color: #96261f; background: #96261f; }
-button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
+button.danger { border-color: var(--status-bad-ink); background: var(--status-bad-ink); }
+button.danger:hover:not(:disabled) { background: var(--status-bad-ink); border-color: var(--status-bad-ink); filter: brightness(0.92); }
+button.ghost.danger { background: var(--surface); color: var(--status-bad-ink); border-color: var(--alarm-border); }
 
 .confirm {
   /* Sticky because the button that raises it can be far down a long tree: a
@@ -148,42 +195,43 @@ button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
   top: 0;
   z-index: 1;
   margin: 0;
-  padding: 0.8rem 1.25rem;
-  background: #fff6f5;
-  border-bottom: 1px solid #f0c7c4;
+  padding: var(--space-4) var(--space-6);
+  background: var(--alarm-surface);
+  border-bottom: 1px solid var(--alarm-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-5);
   flex-wrap: wrap;
 }
 
-.confirm p { margin: 0; font-size: 0.85rem; color: #4a5560; }
+.confirm p { margin: 0; font-size: var(--text-base); color: var(--text-body); }
 
 .reading {
   display: flex;
   align-items: baseline;
-  gap: 0.4rem;
-  margin: 0.8rem 0 0.2rem;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0.2rem;
 }
 
-.reading.bad .value { color: #96261f; }
+.reading.bad .value { color: var(--status-bad-ink); }
 
 .value {
   font-size: 2rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 
-.unit { font-size: 0.95rem; color: #6b7580; }
+.unit { font-size: var(--text-md); color: var(--text-muted); }
 
 .meta {
   margin-left: auto;
-  font-size: 0.75rem;
-  color: #8a94a0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
-.muted { color: #8a94a0; font-size: 0.8rem; margin: 0.3rem 0; }
+.muted { color: var(--text-muted); font-size: var(--text-base); margin: var(--space-1) 0; }
 
 @media (max-width: 48rem) {
   main { grid-template-columns: 1fr; }
@@ -199,71 +247,72 @@ button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
   z-index: 2;
   display: grid;
   gap: 1px;
-  background: #f0c7c4;
-  border-bottom: 1px solid #e0a9a4;
+  background: var(--alarm-border);
+  border-bottom: 1px solid var(--alarm-border);
 }
 
 .alarm {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-4);
   flex-wrap: wrap;
-  padding: 0.6rem 1.25rem;
-  background: #fff6f5;
-  font-size: 0.85rem;
+  padding: var(--space-3) var(--space-6);
+  background: var(--alarm-surface);
+  font-size: var(--text-base);
 }
 
 /* An alarm that corrected itself still needs acknowledging, but it is not the
    thing demanding attention right now. */
-.alarm.cleared { background: #fbf7ee; }
+.alarm.cleared { background: var(--alarm-cleared-surface); }
 
 /* Sized to the banner rather than to the browser's default, so the duration picker
    sits in the row instead of stretching it. */
 .shelve-for {
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--text-base);
   padding: 0.2rem 0.3rem;
 }
 
 .badge {
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
   padding: 0.15rem 0.45rem;
   border-radius: 4px;
-  background: #96261f;
-  color: #fff;
+  background: var(--alarm-ink);
+  color: var(--text-on-accent);
 }
 
-.alarm.cleared .badge { background: #8a6d1f; }
+.alarm.cleared .badge { background: var(--alarm-cleared-bg); }
 
 .where { font-weight: 600; }
 .what { font-variant-numeric: tabular-nums; }
-.limit { color: #6b7580; }
-.when { color: #8a94a0; font-size: 0.75rem; margin-left: auto; }
+.limit { color: var(--text-muted); }
+.when { color: var(--text-muted); font-size: var(--text-sm); margin-left: auto; }
 
-.summary-head { margin: 1.5rem 0 0.5rem; }
+.summary-head { margin: var(--space-6) 0 var(--space-3); }
 
 .summary {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8rem;
+  font-size: var(--text-base);
 }
 
 .summary th {
   text-align: left;
-  font-weight: 600;
-  color: #6b7580;
-  border-bottom: 1px solid #e3e7ec;
+  font-weight: 650;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
   padding: 0.35rem 0.5rem 0.35rem 0;
+  font-size: var(--text-sm);
 }
 
 .summary td {
-  padding: 0.35rem 0.5rem 0.35rem 0;
-  border-bottom: 1px solid #f0f2f5;
+  padding: 0.45rem 0.5rem 0.45rem 0;
+  border-bottom: 1px solid var(--divider);
 }
 
-.summary tr.settled td { color: #8a94a0; }
+.summary tr.settled td { color: var(--text-muted); }
 
 /* --- journal ------------------------------------------------------------ */
 
@@ -271,7 +320,7 @@ button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
    two elements: with no rule of its own the client printed two parts as one word. The
    Phase 7 walk read this off the screen: "190 samples dropped at the source21:57:37 –
    21:59:12" — the count and the window meeting as one word. */
-.tag { margin-right: 0.4rem; }
+.tag { margin-right: var(--space-2); }
 
 /* The journal's filters. Laid out on one line with the Clear button beside them, because a filter
    the reader has forgotten about is how an empty journal gets misread as a quiet night. */
@@ -279,32 +328,73 @@ button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
 }
 
 .journal-filters label { display: block; }
 
 .journal-filters span {
   display: block;
-  font-size: 0.78rem;
-  color: #5b6672;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 .journal-filters select { min-width: 12rem; }
+
+/*
+ * The journal's table had **no rules of its own**, which is why its column headings sat centred
+ * over left-aligned data and its timestamps wrapped onto two lines: those are the browser's
+ * defaults for `<th>` and a table with no width, not a decision anyone made. Found on 2026-10-06 by
+ * looking at the running page — the same class of thing Phase 8's walk found, in the layout.
+ */
+.journal-rows {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-base);
+}
+
+.journal-rows th {
+  text-align: left;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  padding: 0 var(--space-4) var(--space-3) 0;
+  white-space: nowrap;
+}
+
+.journal-rows td {
+  padding: var(--space-3) var(--space-4) var(--space-3) 0;
+  border-bottom: 1px solid var(--divider);
+  vertical-align: top;
+}
+
+/* The recording time is the column a reader scans down, so it must not wrap and must not wobble
+   between rows as the digits change. */
+.journal-rows td:first-child {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* An entry the engine wrote about itself rather than about equipment (ADR-0013) — present for every
+   reader, and quieter than an alarm row because it is news rather than a plant condition. */
+.journal-rows tr.engine td { color: var(--text-muted); }
 
 /* --- templates ---------------------------------------------------------- */
 
 .views {
   display: flex;
   gap: 0.3rem;
-  margin-left: 0.5rem;
+  margin-left: var(--space-2);
 }
 
+/* The current view is a soft filled pill rather than a button that happens to be pressed: on a
+   console the operator has to see at a glance which page they are on. */
 .views button.current {
-  background: #eef1f4;
-  border-color: #c6cdd4;
-  color: #1c2024;
+  background: var(--accent-soft);
+  border-color: var(--accent-soft-border);
+  color: var(--text);
   font-weight: 600;
 }
 
@@ -314,33 +404,35 @@ button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
   text-align: left;
   background: none;
   border: 0;
-  border-left: 2px solid #e3e7ec;
+  border-left: 2px solid var(--border);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   padding: 0.35rem 0.6rem;
   margin: 0.15rem 0;
   font: inherit;
-  font-size: 0.85rem;
-  color: #3c4550;
+  font-size: var(--text-base);
+  color: var(--text-body);
   cursor: pointer;
 }
 
-.template:hover { background: #eef1f4; }
-.template.selected { border-left-color: #2f6f4f; background: #e8f2ec; font-weight: 600; }
+.template:hover { background: var(--surface-sunken); }
+.template.selected { border-left-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 
 .settings {
-  border: 1px solid #e3e7ec;
-  border-radius: 8px;
-  padding: 0.6rem 0.8rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4) var(--space-4);
   display: grid;
-  gap: 0.4rem;
+  gap: var(--space-2);
   margin: 0;
 }
 
 .settings legend {
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #6b7580;
+  color: var(--text-muted);
   padding: 0 0.3rem;
+  font-weight: 600;
 }
 
 .setting {
@@ -352,24 +444,24 @@ button.ghost.danger { background: #fff; color: #96261f; border-color: #e0bab7; }
 .setting .remove {
   background: none;
   border: 0;
-  color: #a0a8b0;
+  color: var(--text-muted);
   font: inherit;
   padding: 0 0.3rem;
   cursor: pointer;
 }
 
-.setting .remove:hover { color: #96261f; }
+.setting .remove:hover { color: var(--status-bad-ink); background: none; }
 
 /* A template edit reaches every instance with no confirmation, so what it did is
    stated rather than left for the operator to infer from the tree. */
 .note {
-  margin: 0.5rem 0;
-  padding: 0.5rem 0.7rem;
-  background: #e8f2ec;
-  border: 1px solid #c6ddd0;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  color: #1d6b39;
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--notice-surface);
+  border: 1px solid var(--notice-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--notice-ink);
 }
 
 /* --- sign-in, session and users ------------------------------------------ */
@@ -385,58 +477,58 @@ main.login {
   width: 100%;
   max-width: 22rem;
   margin: 0;
-  padding: 1.5rem;
-  background: #fff;
-  border: 1px solid #e3e7ec;
-  border-radius: 10px;
+  padding: var(--space-6);
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
 }
 
-.login-form h1 { margin-bottom: 0.4rem; }
+.login-form h1 { margin-bottom: var(--space-2); }
 
 .inline-error {
-  padding: 0.5rem 0.7rem;
-  border-radius: 6px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
 }
 
 .who {
-  font-size: 0.8rem;
-  color: #4a5560;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 .form .check {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-  color: #3c4550;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-body);
 }
 
 main.single { grid-template-columns: 1fr; }
 
 .row-actions {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-2);
   justify-content: flex-end;
 }
 
 .write {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-2);
   align-items: center;
-  margin: 0.4rem 0 0.8rem;
+  margin: var(--space-2) 0 var(--space-4);
 }
 
 code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem;
-  background: #f2f4f6;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: var(--surface-sunken);
   padding: 0.1rem 0.3rem;
   border-radius: 4px;
 }
 
 /* A name the Gateway refused as already taken (ADR-0015), shown under that name field. */
 .field-error {
-  color: #b3261e;
-  font-size: 0.85rem;
+  color: var(--status-bad-ink);
+  font-size: var(--text-base);
   margin: -0.25rem 0 0.25rem;
 }

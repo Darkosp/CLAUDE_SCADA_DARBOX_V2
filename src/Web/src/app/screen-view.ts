@@ -10,6 +10,7 @@ import {
 } from './screen';
 import { TagSnapshot } from './tag';
 import { TrendChart } from './trend-chart';
+import { SymbolView } from './symbol';
 
 /**
  * One operator screen: the rows a person looks at (ADR-0024).
@@ -21,7 +22,7 @@ import { TrendChart } from './trend-chart';
  */
 @Component({
   selector: 'app-screen',
-  imports: [TrendChart, FormsModule],
+  imports: [TrendChart, SymbolView, FormsModule],
   template: `
     @if (rows().length === 0) {
       <p class="empty">This screen has nothing on it.</p>
@@ -36,7 +37,12 @@ import { TrendChart } from './trend-chart';
                 }
                 @case ('value') {
                   <p class="caption">
-                    <span class="path">{{ $any(cell.resolved).path }}</span>
+                    <!--
+                      The short label and the full path in the tooltip: a tile is captioned with the
+                      tag's own name, and a reader who needs to know which device it is under hovers
+                      rather than reading a repeated path on every tile.
+                    -->
+                    <span class="path" [title]="$any(cell.resolved).path">{{ $any(cell.resolved).caption }}</span>
                     @if ($any(cell.resolved).writable) {
                       <span class="writable" title="This tag can be written">writable</span>
                     }
@@ -44,9 +50,12 @@ import { TrendChart } from './trend-chart';
                       {{ $any(cell.resolved).quality }}
                     </span>
                   </p>
-                  <p class="reading">{{ $any(cell.resolved).text }}</p>
-                  @if ($any(cell.resolved).sourceTimestampUtc; as at) {
-                    <p class="at">at {{ at }}</p>
+                  <p class="reading" [class.zero]="$any(cell.resolved).zero">{{ $any(cell.resolved).text }}</p>
+
+                  <!-- The time appears only when the reading is not fresh, so its presence on a
+                       tile is itself the signal rather than one line of chrome among four. -->
+                  @if ($any(cell.resolved).note; as note) {
+                    <p class="at">{{ note }}</p>
                   }
 
                   <!--
@@ -77,9 +86,29 @@ import { TrendChart } from './trend-chart';
                     {{ $any(cell.resolved).quality }}
                   </p>
                 }
+                @case ('symbol') {
+                  <p class="caption">
+                    <span class="path" [title]="$any(cell.resolved).path">{{ $any(cell.resolved).caption }}</span>
+                    @if ($any(cell.resolved).fromQuality) {
+                      <!--
+                        Said out loud, because it is the difference between a machine the plant says is
+                        off and one nothing is measuring (ADR-0003). The drawing shows it too; a word is
+                        what a reader who does not know this project's colours has to go on.
+                      -->
+                      <span class="quality" [class]="'q-' + $any(cell.resolved).quality">
+                        {{ $any(cell.resolved).quality }}
+                      </span>
+                    }
+                  </p>
+                  <app-symbol [shape]="$any(cell.resolved).shape"
+                              [state]="$any(cell.resolved).state" />
+                  <p class="symbol-state" [class]="'t-' + $any(cell.resolved).state">
+                    {{ $any(cell.resolved).state }}
+                  </p>
+                }
                 @case ('trend') {
                   <p class="caption">
-                    <span class="path">{{ $any(cell.resolved).path }}</span>
+                    <span class="path" [title]="$any(cell.resolved).path">{{ $any(cell.resolved).caption }}</span>
                     @if ($any(cell.resolved).writable) {
                       <span class="writable" title="This tag can be written, though not from a trend">
                         writable
@@ -194,75 +223,136 @@ import { TrendChart } from './trend-chart';
       gap: 12px;
       margin-bottom: 12px;
     }
+    /* A cell is a layer on the page, so a soft shadow rather than an outlined box. */
     .cell {
-      background: #fff;
-      border: 1px solid #e3e7ec;
-      border-radius: 8px;
-      padding: 12px 14px;
+      background: var(--surface);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      padding: 13px 15px 15px;
       min-width: 0;
     }
-    .label { margin: 0; font-size: 1.05rem; }
+    /* A grid row's cells share a height, tallest wins, so the row reads as one band. Without the
+       flex column a tile's content sat at the top of a stretched cell and a trend beside an alarm
+       list left the two halves of the screen visibly different heights — obvious at 1920. */
+    .row > .cell { display: flex; flex-direction: column; }
+    .cell > .chart { flex: 1; min-height: 120px; height: auto; }
+    /* The reading row takes a share of the viewport rather than only what its text needs, so a
+       screen built for a wall panel uses the panel: at 1920 the whole console occupied the top
+       third of the glass and the rest was empty. Capped, because past a point a large empty tile
+       is its own kind of unreadable. */
+    .row > .cell:has(.reading) { min-height: clamp(120px, 13vh, 210px); }
+    .label { margin: 0; font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.01em; }
     .caption {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       gap: 8px;
-      margin: 0 0 4px;
-      font-size: 0.8rem;
-      color: #5b6672;
+      margin: 0 0 7px;
+      font-size: 0.76rem;
+      color: var(--text-muted);
     }
     .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .reading { margin: 0; font-size: 1.6rem; font-variant-numeric: tabular-nums; }
-    .at { margin: 2px 0 0; font-size: 0.72rem; color: #8a949e; }
-    .quality { border-radius: 999px; padding: 1px 8px; font-size: 0.72rem; background: #eef1f4; }
-    /* ADR-0024 §9: marked, and deliberately not a button. Writing from a screen is the next slice,
-       and a marker that looked pressable would promise something the build cannot do. */
+    /* The reading is what the tile is for, so it is the largest thing in it and scales with the
+       viewport: on a 1920 panel a fixed 1.7rem is a number read from two metres away, which was the
+       first thing the large-screen look found on 2026-10-06. */
+    .reading {
+      margin: 0;
+      font-size: clamp(1.55rem, 1.15rem + 1.1vw, 2.6rem);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.025em;
+      color: var(--text);
+      line-height: 1.1;
+    }
+    .at { margin: 5px 0 0; font-size: 0.72rem; color: var(--status-warn-ink); }
+    /* A zero is dimmed rather than coloured: it is worth noticing, and it is not a fault. Colouring
+       it would put a second meaning on the status colours, which is the one thing this palette
+       reserves them for. */
+    .reading.zero { color: var(--text-muted); }
+
+    /* The state, written under the drawing. Not decoration: bad and stopped are different facts
+       — "the plant says this machine is off" against "nothing is measuring it" — and a drawing that
+       told them apart only by a shade of grey would be ADR-0003's failure where it is hardest to
+       notice. A word is what a reader who does not know this palette has to go on. */
+    .symbol-state {
+      margin: 6px 0 0;
+      font-size: var(--text-sm);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      font-weight: 650;
+      text-align: center;
+      color: var(--text-muted);
+    }
+    .t-running { color: var(--status-good-ink); }
+    .t-fault, .t-bad { color: var(--status-bad-ink); }
+    .t-stale { color: var(--status-warn-ink); }
+
+    /* The quality pill. Its colours are the semantic status tokens and nothing else, so "green"
+       means Good and never merely "a nice colour" — see styles.css. */
+    .quality {
+      border-radius: var(--radius-pill);
+      padding: 2px 8px;
+      font-size: 0.68rem;
+      font-weight: 650;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: var(--status-nodata-bg);
+      color: var(--status-nodata-ink);
+    }
+    /* ADR-0026: the tag could be written. Deliberately not a button — the control that acts is
+       .operate below, on the value component alone, and a marker that looked pressable would
+       promise an action this element does not perform. */
     .writable {
-      border-radius: 999px;
-      padding: 1px 8px;
-      font-size: 0.72rem;
-      background: #eaeefb;
-      color: #2f4a9c;
-      border: 1px dashed #b9c4e6;
+      border-radius: var(--radius-pill);
+      padding: 2px 8px;
+      font-size: 0.68rem;
+      font-weight: 650;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: var(--accent-soft);
+      color: var(--text-body);
+      border: 1px dashed var(--border-strong);
       cursor: default;
     }
-    .quality.alone { display: inline-block; font-size: 0.95rem; padding: 4px 12px; }
-    .q-Good { background: #e3f6e9; color: #1c6b3a; }
-    .q-Uncertain { background: #fdf3dc; color: #8a6100; }
-    .q-Stale { background: #fdf3dc; color: #8a6100; }
-    .q-Bad { background: #fbe6e6; color: #99201f; }
+    .quality.alone { display: inline-block; font-size: var(--text-md); padding: 4px 12px; }
+    .q-Good { background: var(--status-good-bg); color: var(--status-good-ink); }
+    /* Uncertain and Stale share a colour because they are the same message to an operator: the
+       number is there and you should not lean on it. Bad is the one with nothing behind it. */
+    .q-Uncertain { background: var(--status-warn-bg); color: var(--status-warn-ink); }
+    .q-Stale { background: var(--status-warn-bg); color: var(--status-warn-ink); }
+    .q-Bad { background: var(--status-bad-bg); color: var(--status-bad-ink); }
     .alarms { margin: 0; padding-left: 18px; }
-    .alarms .limit { font-weight: 600; margin: 0 6px; }
-    .empty, .unavailable { margin: 0; color: #5b6672; }
+    .alarms .limit { font-weight: 650; margin: 0 6px; }
+    .empty, .unavailable { margin: 0; color: var(--text-muted); }
     .unavailable { font-style: italic; }
-    .muted { margin: 0; color: #5b6672; }
+    .muted { margin: 0; color: var(--text-muted); }
 
     /* The write control. Understated on purpose: it sits beside a value an operator reads, and a
        control that looked like the most important thing on the screen would make an operating
        action look like the normal state of the screen. */
-    .operate { margin-top: 6px; font-size: 0.78rem; }
+    .operate { margin-top: 9px; font-size: 0.76rem; }
 
     /* No backdrop-click to dismiss: it is the gesture most likely to be accidental, and this is the
        one dialog whose accidental dismissal leaves the operator unsure whether the write happened. */
     .write-backdrop {
       position: fixed;
       inset: 0;
-      background: rgba(20, 28, 38, 0.45);
+      background: var(--scrim);
       display: flex;
       align-items: center;
       justify-content: center;
       z-index: 20;
     }
     .write-dialog {
-      background: #fff;
-      border-radius: 10px;
+      background: var(--surface-raised);
+      border-radius: var(--radius-lg);
       padding: 18px 20px;
       min-width: 22rem;
       max-width: 32rem;
-      box-shadow: 0 12px 40px rgba(20, 28, 38, 0.3);
+      box-shadow: var(--shadow-lg);
     }
-    .write-dialog h3 { margin: 0 0 10px; font-size: 1rem; }
+    .write-dialog h3 { margin: 0 0 10px; font-size: var(--text-md); }
     .write-current { margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
-    .write-dialog label { display: block; margin-bottom: 12px; font-size: 0.82rem; }
+    .write-dialog label { display: block; margin-bottom: 12px; font-size: var(--text-sm); color: var(--text-muted); }
     .write-dialog input, .write-dialog select { display: block; margin-top: 4px; width: 100%; }
     .write-actions { display: flex; gap: 8px; }
   `,

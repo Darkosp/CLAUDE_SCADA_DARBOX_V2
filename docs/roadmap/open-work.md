@@ -425,6 +425,137 @@ the write path knows. It now says the write was **accepted**, and that the readi
 scan reports what the device holds — which is the true statement whether the device is polled here or
 behind an edge.
 
+### 2.0i The client's visual design — modernised on 2026-10-06
+
+**A decision, not a defect.** The client had grown a look rather than chosen one. Before this, it held
+**45 distinct hex values across five files**, including near-duplicates that had drifted apart
+(`#1c6b3a` beside `#1d6b39`, `#99201f` beside `#96261f`) — Phase 8's lesson in its visual form, *a rule
+and every place that applies it have to move together*, and a colour is a rule.
+
+**What was decided.** A light background, and the "soft and neutral" direction out of three proposals
+built and shown side by side: soft shadows instead of borders, cool grey surfaces, a near-black accent,
+eleven-pixel corners. **The accent is deliberately without hue.** The only strong colours in this
+product are the status ones, because here a colour has to *mean* something — Good, Uncertain or Stale,
+Bad, no reading (ADR-0003) — and an accent that competed with them would make "green" mean two things
+at once.
+
+**What was built.** `src/styles.css` holds every colour, radius, shadow, type size and spacing as a
+token, and **no other file in the client writes a raw colour** — checked by search, not asserted. The
+app shell, the five component kinds, the journal, the tree, the editor, the write dialog and the trend
+chart all draw from it.
+
+**Two defects the browser walk found, neither of which a test could have.** The screens were generated
+by driving the running application, signed in, with a headless browser
+(`tools/screenshot-live.mjs`), and then looking at the result:
+
+1. **The journal's table had no rules of its own.** Its column headings sat centred over left-aligned
+   data and its timestamps wrapped onto two lines, because those are the browser's defaults for `<th>`
+   and for a table with no width — not a decision anyone had made. It had been that way since Phase 5.5
+   and nothing could see it.
+2. **The screens view and the journal were bare text on the page background.** Both are `<main>`
+   elements, and the stylesheet's card rule matched only `aside, section` — so the two views an
+   operator spends all their time in were the only two without a surface.
+
+**Two more things were corrected by looking again**, which is the argument for looking twice: wrapping
+the screens view in a card put a shadow inside a shadow (a screen is already made of cells that carry
+their own), so the frame came off and the screen is now the page's content rather than a panel on it;
+and a pane heading with three children spread its controls apart, leaving Edit stranded in the middle
+of the page, so they are grouped to the right instead.
+
+**What has not happened:** no operator has used any of this, and **nobody has judged it at the size a
+plant screen is** — whether the value is large enough to read from a step back, whether the Bad pill
+stands out at a glance, and whether the near-black accent reads as deliberate rather than as an
+unstyled button are all unjudged. They are the same class of question `phase-8-manual-gate.md` lists,
+and they need the same thing: eyes.
+
+**What this deliberately is not:** a dark theme. The tokens make one cheap to add later — a second set
+of values, not a rewrite of the components — and **that is the whole reason the tokens exist**, so a
+deployment that wants one is not asking for the client to be restyled a second time.
+
+### 2.0j A symbol, the dark theme, and what looking at 1920 found — 2026-10-06
+
+**Three things were asked for in one sitting and two of them are finished.**
+
+**1. The screens view at 1920×1080, which is the size a control-room panel actually is.** Every view
+was captured from the **running client, signed in**, by a headless browser (`tools/screenshot-live.mjs`,
+now defaulting to 1920) and looked at. Three defects nothing had seen, and all three are the same kind
+— a decision that was right at 1440 and wrong at 1920:
+
+- tiles were captioned with the **full display path**, so every one wrapped or was cut. A tile now
+  carries the tag's own name and the path in its tooltip;
+- every tile printed its **source timestamp**, four lines of chrome to say four readings were fresh.
+  The time now appears only when a reading is *not* fresh, so its presence is the signal;
+- the reading was a **fixed 1.7rem** — on a 1920 panel a number read from two metres away. It scales
+  with the viewport now, and a zero is dimmed, because a stopped flow is the reading most easily missed.
+
+**2. A dark theme, which the token layer made almost free.** `[data-theme='dark']` is a second set of
+values and nothing else — **adding it touched no component**, which is the whole reason the token layer
+exists. Applied before the first paint by a small inline script in `index.html`, so there is no flash;
+the choice is per browser in `localStorage`, beside the session controls rather than among the views.
+
+It is not an inversion, and the differences are recorded in the file: surfaces get **lighter** as they
+come forward, as in the light theme; the status inks are the light theme's backgrounds mixed much
+darker, because a pale pill on a dark surface is the loudest thing on screen and a Bad alarm would
+shout for the wrong reason; and the accent becomes near-white, which is the payoff of having chosen it
+without a hue.
+
+**3. A contrast audit found real defects in both themes, and this is the part worth reading.**
+
+- the light theme's faintest text measured **2.82:1** on the page background, where AA asks for 4.5.
+  `--text-faint` was doing the job `--text-muted` already did, badly, so it was **removed rather than
+  darkened** — a near-duplicate that fails a contrast check is a duplicate;
+- the light "no reading" pill measured 4.1:1. Fixed;
+- the dark theme's faint text was 4.15:1. Fixed.
+
+Locked by `src/Web/tests/theme-contrast.test.mjs`, which checks both palettes: three text levels
+against three surfaces, every status pill against its own background, and that the quality colours can
+be told apart. **Its first version was wrong and that is in the test's own comments** — it compared
+luminance, and light's Stale and Bad are a brown and a red that are obviously different and have nearly
+the same brightness. Comparing brightness would have demanded one of them be made paler for no reason a
+reader would thank anyone for, so distance is measured in a crude perceptual space instead.
+
+**4. ADR-0027 — a symbol derives a named state from its tag.** The first time ADR-0024's "the answer is
+a new ADR adding a kind" has been acted on; there are six kinds now and the sixth is a picture of
+equipment. The interesting decisions are in the ADR: the mapping is an **ordered list of declarative
+comparisons rather than an expression**, because an expression is a language and a language needs a
+parser, a debugger and a story about what an operator may type; **quality overrides the state**, so a
+boolean tag that has gone Bad does not draw a turning pump, because a turning pump is a claim about the
+world; and **a continuing value never drives an animation**.
+
+**What is built:** the model, migration 0019 (a `jsonb` mapping with a CHECK that it is an array, and
+the read view recreated to carry it), persistence, the API and its refusals, **and the client** — the
+resolver, the pump drawing with its six states, and the editor's mapping form.
+
+**The client half was finished the same day, and looking at it found two things.** The pump renders in
+both themes and in both states — green and turning when its tag reads true, grey and still when it
+reads false — and the dark theme needed no change to the drawing at all, because it draws from the
+equipment and status tokens like everything else. What the live check found was **a defect in the
+seed data rather than in the code**: the fallback rule was written with a comparison attached, and the
+server refused it with *"The fallback state of a 'symbol' component (rule 2) cannot also have a
+comparison."* That is the refusal working exactly as ADR-0027 describes, and it was right — a rule
+that matches anything cannot also state what it matches. Both the seed and `newComponent` now write a
+fallback with no comparison.
+
+**Still not walked, and the ADR's own "Verified in review by" list is now true rather than half true:**
+an author has not built a symbol from an empty screen through the browser, and **nobody has looked at a
+turning pump on a plant screen** — whether the rotation reads at a glance, whether `stopped` and `bad`
+are distinguishable without reading the word under them, and whether the mapping form is usable by
+somebody who has not read ADR-0027 are all unjudged. They need the same thing everything else in Phase
+8 needs: eyes.
+
+**One more thing worth knowing before touching these queries.** The same Dapper trap bit **twice in one
+sitting**: a row read by two queries whose column lists drifted, failing at run time with a message
+about a constructor signature. The component column list is now named once
+(`ScreenComponentColumns`), with a note at the definition saying what happened and the one case it does
+not cover.
+
+**And one piece of history was rewritten**, on this repository's own rule that history is not rewritten
+on purpose. The design commit `cee86ba` was already pushed and a squash folded it into `c800d60`, which
+needs a force-push to publish. It was done because `git diff cee86ba c800d60` shows **only additions** —
+nothing was lost, which was checked before the push rather than assumed — and because leaving the two
+commits halves the same change. Recorded here because the rule exists to stop silent rewrites, and a
+recorded one is not silent.
+
 ### 2.0 Written, and not yet walked
 
 Decided, implemented, tested — and waiting only for a run that exercises it. These are not

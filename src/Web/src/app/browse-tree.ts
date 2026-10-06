@@ -70,10 +70,11 @@ export interface Selection {
     .folder, .device { margin-left: 0.75rem; }
     .folder > .label {
       display: block;
-      font-size: 0.8rem;
+      font-size: var(--text-sm);
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      color: #6b7580;
+      font-weight: 600;
+      color: var(--text-muted);
       margin: 0.6rem 0 0.2rem;
     }
     .device-label {
@@ -85,43 +86,46 @@ export interface Selection {
       padding: 0.3rem 0;
       font: inherit;
       font-weight: 600;
-      color: #1c2024;
+      color: var(--text);
       cursor: pointer;
     }
     .driver {
       font-weight: 400;
-      font-size: 0.7rem;
-      color: #8a94a0;
+      font-size: var(--text-xs);
+      color: var(--text-muted);
       margin-left: 0.4rem;
     }
+    /* The tree's rows use the same left-bar treatment as the template list, so "this is a row you
+       can pick" looks the same wherever a row appears. */
     .tag {
       display: block;
       width: 100%;
       text-align: left;
       background: none;
       border: 0;
-      border-left: 2px solid #e3e7ec;
+      border-left: 2px solid var(--border);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
       padding: 0.25rem 0.6rem;
       margin-left: 0.4rem;
       font: inherit;
-      font-size: 0.85rem;
-      color: #3c4550;
+      font-size: var(--text-base);
+      color: var(--text-body);
       cursor: pointer;
     }
-    .tag:hover { background: #eef1f4; }
-    .tag.selected { border-left-color: #2f6f4f; background: #e8f2ec; font-weight: 600; }
-    .unit { color: #8a94a0; margin-left: 0.3rem; font-size: 0.75rem; }
+    .tag:hover { background: var(--surface-sunken); }
+    .tag.selected { border-left-color: var(--accent); background: var(--accent-soft); font-weight: 600; color: var(--text); }
+    .unit { color: var(--text-muted); margin-left: 0.3rem; font-size: var(--text-sm); }
     .remove {
       background: none;
       border: 0;
-      color: #a0a8b0;
+      color: var(--text-muted);
       font: inherit;
       line-height: 1;
       padding: 0 0.2rem;
       cursor: pointer;
     }
-    .remove:hover { color: #96261f; }
-    .none { font-size: 0.75rem; color: #a0a8b0; margin: 0.2rem 0 0 1rem; }
+    .remove:hover { color: var(--status-bad-ink); background: none; }
+    .none { font-size: var(--text-sm); color: var(--text-muted); margin: 0.2rem 0 0 1rem; }
   `,
 })
 export class BrowseTree {

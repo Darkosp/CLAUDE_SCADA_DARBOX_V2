@@ -1,8 +1,36 @@
 import { Alarm } from './models';
-import { formatValue, TagSnapshot, TagValue } from './tag';
+import { formatValue, Quality, TagSnapshot, TagValue } from './tag';
 
 /** The component kinds this build renders. The server refuses any other (ADR-0024 §3). */
-export type ScreenComponentKind = 'label' | 'value' | 'trend' | 'alarms' | 'status';
+export type ScreenComponentKind = 'label' | 'value' | 'trend' | 'alarms' | 'status' | 'symbol';
+
+/**
+ * The symbols this build can draw (ADR-0027), and the states each can be drawn in.
+ *
+ * Duplicated from Core's `Symbols`, and that duplication is deliberate rather than careless — see
+ * `deriveSymbolState` below for why the evaluation lives here as well as there, and this is the same
+ * decision: a drawing's states are the drawing's, and the drawing is this file's.
+ */
+export const SYMBOL_STATES = {
+  pump: ['running', 'stopped', 'fault', 'unknown', 'bad', 'stale'],
+} as const;
+
+export type SymbolShape = keyof typeof SYMBOL_STATES;
+
+/** Whether a mapping rule's comparison is one this build evaluates. */
+export const SYMBOL_COMPARISONS = ['equals', 'above', 'below'] as const;
+
+/**
+ * One rule of a symbol's mapping (ADR-0027): draw `state` when the reading is this.
+ *
+ * `otherwise` marks the fallback, which matches anything and is used only when nothing else did.
+ */
+export interface SymbolStateRule {
+  state: string;
+  when: string | null;
+  value: string | null;
+  otherwise: boolean;
+}
 
 /** One thing on a screen, as the API sends it. */
 export interface ScreenComponent {
@@ -13,6 +41,10 @@ export interface ScreenComponent {
   kind: ScreenComponentKind;
   title: string | null;
   tagId: string | null;
+  /** Which drawing, for a `symbol`. Null for every other kind (ADR-0027). */
+  symbol: SymbolShape | null;
+  /** How to derive a symbol's state from its tag. Empty for every other kind. */
+  states: readonly SymbolStateRule[];
   /**
    * Whether this session may see the value behind `tagId`.
    *
@@ -21,14 +53,143 @@ export interface ScreenComponent {
    */
   readable: boolean;
   /**
-   * Whether this session could write the tag behind `tagId` — **if writing from a screen existed,
-   * which it does not** (ADR-0024 §9).
+   * Whether this session could write the tag behind `tagId` (ADR-0026 §2).
    *
-   * ADR-0024 requires that a writable tag is *marked* writable on a screen and stops there; acting on
-   * it is the next slice. Decided by the server for the same reason `readable` is, and false for a
-   * reader who cannot operate the Site even when the tag itself is writable.
+   * Decided by the server for the same reason `readable` is, and false for a reader who cannot
+   * operate the Site even when the tag itself is writable.
    */
   writable: boolean;
+}
+
+/**
+ * What a symbol should be drawn as, and why (ADR-0027).
+ */
+export interface DerivedSymbolState {
+  /** One of the symbol's own states. Never null: there is always something to draw. */
+  state: string;
+  /** Whether it came from the reading's quality rather than from the mapping (ADR-0027 §4). */
+  fromQuality: boolean;
+  /** Which rule decided it, or null when quality did or nothing matched. For an author debugging. */
+  matchedRule: number | null;
+}
+
+/**
+ * Derive a symbol's state from its reading (ADR-0027).
+ *
+ * **This is evaluated in the browser, and the same rules are evaluated in Core's `SymbolStates` for
+ * the tests. That duplication is a decision, not an oversight**, and here is the argument for it.
+ *
+ * The alternative was to have the server send the derived state with each screen read. It cannot:
+ * a screen is fetched once and its readings arrive afterwards and continuously over the hub, so the
+ * server has no moment at which it knows both. A per-read change stream would be a second push
+ * channel carrying a derived value — more moving parts than the rule it would save, and it would make
+ * a screen's appearance depend on a subscription having arrived.
+ *
+ * What makes the duplication tolerable is that **the shape of the mapping is fixed by the API**, so
+ * the two implementations cannot drift in what they accept: the server refuses a comparison it does
+ * not evaluate (ADR-0027's consequences), which means this one only ever sees `equals`, `above` and
+ * `below`. The two are cross-checked by the client's own tests naming the same cases as the Core ones
+ * — including the one that matters most, that quality wins over the value.
+ *
+ * **Quality before mapping** (§4): a reading that is not Good has no state, whatever it says. A boolean
+ * tag that has gone Bad still carries its last value, and a pump drawn as running because of a reading
+ * nothing measured is the failure ADR-0003 exists to prevent — in the medium where it is hardest to
+ * notice, because a turning pump looks like news rather than like a missing reading.
+ */
+export function deriveSymbolState(
+  rules: readonly SymbolStateRule[],
+  reading: { value: TagValue; quality: Quality } | null,
+): DerivedSymbolState {
+  if (reading === null) {
+    return { state: 'unknown', fromQuality: false, matchedRule: null };
+  }
+
+  if (reading.quality !== 'Good') {
+    return {
+      state: reading.quality === 'Bad' ? 'bad' : 'stale',
+      fromQuality: true,
+      matchedRule: null,
+    };
+  }
+
+  let fallback: { rule: SymbolStateRule; at: number } | null = null;
+
+  for (let at = 0; at < rules.length; at++) {
+    const rule = rules[at];
+
+    if (rule.otherwise) {
+      // Remembered, not taken: a fallback matches anything, so honouring it where it stands would
+      // make every rule after it dead. Used only if nothing else matched.
+      fallback ??= { rule, at };
+      continue;
+    }
+
+    if (matchesRule(rule, reading.value)) {
+      return { state: rule.state, fromQuality: false, matchedRule: at };
+    }
+  }
+
+  return fallback === null
+    ? { state: 'unknown', fromQuality: false, matchedRule: null }
+    : { state: fallback.rule.state, fromQuality: false, matchedRule: fallback.at };
+}
+
+/**
+ * Whether one rule matches a reading.
+ *
+ * A comparison this build does not know is **not a match** rather than an error: the mapping is data,
+ * a screen is read by everyone, and a rule that cannot be evaluated should cost its own state rather
+ * than the screen. The API refuses one at save time, so this is the second line.
+ */
+function matchesRule(rule: SymbolStateRule, value: TagValue): boolean {
+  if (rule.when === 'equals') {
+    return equalsValue(value, rule.value);
+  }
+
+  // Above and below are numeric only: a boolean has no ordering, and a text tag's is not one an
+  // operator would expect a symbol to be drawn from.
+  if (value.kind !== 'numeric' || typeof value.numeric !== 'number' || rule.value === null) {
+    return false;
+  }
+
+  const threshold = Number(rule.value);
+
+  if (!Number.isFinite(threshold)) {
+    return false;
+  }
+
+  return rule.when === 'above'
+    ? value.numeric > threshold
+    : rule.when === 'below'
+      ? value.numeric < threshold
+      : false;
+}
+
+/**
+ * Whether a reading's value equals what an author typed.
+ *
+ * Compared by parsing rather than by string equality, so that `4.50` and `4.5` are the same threshold
+ * and `True` and `true` are the same boolean — an author lining a form up should not thereby create a
+ * state nothing reaches. This mirrors Core's `SymbolStates.Equals` case for case, including its
+ * case-insensitive text comparison.
+ */
+function equalsValue(value: TagValue, typed: string | null): boolean {
+  if (typed === null) {
+    return false;
+  }
+
+  switch (value.kind) {
+    case 'numeric': {
+      const wanted = Number(typed);
+      return Number.isFinite(wanted) && value.numeric === wanted;
+    }
+    case 'boolean':
+      return String(value.boolean).toLowerCase() === typed.trim().toLowerCase();
+    case 'text':
+      return (value.text ?? '').toLowerCase() === typed.toLowerCase();
+    default:
+      return false;
+  }
 }
 
 /**
@@ -90,6 +251,18 @@ export type ResolvedScreenComponent =
       valueKind: TagValue['kind'];
       text: string;
       quality: string;
+      /** Whether this is an exact zero. Marked, not judged — many tags sit at zero and mean it. */
+      zero: boolean;
+      /**
+       * What the tile is called: the author's `title` if they set one, otherwise the tag's own name.
+       *
+       * Not the full display path. That is right for a tree, where a reader picks between tags with
+       * the same name under different devices; on a screen built for one Site it is mostly
+       * repetition, and at 1920 it wrapped onto a second line in every tile.
+       */
+      caption: string;
+      /** When this reading stopped being fresh, or null when it is fresh and Good. */
+      note: string | null;
       sourceTimestampUtc: string | null;
       path: string;
       /**
@@ -103,7 +276,31 @@ export type ResolvedScreenComponent =
       writable: boolean;
     }
   | { kind: 'status'; id: string; quality: string; writable: boolean }
-  | { kind: 'trend'; id: string; tagId: string; path: string; writable: boolean }
+  | {
+      kind: 'symbol';
+      id: string;
+      tagId: string;
+      /** Which drawing. */
+      shape: SymbolShape;
+      /**
+       * The state to draw, from the mapping and the reading (ADR-0027).
+       *
+       * Always one of the shape's states, so the renderer needs no fallback of its own.
+       */
+      state: string;
+      /**
+       * Whether the state came from the reading's quality rather than from the mapping.
+       *
+       * The drawing does not need it — `bad` and `stale` are drawn as themselves — but a screen whose
+       * pump says "no reading" is answering a question an operator will ask, so it is carried rather
+       * than re-derived in the template.
+       */
+      fromQuality: boolean;
+      /** The reading as text, for the caption. */
+      caption: string;
+      path: string;
+    }
+  | { kind: 'trend'; id: string; tagId: string; path: string; caption: string; writable: boolean }
   | { kind: 'alarms'; id: string; title: string | null; alarms: Alarm[] }
   | { kind: 'missing'; id: string; note: string }
   | { kind: 'unreadable'; id: string; note: string };
@@ -178,6 +375,13 @@ export function resolveComponent(
         // than re-implements.
         text: formatValue(snapshot),
         quality: snapshot.quality,
+        // A zero is the reading most easily missed and often the one that matters, so it is marked
+        // rather than left to be spotted by comparing digits.
+        zero: isZeroReading(snapshot),
+        // The short label, and the time only when it is worth reading. Both are decisions about a
+        // screen rather than formatting, which is why they are here and tested without a browser.
+        caption: component.title?.trim() || tagNameOf(snapshot.path),
+        note: stalenessNote(snapshot.quality, snapshot.sourceTimestampUtc),
         sourceTimestampUtc: snapshot.sourceTimestampUtc,
         path: snapshot.path,
         // Marks the control, and the write is refused again by the API if anyone gets here without
@@ -186,17 +390,122 @@ export function resolveComponent(
       };
     case 'status':
       return { kind: 'status', id: component.id, quality: snapshot.quality, writable: component.writable };
+    case 'symbol': {
+      // A symbol with no shape, or one this build does not draw, is `missing` rather than a blank: the
+      // server refuses both at save time, so reaching here means the row was written another way.
+      const shape = component.symbol;
+
+      if (shape === null || !(shape in SYMBOL_STATES)) {
+        return { kind: 'missing', id: component.id, note: 'This build cannot draw this symbol.' };
+      }
+
+      const derived = deriveSymbolState(component.states, {
+        value: snapshot.value,
+        quality: snapshot.quality,
+      });
+
+      return {
+        kind: 'symbol',
+        id: component.id,
+        tagId: component.tagId,
+        shape,
+        state: derived.state,
+        fromQuality: derived.fromQuality,
+        // The reading as text beside the picture, because a picture of a pump says whether it runs
+        // and not what it is reading -- and on a malfunctioning plant those are two different facts.
+        caption: `${component.title?.trim() || tagNameOf(snapshot.path)}: ${formatValue(snapshot)}`,
+        path: snapshot.path,
+      };
+    }
     case 'trend':
       return {
         kind: 'trend',
         id: component.id,
         tagId: component.tagId,
         path: snapshot.path,
+        // The same short caption the value tiles use, for the same reason: the trend sits beside
+        // them and a repeated device path on one and not the others reads as two different things.
+        caption: component.title?.trim() || tagNameOf(snapshot.path),
         writable: component.writable,
       };
     default:
       return { kind: 'missing', id: component.id, note: 'This build cannot draw this.' };
   }
+}
+
+/**
+ * The last segment of a display path — a tag's own name.
+ *
+ * `Skopje/Pump House/Discharge Pressure` becomes `Discharge Pressure`, and that is what a tile is
+ * captioned with. The full path is right for a tree, where a reader is choosing between tags with
+ * the same name under different devices; on a screen built for one Site it is three quarters
+ * repetition, and at 1920 it wrapped onto a second line in every tile — found by looking at
+ * 2026-10-06. A component's own `title`, when an author sets one, wins over this.
+ */
+export function tagNameOf(path: string): string {
+  const trimmed = path.trim();
+  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  return cut >= 0 ? trimmed.slice(cut + 1).trim() : trimmed;
+}
+
+/**
+ * Whether a reading's age is worth putting on the tile, and what to say.
+ *
+ * **A timestamp on every tile is noise, and on a screen it is noise that repeats.** What a reader
+ * needs to know is when a reading stopped being trustworthy, so this returns null for a fresh Good
+ * reading and the time otherwise — which makes the presence of a time on one tile the signal, rather
+ * than its absence meaning nothing. The threshold is deliberately generous: a scan every second and
+ * a clock on a wall do not need reconciling, but half an hour does.
+ *
+ * A Bad reading's own source time is often the last time anything arrived, which is exactly the fact
+ * worth showing, so it is shown whether or not it is old.
+ */
+export function stalenessNote(
+  quality: string,
+  sourceTimestampUtc: string | null,
+  now: Date = new Date(),
+  staleAfterMs = 5 * 60 * 1000,
+): string | null {
+  if (quality === 'Bad') {
+    return sourceTimestampUtc === null ? 'no reading' : `last at ${clockTime(sourceTimestampUtc)}`;
+  }
+
+  if (sourceTimestampUtc === null) {
+    return null;
+  }
+
+  const measured = new Date(sourceTimestampUtc).getTime();
+
+  if (Number.isNaN(measured)) {
+    return null;
+  }
+
+  return now.getTime() - measured > staleAfterMs ? `at ${clockTime(sourceTimestampUtc)}` : null;
+}
+
+/** An ISO timestamp as the wall clock reads it, with no date and no seconds — a screen is not a log. */
+function clockTime(iso: string): string {
+  const at = new Date(iso);
+
+  return Number.isNaN(at.getTime())
+    ? iso
+    : `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * Whether a reading is exactly zero, for a numeric tag.
+ *
+ * A zero is the reading most easily missed and the one most often worth noticing — a flow that has
+ * stopped, a level that has emptied. Marking it is **not** a judgement about whether zero is wrong:
+ * many tags sit at zero all day and mean it. It is the same rule as the `noDataSince` note and the
+ * quality pill, that a reading which is unusual for a screen should not have to be spotted by
+ * comparing digits.
+ *
+ * Only for a Good numeric reading. A Bad one has no number to be zero (ADR-0003), and a boolean
+ * false is a different fact that the caption already says.
+ */
+export function isZeroReading(snapshot: { quality: string; value: { kind: string; numeric?: number | null } }): boolean {
+  return snapshot.quality === 'Good' && snapshot.value.kind === 'numeric' && snapshot.value.numeric === 0;
 }
 
 /**
@@ -246,6 +555,8 @@ export interface SaveScreenComponent {
   kind: ScreenComponentKind;
   title: string | null;
   tagId: string | null;
+  symbol: SymbolShape | null;
+  states: readonly SymbolStateRule[];
 }
 
 /** A screen as an author sends it: the whole component set, not the change. */
@@ -271,6 +582,12 @@ export function toSaveComponent(component: ScreenComponent): SaveScreenComponent
     kind: component.kind,
     title: component.title,
     tagId: component.tagId,
+    // Sent for every kind, and empty rather than absent for the kinds that have none. The API treats
+    // a missing list as empty anyway, so this is belt-and-braces against the one shape that would
+    // matter: a `symbol` whose mapping was dropped on the way out would be refused as having no
+    // states, and the author would be told their work was never there.
+    symbol: component.symbol,
+    states: component.states,
   };
 }
 
@@ -305,6 +622,23 @@ export function newComponent(
     kind,
     title,
     tagId,
+    // A new symbol starts as a pump with two rules: `running` when its tag is true, and a fallback of
+    // `stopped` for anything else. That is a decision rather than a default — the API refuses a symbol
+    // with no states, so "start empty and let the author fill it in" would hand them a component that
+    // cannot be saved until they have understood the mapping. A pump that runs when its tag is true is
+    // what most of them are, and every part of it is editable.
+    //
+    // **The fallback carries no comparison**, which the API insists on: a rule that matches anything
+    // cannot also state what it matches, and one that did would be text the author believed was doing
+    // something.
+    symbol: kind === 'symbol' ? 'pump' : null,
+    states:
+      kind === 'symbol'
+        ? [
+            { state: 'running', when: 'equals', value: 'true', otherwise: false },
+            { state: 'stopped', when: null, value: null, otherwise: true },
+          ]
+        : [],
     // What the reader may see is the server's to decide (ADR-0024 5). A component being authored is
     // shown as readable until a save comes back and says otherwise, because the client has no
     // standing to answer it -- and a component that hid itself mid-edit would be one an author could

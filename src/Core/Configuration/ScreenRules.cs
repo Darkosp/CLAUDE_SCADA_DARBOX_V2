@@ -99,6 +99,92 @@ public static class ScreenRules
             return $"A '{component.Kind}' component shows text and needs some.";
         }
 
+        if (ScreenComponentKinds.NeedsStates(component.Kind))
+        {
+            return ProblemWithStates(component);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Why a symbol's state mapping cannot be saved, or nothing when it can (ADR-0027).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Four ways a mapping is wrong, and each is refused **by name** for the reason every other
+    /// refusal here is: a mapping naming a state the drawing does not have, or a comparison this build
+    /// does not evaluate, produces a symbol that sits on `unknown` forever while looking configured.
+    /// The author is the only person who can fix that, and they can only fix it if they are told which
+    /// rule is at fault.
+    /// </para>
+    /// <para>
+    /// What is deliberately **not** checked is whether a well-formed mapping is the right one for a
+    /// plant. `running when true` is valid on a pump driven by a boolean and wrong on one driven by a
+    /// pressure, and no rule can tell the difference. That is a walk's job.
+    /// </para>
+    /// </remarks>
+    private static string? ProblemWithStates(ScreenComponent component)
+    {
+        var symbol = component.Symbol;
+
+        if (!Symbols.IsKnown(symbol))
+        {
+            return "A 'symbol' component needs a symbol this build draws. This build draws: "
+                + string.Join(", ", Symbols.All) + ".";
+        }
+
+        if (component.States.Count == 0)
+        {
+            // A symbol with no rules can only ever draw `unknown`: a component that says nothing while
+            // taking up room on a screen.
+            return "A 'symbol' component needs at least one state, or it can only ever show 'unknown'.";
+        }
+
+        var fallbacks = component.States.Count(state => state.Otherwise);
+
+        if (fallbacks > 1)
+        {
+            // Two fallbacks make the second unreachable, and the author could not tell that from the
+            // screen: both would look like rules doing something.
+            return $"A 'symbol' component has {fallbacks} fallback states, and only one rule can be the fallback.";
+        }
+
+        for (var index = 0; index < component.States.Count; index++)
+        {
+            var rule = component.States[index];
+            var at = $"rule {index + 1}";
+
+            if (!Symbols.CanDraw(symbol, rule.State))
+            {
+                return $"A '{symbol}' symbol cannot be drawn as '{rule.State}' ({at}). It draws: "
+                    + string.Join(", ", Symbols.StatesOf(symbol)) + ".";
+            }
+
+            if (rule.Otherwise)
+            {
+                // A fallback matches anything, so a comparison on it is dead text the author believed
+                // was doing something.
+                if (rule.When is not null || rule.Value is not null)
+                {
+                    return $"The fallback state of a 'symbol' component ({at}) cannot also have a comparison.";
+                }
+
+                continue;
+            }
+
+            if (!SymbolComparisons.IsKnown(rule.When))
+            {
+                return $"A 'symbol' component's {at} compares with '{rule.When}', which this build does not "
+                    + "evaluate. It evaluates: " + string.Join(", ", SymbolComparisons.All) + ".";
+            }
+
+            if (string.IsNullOrWhiteSpace(rule.Value))
+            {
+                return $"A 'symbol' component's {at} compares with '{rule.When}' and has nothing to compare against.";
+            }
+        }
+
         return null;
     }
 }

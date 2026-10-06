@@ -157,6 +157,35 @@ export class App implements OnInit {
   protected readonly loginError = signal<string | null>(null);
   protected readonly signingIn = signal(false);
 
+  /**
+   * Which theme is on, and the switch for it.
+   *
+   * The initial value is what `index.html` already put on the document — that script ran before the
+   * first paint, so this reads the decision rather than making it, which is what stops the page
+   * flashing the wrong theme while the bundle loads.
+   *
+   * **The choice is per browser, not per user**, in `localStorage`. A control-room panel and an
+   * engineer's laptop looking at the same Site can reasonably disagree about this: a theme is about
+   * the glass in front of you, not about the data, so there is nothing here worth a round trip.
+   */
+  protected readonly theme = signal<'light' | 'dark'>(
+    document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light',
+  );
+
+  protected toggleTheme(): void {
+    const next = this.theme() === 'dark' ? 'light' : 'dark';
+
+    this.theme.set(next);
+    document.documentElement.setAttribute('data-theme', next);
+
+    try {
+      window.localStorage.setItem('scada.theme', next);
+    } catch {
+      // Storage unavailable: the choice holds for this session and is forgotten on reload, which is
+      // better than refusing to change it.
+    }
+  }
+
   /** A remembered session being checked with the gateway before the app is shown. */
   protected readonly restoring = signal(false);
 

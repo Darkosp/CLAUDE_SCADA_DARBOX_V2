@@ -245,12 +245,16 @@ test('readable is not sent, because it is the server answer about the reader', (
   const outgoing = toSaveComponent(saved({ readable: false }));
 
   assert.equal(outgoing.readable, undefined);
+  // The whole shape, so a field added to the outgoing component has to be added here too — which is
+  // what caught `symbol` and `states` the day they were introduced (ADR-0027).
   assert.deepEqual(Object.keys(outgoing).sort(), [
     'columnSpan',
     'id',
     'kind',
     'position',
     'rowIndex',
+    'states',
+    'symbol',
     'tagId',
     'title',
   ]);

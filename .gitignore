@@ -21,3 +21,6 @@ backups/
 # live in the repository, produced by external tools; the originals are the
 # ones to read, and this keeps `git status` honest without committing a copy.
 report_deepseek.md
+
+# Screenshots and design mock-ups taken while reviewing a change: instruments, not sources.
+.design-preview/

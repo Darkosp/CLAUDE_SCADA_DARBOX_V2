@@ -6,6 +6,37 @@
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+
+  <!--
+    The theme, applied before the first paint.
+
+    Inline and blocking on purpose. A theme set from Angular would be set after the bundle has loaded
+    and run, which means a light page for as long as that takes and then a flip to dark — the flash
+    every dark mode is judged by. Twelve lines here are cheaper than that.
+
+    The stored choice wins; with none, the operating system decides. `stored` is read in a try because
+    a browser with storage disabled throws on access rather than returning null, and a console that
+    will not paint is a worse outcome than a console that picks the wrong theme.
+  -->
+  <script>
+    (function () {
+      var stored = null;
+      try {
+        stored = window.localStorage.getItem('scada.theme');
+      } catch (ignored) {
+        // Storage is unavailable; the system preference below is the fallback.
+      }
+
+      var theme =
+        stored === 'dark' || stored === 'light'
+          ? stored
+          : window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light';
+
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
 </head>
 <body>
   <app-root></app-root>

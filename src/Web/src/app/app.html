@@ -58,6 +58,17 @@
 
   <span class="state" [class]="connection()">{{ connection() }}</span>
   <span class="who">{{ auth.access()?.username }}@if (roleHere()) { · {{ roleHere() }} }</span>
+
+  <!--
+    The theme switch, beside the session controls rather than among the views: it changes how the
+    console looks, not what it is showing, and putting it with Browse and Journal would suggest the
+    third of those things. It says which theme it will GO TO, which is what a button should say.
+  -->
+  <button type="button" class="ghost" (click)="toggleTheme()"
+          [attr.aria-label]="theme() === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'">
+    {{ theme() === 'dark' ? 'Light' : 'Dark' }}
+  </button>
+
   <button type="button" class="ghost" (click)="logout()">Sign out</button>
 </header>
 

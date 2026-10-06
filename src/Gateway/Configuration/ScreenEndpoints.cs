@@ -190,7 +190,12 @@ internal static class ScreenEndpoints
                     // Site even when the tag is writable, because "you may not" and "this cannot be"
                     // are different sentences — and the first two answers are separate, so a client
                     // cannot make one out of the other.
-                    Writable: IsWritable(component.TagId, catalog, caller)))
+                    Writable: IsWritable(component.TagId, catalog, caller),
+                    // ADR-0027: which drawing, and the mapping that decides its state.
+                    Symbol: component.Symbol,
+                    // A symbol's mapping travels with it, because a symbol drawn without one could only
+                    // ever show `unknown` while looking like it had been configured.
+                    States: component.States.Select(SymbolStateDto.From).ToList()))
                 .ToList());
 
     private static bool IsReadable(Guid tagId, TagCatalog catalog, Caller caller) =>
@@ -250,6 +255,11 @@ internal static class ScreenEndpoints
                     Kind = component.Kind,
                     Title = component.Title,
                     TagId = component.TagId,
+                    Symbol = component.Symbol,
+                    // ADR-0027: the mapping travels with the component it belongs to, and a null
+                    // request field is an empty mapping rather than an error — a `value` component
+                    // simply has none, and ScreenRules is what insists a `symbol` has one.
+                    States = component.States?.Select(state => state.ToDomain()).ToList() ?? [],
                 })
                 .ToList(),
         };

@@ -284,6 +284,32 @@ and every component kind other than `value` resolve with **no write target at al
 `Write…` beside a reading is noticeable without looking like part of the value is unjudged. That is the
 same gap as everything else in Phase 8, and the same reason: it needs an eye.
 
+**The client's look was chosen and centralised on 2026-10-06, and the reason is worth knowing before
+styling anything here.** Before it, the client held **45 distinct hex values across five files**,
+including near-duplicates that had drifted apart (`#1c6b3a` beside `#1d6b39`, `#99201f` beside
+`#96261f`) — Phase 8's lesson in its visual form: *a rule and every place that applies it have to move
+together*, and a colour is a rule. **`src/styles.css` now holds every colour, radius, shadow, type size
+and spacing as a token, and no other file in `src/app` writes a raw colour.** Do not add one; add a
+token, and give it a name that says what it is for rather than what it looks like.
+
+Two decisions shape the palette. **The accent is near-black, without hue**, because the only strong
+colours here are the semantic status ones — Good, Uncertain or Stale, Bad, no reading (ADR-0003) — and
+a coloured accent would make "green" mean two things at once on a screen whose whole job is to say
+whether a number can be trusted. And **the direction is soft and neutral**: shadows rather than borders,
+cool greys, layered surfaces. A dark theme is deliberately *not* built, but the tokens make one a
+second set of values rather than a restyle — which is the main reason they exist.
+
+**How it was reviewed matters as much as what changed: by looking at it.** Three proposals were built
+and shown side by side, one was chosen, and then every view was captured from the **running application,
+signed in**, with a headless browser (`tools/screenshot-live.mjs`) and inspected. That found two defects
+no test could see — the journal's table had **no rules of its own**, so its headings sat centred over
+left-aligned data and its timestamps wrapped onto two lines, and both it and the screens view were
+**bare text on the page background** because the stylesheet's card rule matched only `aside, section`
+while both are `<main>`. Looking again then caught two things the first pass had introduced: a shadow
+inside a shadow on the screens view, and a pane heading whose buttons spread apart with one stranded
+mid-page. `open-work.md` §2.0i records all of it, including that **nobody has yet judged this at the
+size a plant screen is.**
+
 **The suite is green and its baseline is `open-work.md` §2.4–§2.5: 568 .NET
 across seven projects with 0 skipped, and the client's 124.** It was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates

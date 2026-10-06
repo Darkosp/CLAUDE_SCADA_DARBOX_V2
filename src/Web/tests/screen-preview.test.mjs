@@ -78,7 +78,7 @@ test('readable is still not sent, so a preview cannot grant itself a binding', (
 
   assert.equal(Object.hasOwn(sent, 'readable'), false);
   assert.deepEqual(Object.keys(sent).sort(), [
-    'columnSpan', 'id', 'kind', 'position', 'rowIndex', 'tagId', 'title',
+    'columnSpan', 'id', 'kind', 'position', 'rowIndex', 'states', 'symbol', 'tagId', 'title',
   ]);
 });
 

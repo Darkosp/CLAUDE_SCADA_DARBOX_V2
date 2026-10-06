@@ -14,11 +14,14 @@ import {
   Screen,
   ScreenComponent,
   ScreenComponentKind,
+  SYMBOL_STATES,
+  SymbolShape,
+  SymbolStateRule,
   toSaveScreen,
   trendTagIds,
 } from './screen';
 
-/** The five kinds, with what each needs, for the author's picker. The server refuses any other. */
+/** The six kinds, with what each needs, for the author's picker. The server refuses any other. */
 const KINDS: {
   kind: ScreenComponentKind;
   label: string;
@@ -27,16 +30,28 @@ const KINDS: {
   needsTitle: boolean;
   /** Whether this kind may carry a heading. Optional text: the server accepts it empty. */
   wantsTitle: boolean;
+  /**
+   * Whether this kind draws a symbol and so needs a state mapping (ADR-0027).
+   *
+   * The server refuses a `symbol` without one, and the rule lives here as well because the editor is
+   * what stops an author reaching that refusal: a kind that needs a mapping gets the mapping form, and
+   * a new `symbol` is born with one rather than empty (`newComponent`).
+   */
+  needsStates: boolean;
 }[] = [
-  { kind: 'label', label: 'Text', needsTag: false, needsTitle: true, wantsTitle: true },
-  { kind: 'value', label: 'Value', needsTag: true, needsTitle: false, wantsTitle: false },
-  { kind: 'trend', label: 'Trend', needsTag: true, needsTitle: false, wantsTitle: false },
-  { kind: 'status', label: 'Status', needsTag: true, needsTitle: false, wantsTitle: false },
+  { kind: 'label', label: 'Text', needsTag: false, needsTitle: true, wantsTitle: true, needsStates: false },
+  { kind: 'value', label: 'Value', needsTag: true, needsTitle: false, wantsTitle: false, needsStates: false },
+  { kind: 'trend', label: 'Trend', needsTag: true, needsTitle: false, wantsTitle: false, needsStates: false },
+  { kind: 'status', label: 'Status', needsTag: true, needsTitle: false, wantsTitle: false, needsStates: false },
   // The heading over a Site's alarms. Optional, and it was required until a walk found what that
   // cost: ADR-0024's kinds table gives text as what a `label` shows and says nothing of the sort for
   // `alarms`, and requiring one made an author invent a heading -- and made every Site's seeded
   // screen unsaveable, because the seeder had never supplied one.
-  { kind: 'alarms', label: 'Alarms', needsTag: false, needsTitle: false, wantsTitle: true },
+  { kind: 'alarms', label: 'Alarms', needsTag: false, needsTitle: false, wantsTitle: true, needsStates: false },
+  // A picture of equipment, drawn in a state its mapping derives from its tag (ADR-0027). The first
+  // kind that is not a reading rendered some way -- and the first whose configuration is a rule list
+  // rather than a field, which is why it has a form of its own below.
+  { kind: 'symbol', label: 'Symbol', needsTag: true, needsTitle: false, wantsTitle: true, needsStates: true },
 ];
 
 /** The narrowest a reading still fits in, and the widest a screen is. */
@@ -123,6 +138,65 @@ const WIDEST = 12;
                          (ngModelChange)="retitle(cell.id, $event)" placeholder="Text" />
                 }
 
+                @if (needsStates(cell.kind)) {
+                  <!--
+                    The state mapping (ADR-0027). This is the first component whose configuration is a
+                    RULE LIST rather than a field, so it is the first that needs a form of its own.
+
+                    Three inputs per rule and no expression box: the server evaluates "is", "above" and
+                    "below" and refuses anything else, which is the decision ADR-0027 makes so that an
+                    author cannot need a debugger to find out what their screen does.
+                  -->
+                  <div class="mapping">
+                    <label class="shape">
+                      <span>Symbol</span>
+                      <select [ngModel]="cell.symbol ?? 'pump'"
+                              (ngModelChange)="reshape(cell.id, $event)">
+                        @for (shape of shapes; track shape) {
+                          <option [value]="shape">{{ shape }}</option>
+                        }
+                      </select>
+                    </label>
+
+                    @for (rule of cell.states; track $index) {
+                      <div class="rule">
+                        <select [ngModel]="rule.state"
+                                (ngModelChange)="restate(cell.id, $index, $event)"
+                                [attr.aria-label]="'State for rule ' + ($index + 1)">
+                          @for (state of statesFor(cell.symbol); track state) {
+                            <option [value]="state">{{ state }}</option>
+                          }
+                        </select>
+
+                        <!-- A fallback matches anything, so it has no comparison to state. The server
+                             refuses a rule that claims both, and the blank option is how an author
+                             says "anything else". -->
+                        <select [ngModel]="rule.otherwise ? '' : (rule.when ?? 'equals')"
+                                (ngModelChange)="recompare(cell.id, $index, $event)"
+                                [attr.aria-label]="'Comparison for rule ' + ($index + 1)">
+                          <option value="equals">is</option>
+                          <option value="above">above</option>
+                          <option value="below">below</option>
+                          <option value="">anything else</option>
+                        </select>
+
+                        <input type="text" [ngModel]="rule.value ?? ''"
+                               (ngModelChange)="revalue(cell.id, $index, $event)"
+                               [disabled]="rule.otherwise"
+                               [attr.aria-label]="'Value for rule ' + ($index + 1)"
+                               placeholder="value" />
+
+                        <button type="button" class="ghost" (click)="removeRule(cell.id, $index)"
+                                title="Remove this rule">✕</button>
+                      </div>
+                    }
+
+                    <button type="button" class="ghost add-rule" (click)="addRule(cell.id)">
+                      Add a state
+                    </button>
+                  </div>
+                }
+
                 <p class="cell-controls">
                   <button type="button" class="ghost" (click)="reorder(cell.id, -1)" title="Move left">←</button>
                   <button type="button" class="ghost" (click)="reorder(cell.id, 1)" title="Move right">→</button>
@@ -202,42 +276,66 @@ const WIDEST = 12;
   styles: `
     :host { display: block; }
     .name, .controls label { display: block; }
-    .name span, .controls span { display: block; font-size: 0.78rem; color: #5b6672; }
+    .name span, .controls span { display: block; font-size: var(--text-sm); color: var(--text-muted); }
     input[type='text'], select {
       width: 100%;
       padding: 5px 7px;
-      border: 1px solid #cbd3dc;
-      border-radius: 6px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text);
     }
+    /* The author's controls are grouped in a sunken panel, so the draft they act on reads as the
+       thing being worked on rather than as more chrome. */
     .controls {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       gap: 10px;
       align-items: end;
-      border: 1px solid #e3e7ec;
-      border-radius: 8px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-sunken);
       padding: 10px 12px 12px;
       margin: 0 0 14px;
     }
-    .controls legend { font-size: 0.78rem; color: #5b6672; padding: 0 4px; }
+    .controls legend { font-size: var(--text-sm); color: var(--text-muted); padding: 0 4px; }
     .name { margin-bottom: 10px; }
     .row {
       display: grid;
       grid-template-columns: repeat(12, 1fr);
       gap: 10px;
     }
+    /* Dashed, because this is the author's draft and not what an operator sees: the preview below
+       is the operator's view, and the two must not look alike. */
     .cell {
-      border: 1px dashed #cbd3dc;
-      border-radius: 8px;
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius);
       padding: 8px 10px;
       min-width: 0;
-      background: #fff;
+      background: var(--surface);
     }
-    .cell-head { margin: 0 0 6px; font-size: 0.82rem; }
-    .path { color: #5b6672; margin-left: 6px; }
+    .cell-head { margin: 0 0 6px; font-size: var(--text-base); }
+    .path { color: var(--text-muted); margin-left: 6px; }
     .cell-controls { margin: 6px 0 0; display: flex; gap: 4px; align-items: center; }
     .cell-controls button { padding: 1px 7px; }
-    .span { font-size: 0.72rem; color: #8a949e; }
+    .span { font-size: var(--text-xs); color: var(--text-muted); }
+    /* The state mapping's form (ADR-0027). Sunken and bounded, because it belongs to the component
+       above it rather than to the screen -- and it is the only part of a draft cell that can be
+       several rows tall, so it needs to read as one block. */
+    .mapping {
+      display: grid;
+      gap: 4px;
+      margin: 6px 0 0;
+      padding: 6px 7px 7px;
+      background: var(--surface-sunken);
+      border-radius: var(--radius-sm);
+    }
+    .mapping .shape { display: flex; align-items: center; gap: 5px; font-size: var(--text-xs); }
+    .mapping .shape select { flex: 1; }
+    .rule { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 4px; align-items: center; }
+    .rule select, .rule input { font-size: var(--text-xs); padding: 3px 5px; }
+    .rule button { padding: 0 5px; }
+    .add-rule { font-size: var(--text-xs); padding: 2px 7px; justify-self: start; }
     .row-controls {
       display: flex;
       gap: 8px;
@@ -246,19 +344,19 @@ const WIDEST = 12;
       font-size: 0.76rem;
     }
     .actions { display: flex; gap: 8px; margin-top: 8px; }
-    .save-note { font-size: 0.76rem; margin: 6px 0 0; max-width: 46rem; }
-    .danger { color: #99201f; }
-    .problem { color: #99201f; margin: 6px 0; }
-    .muted { color: #5b6672; }
+    .save-note { font-size: 0.76rem; margin: 8px 0 0; max-width: 46rem; color: var(--text-muted); }
+    .danger { color: var(--status-bad-ink); }
+    .problem { color: var(--status-bad-ink); margin: 6px 0; }
+    .muted { color: var(--text-muted); }
     .preview {
       margin-top: 18px;
       padding: 12px 14px 14px;
-      background: #f7f9fb;
-      border: 1px solid #dde3ea;
-      border-radius: 8px;
+      background: var(--surface-sunken);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
     }
     .preview-head { display: flex; gap: 10px; align-items: baseline; margin: 0 0 10px; }
-    .preview-head .muted { font-size: 0.78rem; }
+    .preview-head .muted { font-size: var(--text-sm); }
   `,
 })
 export class ScreenEditor {
@@ -388,6 +486,113 @@ export class ScreenEditor {
 
   protected wantsTitle(kind: ScreenComponentKind): boolean {
     return KINDS.find((option) => option.kind === kind)?.wantsTitle ?? false;
+  }
+
+  protected needsStates(kind: ScreenComponentKind): boolean {
+    return KINDS.find((option) => option.kind === kind)?.needsStates ?? false;
+  }
+
+  /** Every shape this build draws, for the picker. */
+  protected readonly shapes = Object.keys(SYMBOL_STATES) as SymbolShape[];
+
+  /** The states one shape can be drawn in, for a rule's state picker. */
+  protected statesFor(shape: string | null): readonly string[] {
+    return shape !== null && shape in SYMBOL_STATES
+      ? SYMBOL_STATES[shape as SymbolShape]
+      : [];
+  }
+
+  /**
+   * Replaces one component's mapping.
+   *
+   * One place rather than four, because every edit below is "change one rule and keep the rest" and
+   * four copies of that is four chances to drop a rule an author did not touch.
+   */
+  private remap(
+    componentId: string,
+    change: (states: readonly SymbolStateRule[]) => readonly SymbolStateRule[],
+  ): void {
+    this.draft.update((draft) => ({
+      ...draft,
+      components: draft.components.map((component) =>
+        component.id === componentId ? { ...component, states: change(component.states) } : component,
+      ),
+    }));
+  }
+
+  /**
+   * Changes a symbol's shape.
+   *
+   * The mapping is kept rather than reset, even though a different shape may not be drawable in a
+   * state the mapping names — the server refuses that by name, and discarding an author's rules
+   * because they tried the picker would lose work they can see and fix.
+   */
+  protected reshape(componentId: string, shape: string): void {
+    this.draft.update((draft) => ({
+      ...draft,
+      components: draft.components.map((component) =>
+        component.id === componentId ? { ...component, symbol: shape as SymbolShape } : component,
+      ),
+    }));
+  }
+
+  protected restate(componentId: string, at: number, state: string): void {
+    this.remap(componentId, (states) =>
+      states.map((rule, index) => (index === at ? { ...rule, state } : rule)),
+    );
+  }
+
+  /**
+   * Changes a rule's comparison.
+   *
+   * An empty choice means the fallback, and **it clears the comparison and the value with it**: the
+   * server refuses a fallback that also states what it matches, because a rule that matches anything
+   * cannot also say what — and leaving the old text behind would show an author a comparison that is
+   * no longer doing anything. It also clears the flag when a comparison is chosen, so a rule cannot be
+   * both.
+   */
+  protected recompare(componentId: string, at: number, when: string): void {
+    const fallback = when === '';
+
+    this.remap(componentId, (states) =>
+      states.map((rule, index) =>
+        index === at
+          ? {
+              ...rule,
+              otherwise: fallback,
+              when: fallback ? null : when,
+              value: fallback ? null : (rule.value ?? ''),
+            }
+          : rule,
+      ),
+    );
+  }
+
+  protected revalue(componentId: string, at: number, value: string): void {
+    this.remap(componentId, (states) =>
+      states.map((rule, index) => (index === at ? { ...rule, value } : rule)),
+    );
+  }
+
+  protected removeRule(componentId: string, at: number): void {
+    this.remap(componentId, (states) => states.filter((_, index) => index !== at));
+  }
+
+  /**
+   * Adds a rule, pre-filled with a comparison rather than as a fallback.
+   *
+   * A new fallback would silently take over from whatever the author had, since a fallback matches
+   * anything — the one edit here that can change what an existing screen does without being asked.
+   */
+  protected addRule(componentId: string): void {
+    this.remap(componentId, (states) => [
+      ...states,
+      { state: this.statesFor(this.symbolOf(componentId))[0] ?? 'unknown', when: 'equals', value: '', otherwise: false },
+    ]);
+  }
+
+  private symbolOf(componentId: string): string | null {
+    return this.draft().components.find((component) => component.id === componentId)?.symbol ?? null;
   }
 
   protected pathOf(tagId: string): string {

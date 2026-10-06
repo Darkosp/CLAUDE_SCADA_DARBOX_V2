@@ -38,14 +38,16 @@ interface Point {
     .chart {
       width: 100%;
       height: 160px;
-      background: #fff;
-      border: 1px solid #e3e7ec;
-      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
     }
-    .line { fill: none; stroke: #2f6f4f; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-    .tick { font-size: 10px; fill: #8a94a0; }
-    .range { font-size: 0.75rem; color: #8a94a0; margin: 0.4rem 0 0; }
-    .empty { color: #8a94a0; font-size: 0.85rem; margin: 0; }
+    /* A neutral ink rather than a hue: the accent and the status colours both mean something here,
+       and a third meaning for "this is a line" would only compete with them. */
+    .line { fill: none; stroke: var(--chart-line); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+    .tick { font-size: 10px; fill: var(--text-muted); }
+    .range { font-size: var(--text-sm); color: var(--text-muted); margin: 0.4rem 0 0; }
+    .empty { color: var(--text-muted); font-size: var(--text-base); margin: 0; }
   `,
 })
 export class TrendChart {

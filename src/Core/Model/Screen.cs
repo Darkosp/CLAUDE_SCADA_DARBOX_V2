@@ -107,8 +107,163 @@ public sealed class ScreenComponent
     /// </remarks>
     public Guid? DeviceId { get; set; }
 
+    /// <summary>
+    /// Which drawing to use, for a component of kind <see cref="ScreenComponentKinds.Symbol"/>
+    /// (ADR-0027). Null for every other kind, and a symbol without one is refused.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Kind"/> because they are separate questions: the kind says *this
+    /// component is a picture of equipment*, and this says *which picture*. Keeping them apart is what
+    /// lets a second symbol be added without a second kind, and it is also what makes "a mapping that
+    /// names a state this drawing does not have" a question that can be asked at all — a mapping is only
+    /// valid against a particular drawing.
+    /// </remarks>
+    public string? Symbol { get; set; }
+
+    /// <summary>
+    /// How to turn this component's tag into a named state, for the kinds that draw a symbol
+    /// (ADR-0027). Empty for every other kind, and a symbol without it is refused.
+    /// </summary>
+    /// <remarks>
+    /// **A list of declarative comparisons rather than an expression**, which is the decision
+    /// ADR-0027 exists to make. An expression would be shorter to type and would be a language: it
+    /// needs parsing, error reporting, a story about what an operator may write, and eventually a
+    /// debugger. A list of comparisons needs a form with a dropdown in it and can be tested without a
+    /// browser — the same trade ADR-0024 made when it closed the component set.
+    ///
+    /// Order is meaning: the first rule that matches wins, and a rule marked
+    /// <see cref="SymbolState.Otherwise"/> is used only when nothing else matched.
+    /// </remarks>
+    public IReadOnlyList<SymbolState> States { get; set; } = [];
+
     /// <summary>The grid's width. Spans and rows are read against it.</summary>
     public const int GridColumns = 12;
+}
+
+/// <summary>
+/// One rule in a symbol's state mapping: <i>draw this state when the tag's value is this</i>
+/// (ADR-0027).
+/// </summary>
+/// <param name="State">
+/// Which of the symbol's states to draw. The set a symbol can be drawn in is fixed per symbol —
+/// <see cref="Symbols"/> — so a mapping that names one the drawing does not have is refused when the
+/// screen is saved, by name.
+/// </param>
+/// <param name="When">
+/// How the reading is compared: one of <see cref="SymbolComparisons"/>. Null on the fallback rule,
+/// which matches anything.
+/// </param>
+/// <param name="Value">
+/// What to compare against, as the author typed it. A string because a boolean tag, a numeric tag and
+/// a text tag all have to be expressible in one column, and because what an author typed is worth
+/// keeping exactly so a refusal can quote it back.
+/// </param>
+/// <param name="Otherwise">
+/// Whether this is the fallback — used only when no other rule matched. At most one rule may say so.
+/// </param>
+public sealed record SymbolState(string State, string? When, string? Value, bool Otherwise = false);
+
+/// <summary>
+/// How a symbol's rule compares a reading (ADR-0027).
+/// </summary>
+/// <remarks>
+/// Three, and the shortness is the point. `equals` covers a boolean tag and an exact number; `above`
+/// and `below` cover the two directions a threshold can go. Anything richer — a range, a band, a
+/// combination — is a request for an expression language, and ADR-0027 refuses it for the reason it
+/// gives: a language needs a parser, a debugger and a story about what an operator may type.
+/// </remarks>
+public static class SymbolComparisons
+{
+    /// <summary>
+    /// The reading is this value.
+    /// </summary>
+    /// <remarks>
+    /// Spelled <c>Is</c> rather than <c>Equals</c> because a constant with that name hides
+    /// <see cref="object.Equals(object)"/> and the compiler says so — and the wire value below is
+    /// `equals` in any case, which is what a request carries and what the client compares against.
+    /// </remarks>
+    public const string Is = "equals";
+
+    public const string Above = "above";
+    public const string Below = "below";
+
+    public static IReadOnlyList<string> All { get; } = [Is, Above, Below];
+
+    public static bool IsKnown(string? when) => when is not null && All.Contains(when);
+}
+
+/// <summary>
+/// The symbols this build can draw (ADR-0027), and the states each can be drawn in.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A closed set fixed at compile time, for ADR-0024 §3's reason: a component nobody can render is a
+/// screen that is silently missing something, and the fix is a new ADR adding a symbol rather than a
+/// generic drawing surface.
+/// </para>
+/// <para>
+/// <b>One symbol in this slice, deliberately.</b> A symbol is a drawing plus a set of states plus a
+/// mapping, and the questions ADR-0027 answers — what a mapping may contain, what quality does, what
+/// animates — are answered by one of them. A tank or a valve is then a drawing and a state list.
+/// </para>
+/// </remarks>
+public static class Symbols
+{
+    /// <summary>A pump: turning, stopped, or unable to be read.</summary>
+    public const string Pump = "pump";
+
+    public static IReadOnlyList<string> All { get; } = [Pump];
+
+    public static bool IsKnown(string? symbol) => symbol is not null && All.Contains(symbol);
+
+    /// <summary>The states <paramref name="symbol"/> can be drawn in, or empty when unknown.</summary>
+    /// <remarks>
+    /// `unknown` is in every set because it is what a mapping with no match resolves to, and a symbol
+    /// that could not draw it would have nothing to show an author who has a gap in their rules.
+    /// `bad` and `stale` are in every set because quality overrides the state (ADR-0027 §4) and those
+    /// are the two ways a reading stops being usable.
+    /// </remarks>
+    public static IReadOnlyList<string> StatesOf(string? symbol) => symbol switch
+    {
+        Pump => [Running, Stopped, Fault, Unknown, Bad, Stale],
+        _ => [],
+    };
+
+    /// <summary>Whether <paramref name="symbol"/> can be drawn in <paramref name="state"/>.</summary>
+    public static bool CanDraw(string? symbol, string? state) =>
+        state is not null && StatesOf(symbol).Contains(state);
+
+    /// <summary>Whether a state is one the symbol animates. Only a running machine turns.</summary>
+    /// <remarks>
+    /// Whether a state *animates* is a property of the symbol and the state rather than of the
+    /// mapping, which is why it is here: an author choosing "running" is choosing the picture, and the
+    /// picture is this build's to draw.
+    /// </remarks>
+    public static bool Animates(string? symbol, string? state) => symbol == Pump && state == Running;
+
+    // ---- the states themselves. Named once, used by every symbol that has them. ----
+
+    /// <summary>A machine that is turning.</summary>
+    public const string Running = "running";
+
+    /// <summary>A machine that is not.</summary>
+    public const string Stopped = "stopped";
+
+    /// <summary>A machine the plant says is in fault. A state the plant reports, not one this infers.</summary>
+    public const string Fault = "fault";
+
+    /// <summary>Nothing matched, or nothing is known. Drawn, never silent.</summary>
+    public const string Unknown = "unknown";
+
+    /// <summary>The reading's quality is Bad: there is no reading (ADR-0003).</summary>
+    public const string Bad = "bad";
+
+    /// <summary>The reading's quality is Uncertain or Stale: there is a reading and it is not current.</summary>
+    public const string Stale = "stale";
+
+    /// <summary>Every state name any symbol uses, for a refusal to offer as a choice.</summary>
+    public static IReadOnlyList<string> AllStates { get; } =
+        [Running, Stopped, Fault, Unknown, Bad, Stale];
 }
 
 /// <summary>
@@ -138,14 +293,28 @@ public static class ScreenComponentKinds
     /// <summary>One tag's quality alone, as a state read at a glance. Needs a tag.</summary>
     public const string Status = "status";
 
+    /// <summary>
+    /// One tag drawn as a picture of equipment, in a state its mapping derives from the reading
+    /// (ADR-0027). Needs a tag and a mapping.
+    /// </summary>
+    /// <remarks>
+    /// The kind that stops a screen being a table. Everything about it that could have been a rule —
+    /// what a mapping may contain, what quality does to it, what moves — is decided in ADR-0027 rather
+    /// than here.
+    /// </remarks>
+    public const string Symbol = "symbol";
+
     /// <summary>Every kind this build draws.</summary>
-    public static IReadOnlyList<string> All { get; } = [Label, Value, Trend, Alarms, Status];
+    public static IReadOnlyList<string> All { get; } = [Label, Value, Trend, Alarms, Status, Symbol];
 
     /// <summary>Whether this build draws <paramref name="kind"/>.</summary>
     public static bool IsKnown(string? kind) => kind is not null && All.Contains(kind);
 
     /// <summary>Whether a component of this kind reads a tag.</summary>
-    public static bool NeedsTag(string kind) => kind is Value or Trend or Status;
+    public static bool NeedsTag(string kind) => kind is Value or Trend or Status or Symbol;
+
+    /// <summary>Whether a component of this kind draws a symbol, and so needs a state mapping.</summary>
+    public static bool NeedsStates(string kind) => kind is Symbol;
 
     /// <summary>
     /// Whether a component of this kind shows text an author wrote. The complement of
