@@ -55,6 +55,10 @@ const THEMES = {
     text: '#14181c',
     body: '#3c4650',
     muted: '#626c77',
+    // The equipment symbol's two strokes. In the light theme the rotor is the darker of the two,
+    // which is the intuitive direction: the part that moves is drawn in the near-black accent.
+    line: '#3c4650',
+    moving: '#14181c',
     status: {
       goodInk: '#1d6b39',
       goodBg: '#e3f3e8',
@@ -73,6 +77,11 @@ const THEMES = {
     text: '#f2f4f7',
     body: '#c8ced6',
     muted: '#8b939d',
+    // **The rotor is LIGHTER than the outline here, which is the reverse of the light theme and is
+    // deliberate.** A dark rotor on a dark card is the one part of the drawing that would vanish, and
+    // the rotor is the part that says the machine is running.
+    line: '#aab2bc',
+    moving: '#e8ecf1',
     status: {
       goodInk: '#7fd6a0',
       goodBg: '#14301f',
@@ -170,4 +179,46 @@ test('the light theme is genuinely light and the dark theme genuinely dark', () 
   // rather than passing every contrast assertion by accident.
   assert.ok(contrast('#ffffff', THEMES.light.page) < 1.2, 'the light page should be near white');
   assert.ok(contrast('#000000', THEMES.dark.page) < 1.5, 'the dark page should be near black');
+});
+
+test('an equipment symbol stands off the card behind it', () => {
+  // WCAG 1.4.11, and a lower bar than text on purpose: a stroke is a shape, not a sentence. The pump
+  // draws its outline, its vanes, its hub and its pipes in the line colour, and its rotor in the
+  // moving colour — and in the dark theme the moving colour is LIGHTER than the line, because a dark
+  // rotor on a dark card would be the one part of the drawing that vanished.
+  //
+  // The states are drawn with the status inks, so this checks the three that change: a running pump,
+  // a stopped one, and a bad one. Those inks are already checked as text above; what is new is that
+  // they are also used as STROKES, and a stroke has far less area in which to be seen.
+  //
+  // Measured live first, by tools/audit-contrast.mjs against the running client — 6.53:1 for a running
+  // pump in the light theme, 7.37:1 for a stopped one in the dark. This pins the rest so a palette
+  // change cannot quietly drop one of them below the bar.
+  for (const [name, theme] of Object.entries(THEMES)) {
+    const strokes = [
+      ['the outline', theme.line],
+      ['the rotor', theme.moving],
+      ['running', theme.status.goodInk],
+      ['stopped', theme.status.nodataInk],
+      ['bad', theme.status.badInk],
+    ];
+
+    for (const [what, colour] of strokes) {
+      const ratio = contrast(colour, theme.surface);
+
+      assert.ok(
+        ratio >= 3,
+        name +
+          ': ' +
+          what +
+          ' (' +
+          colour +
+          ') is only ' +
+          ratio.toFixed(2) +
+          ':1 on the card (' +
+          theme.surface +
+          '), so a reader could not make out the drawing',
+      );
+    }
+  }
 });
