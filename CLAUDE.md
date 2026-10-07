@@ -16,6 +16,19 @@ the documents it points to, before doing anything else in this repo.
    its scope, and its test gate
 
 ## Current status
+
+**Before committing anything here, read the two-agent section at the top of [`HANDOVER.md`](HANDOVER.md).**
+On 2026-10-07 two sessions shared this one checkout; the second is stopped but **its work is still in this
+working tree, uncommitted** (`src/Core/Model/Screen.cs`, `src/Web/src/app/{screen,screen-editor,symbol}.ts`,
+three `symbol-*.test.mjs` files — its *"more symbols"* work on `feat/more-symbols`). **Never `git add -A`
+here**, and never use `git checkout <branch> -- <path>` to move uncommitted work: it destroyed edits of mine.
+Two decisions of that day, **ADR-0031** (failed sign-ins lock the account, response headers, `script-src` by
+hash) and **ADR-0032** (the audit trail is readable by an Admin), are on `main` with their code in **draft
+PR #10**; **ADR-0030** is on `main` with its server half in **draft PR #8**, and its display half is not
+built. All three drafts wait on the same thing: **nobody has looked at the new screens in the running
+product.** The Gateway project is at **188 passed / 0 failed / 0 skipped** and the client at **241 / 0**; the
+whole-solution baseline has not been re-measured since 648 / 228.
+
 **How to read a PR number here, and there are now three numbering spaces.**
 *(Corrected 2026-10-07: this paragraph named `Darkosp/DEEP_SCADA_DARBOX` as
 "this repository", and it is not — the project has moved again. Verified by
