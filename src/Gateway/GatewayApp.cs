@@ -48,6 +48,30 @@ public static class GatewayApp
         var builder = WebApplication.CreateBuilder(args);
         var startup = CancellationToken.None;
 
+        // **Before the database, because this one needs nothing to be reachable to be answered**
+        // (ADR-0028). A deployment that has said neither "here is my certificate" nor "something in
+        // front of me terminates TLS" is refused here, so it cannot be discovered later by whoever
+        // reads a password off the wire. The refusal travels as an exception for Program to print,
+        // the same as the schema refusals below.
+        var tls = builder.Configuration.GetSection(ServerTlsOptions.Section).Get<ServerTlsOptions>()
+            ?? new ServerTlsOptions();
+
+        if (tls.Problem() is { } insecure)
+        {
+            throw new InsecureTransportException(insecure);
+        }
+
+        if (tls.ServesTls)
+        {
+            // Kestrel rather than a proxy (ADR-0028 §1): it keeps the client on the Gateway's own
+            // origin, which is what lets there be no CORS allowance anywhere and no Gateway URL in
+            // the client.
+            builder.WebHost.ConfigureKestrel(kestrel =>
+                kestrel.ConfigureHttpsDefaults(https => https.ServerCertificate = tls.Certificate()));
+        }
+
+        builder.Services.AddSingleton(tls);
+
         // Before anything else is registered or can log a request (ADR-0011).
         builder.Services.ScrubQueryTokens();
 
@@ -104,6 +128,21 @@ public static class GatewayApp
 
         var app = builder.Build();
         ReportInitialAdmin(app.Logger, initialAdmin, userDirectorySource.Current);
+        ReportTransport(app.Logger, tls);
+
+        if (tls.ServesTls)
+        {
+            // The courtesy, not the enforcement: an operator typing a bare host name should arrive
+            // rather than fail. HSTS is what would make it binding, and it is off unless the
+            // deployment asked — see ADR-0028 §5 for why that is the right default here and not
+            // everywhere.
+            app.UseHttpsRedirection();
+
+            if (tls.Hsts)
+            {
+                app.UseHsts();
+            }
+        }
 
         // The web client is served from here, so the browser talks to one origin and no
         // cross-origin allowance exists at all (Phase 6). Its files are public — the sign-in
@@ -391,6 +430,33 @@ public static class GatewayApp
         }
 
         return connection.ConnectionString;
+    }
+
+    /// <summary>
+    /// Says how this Gateway is reached, every start (ADR-0028 §2).
+    /// </summary>
+    /// <remarks>
+    /// **A deployment's security posture has to be legible from its own logs.** Serving HTTP because
+    /// something in front terminates TLS is a legitimate arrangement and an invisible one: without
+    /// this line, a later reader would have to infer it from an absence, and an absence reads the same
+    /// whether it was chosen or forgotten.
+    /// </remarks>
+    private static void ReportTransport(ILogger logger, ServerTlsOptions tls)
+    {
+        if (tls.ServesTls)
+        {
+            logger.LogInformation(
+                "Serving over TLS with the certificate at {Certificate}. HTTP is redirected; HSTS is {Hsts} (ADR-0028).",
+                tls.CertificatePath,
+                tls.Hsts ? "on" : "off, so a browser is never locked out by a certificate it does not trust");
+            return;
+        }
+
+        logger.LogWarning(
+            "Serving plain HTTP because {Setting}:TlsTerminatedUpstream is set: something in front of "
+            + "this Gateway is expected to terminate TLS. If nothing is, sign-ins and session tokens "
+            + "are in the clear (ADR-0028).",
+            ServerTlsOptions.Section);
     }
 
     private static void ReportInitialAdmin(ILogger logger, InitialAdmin.Outcome outcome, UserDirectory users)

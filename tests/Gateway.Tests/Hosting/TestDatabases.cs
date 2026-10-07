@@ -93,8 +93,21 @@ public sealed class ScratchDatabase : IAsyncDisposable
     }
 
     /// <summary>Command-line arguments that point a Gateway at this database as the application role.</summary>
+    /// <remarks>
+    /// The transport is declared here beside the URL it belongs to (ADR-0028): a host reachable only
+    /// from the process that started it is not on a network, and the Gateway refuses to start without
+    /// being told how it is reached. Said once, for every test host, rather than at each call —
+    /// and said as the **same** setting a deployment behind a proxy uses, so there is no
+    /// test-only route through the startup check. The refusal itself is exercised by
+    /// `InsecureTransportTests`, which builds its arguments by hand for exactly that reason.
+    /// </remarks>
     public string[] ApplicationArgs(params string[] more) =>
-        [$"--ConnectionStrings:ScadaDb={ApplicationConnectionString}", "--urls=http://127.0.0.1:0", .. more];
+    [
+        $"--ConnectionStrings:ScadaDb={ApplicationConnectionString}",
+        "--urls=http://127.0.0.1:0",
+        "--Server:TlsTerminatedUpstream=true",
+        .. more,
+    ];
 
     public async Task ExecutePrivilegedAsync(string sql)
     {
