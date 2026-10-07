@@ -424,11 +424,15 @@ element and drawing in its coordinates (verified by re-probing the live DOM), an
 `src/Web/tests/trend-chart-size.test.mjs`. **The fix's first attempt failed and that is pinned too**: it measured
 once in `afterNextRender`, and empty history draws words instead of a chart, so there was no SVG to measure. Also
 answered by the walk: the three-item caption reads as information rather than as clutter, which was §2.6's open
-judgement. Also left open by it: the low tick sits on the curve at the plot's bottom left, the fetch budget is
-600 points against a ~1480 px card, and a trend inside a screen tile was not looked at.
+judgement. Its second pass fixed the two things it had left: the value labels, which were printed on the line they
+labelled, by insetting the plot **and the axis row under it by the same numbers**, and the tile case, which was
+looked at in two widths through a screen the walk added two trends to. **The third was refused rather than built:
+the fetch budget stays 600 points whatever the card's width** — asking for the measured ~1480 would treble the
+rows and the wire to gain a point every 2.5 px instead of every 1 px, in the one decision whose purpose was to
+stop sending what nobody looks at.
 
 **The suite is green and its baseline is `open-work.md` §2.4–§2.6, with the current numbers measured on
-2026-10-07 after ADR-0029 and its walk: 648 .NET across seven projects with 0 skipped, and the client's 227.**
+2026-10-07 after ADR-0029 and its walk: 648 .NET across seven projects with 0 skipped, and the client's 228.**
 *(It read 638 and 217 after PR #6 and 636 and 205 after PR #5, both the same day, and 586 and 162 before
 that. **The PR #6 numbers were measured and never written down** — the handover note carried them and no
 document did, which is why this sentence now names all four rather than implying the suite stood still

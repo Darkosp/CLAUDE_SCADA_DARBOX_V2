@@ -1339,15 +1339,22 @@ measurement is bound to the element now, and the test says why.
   legible at 1920 and reads; the envelope at a 1008-second bucket is a band with the line through it
   rather than a comb; a hole is drawn as a hole; and a 7-day window shows two days of readings in the
   right-hand 28 % with five days of honest emptiness beside them.
-- **Open, and small: the low value tick sits on the curve**, because the ticks are drawn inside the plot
-  at its left edge and the reading there is the lowest one. Crowded rather than wrong.
-- **Open: the budget is 600 points while the card is ~1480 px wide.** The picture is right and the
-  resolution is stated, but the curve is built from fewer points than it has pixels. Asking for the
-  measured width needs the budget to be **the widest trend of a tag on the screen**, because one fetch
-  serves every chart bound to one tag — a decision about the fetch, not a one-line change.
-- **Not looked at: a trend inside a screen tile.** The seeded screen carries status and alarms and no
-  `trend` component, so only the Browse pane was seen. The tile is the other direction of the same
-  defect and the same measurement governs it, but it was not looked at.
+- **Fixed the same evening: the value labels were drawn on the curve.** They sat inside the plot at its
+  left edge, where the reading is the lowest one, so `3.80` was printed over the line it labelled. The
+  plot is inset now with a gutter for them, **the axis row is inset by the same numbers** (a row of dates
+  flush with the card would name times belonging to points 46 px to its right — the same defect, an order
+  of magnitude smaller), and `src/Web/tests/trend-chart-size.test.mjs` fails if those two stop coming
+  from one place. **And a trend in a screen tile was looked at**, in two widths — six columns and three —
+  added to the seeded screen through the API the browser itself calls; both hold. One branch was not
+  reached: the chart drops its gutter below 360 px and the narrow tile is ~410 px, so that code is
+  reasoned about and unseen.
+- **Decided, and refused rather than built: the fetch budget stays 600 points whatever the card's
+  width.** Asking for the measured width — ~1480 — is the obvious completion of "the caller asks for the
+  points it can draw", and it is the wrong trade: it would treble the rows and the wire to draw a point
+  every 2.5 px instead of every 1 px, which is detail no eye resolves, in the one decision whose purpose
+  was to stop sending what nobody looks at. What makes that acceptable is that the reduction is **legible
+  on the screen**: the caption says how many points the readings were drawn as. A deployment that ever
+  wanted the detail would change the app's fetch, not the chart.
 - **Not the product's own stack**: `localhost:8090` still runs image `504c1d3`, built before this change.
   The walk ran a Gateway from the branch against its own database, with seeded data rather than a plant's.
 
