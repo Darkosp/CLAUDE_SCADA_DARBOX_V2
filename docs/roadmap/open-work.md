@@ -553,10 +553,20 @@ symbol that no instrument in this repository could establish, because a screensh
 A symbol has also been built from the picker through a browser, by `tools/check-authoring.mjs` and again
 by hand on 2026-10-07 while closing §2.0l item 1.
 
-**What is still unjudged**, and it needs a person rather than another run: whether the rotation reads at
-a glance, whether `stopped` and `bad` are distinguishable without reading the word under them, and
-whether the mapping form is usable by somebody who has not read ADR-0027. Those are the questions
-`walk-2026-10-06.md` ends with, and **no answers have been written under it.** They need the same thing everything else in Phase
+**Walked by eye on 2026-10-07, and it found a defect** —
+[the record](walk-2026-10-07.md#the-pump-walked-by-eye--2026-10-07). **A Bad pump was not a cancelled
+machine, it was a busier one**: the four vanes sit on a plus and the cross sits on a diagonal, so the
+two drew an eight-pointed star. Beside `STOPPED`, which is a plus in a circle, **the dead one looked
+more active than the stopped one** — and the only thing left separating *nothing is measuring this*
+from *the plant says it is off* was a change of colour. Fixed in
+[PR #3](https://github.com/Darkosp/CLAUDE_SCADA_DARBOX_V2/pull/3): in `bad` the rotor is not drawn at
+all. **Every test passed before and after**; what was wrong was what the lines added up to, and nothing
+here can see a sum of lines.
+
+**What is still unjudged**, and it needs the same eye: whether the rotation reads at a glance, whether
+the drawing reads as a **pump** rather than a fan or a compass, whether a deliberately dimmed `0.00`
+reads as a true zero or as something broken, and whether the mapping form is usable by somebody who has
+not read ADR-0027. They need the same thing everything else in Phase
 8 needs: eyes.
 
 **One more thing worth knowing before touching these queries.** The same Dapper trap bit **twice in one
