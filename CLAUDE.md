@@ -395,7 +395,7 @@ that *cannot* be true — a percentage above 100 is drawn exactly like a pressur
 having no editor.
 
 **The suite is green and its baseline is `open-work.md` §2.4–§2.5, with the current numbers measured on
-2026-10-07 after PR #3 merged: 627 .NET across seven projects with 0 skipped, and the client's 198.**
+2026-10-07 after PR #5 merged: 636 .NET across seven projects with 0 skipped, and the client's 205.**
 *(It read 586 and 162 earlier the same day, before that PR added forty .NET tests and twenty-five
 client ones. **A number here is a claim about the present tense like any other** — the session that
 writes one owns correcting it, which is the whole lesson of the nine stale claims corrected on this
