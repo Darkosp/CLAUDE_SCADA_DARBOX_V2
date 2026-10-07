@@ -61,6 +61,8 @@ they say about it.
 | [0028](0028-the-gateway-serves-over-tls.md) | The Gateway terminates TLS itself, refuses to start without either a certificate or a declaration that something in front of it is doing so, and does not enable HSTS by default |
 | [0029](0029-a-trend-asks-for-the-points-it-can-draw.md) | A trend asks for the points it can draw; the server reduces in a `date_bin` query and states the width it used, and a request without `points` is still every reading |
 | [0030](0030-a-tag-declares-the-range-it-expects.md) | A tag may declare the range its readings are expected in; a reading outside it keeps its value and its reported quality and is marked beside them, null means nothing is declared, and it is not an alarm |
+| [0031](0031-the-sign-in-path-is-hardened.md) | Failed sign-ins are counted on the account and lock it for a window that is a comparison rather than a job; the locked account is told, deliberately; an Admin reset is the way out; and per-caller limiting waits until "the caller's address" is answerable |
+| [0032](0032-the-audit-trail-can-be-read.md) | The append-only audit trail is readable by an Admin and nobody else, backwards by id rather than by the non-unique time, with the matching total beside every page; looking at it is deliberately not journalled |
 
 ## Template
 
