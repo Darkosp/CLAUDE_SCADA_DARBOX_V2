@@ -58,6 +58,7 @@ they say about it.
 | [0025](0025-an-alarm-waits-before-it-announces-itself.md) | An alarm waits before it announces itself, and a deadband shifts where it clears but never where it raises |
 | [0026](0026-operating-from-a-screen.md) | One component writes and nothing else does, the server decides whether the control is offered, and the write is never held or reported done before it is |
 | [0027](0027-a-symbol-derives-a-state.md) | A symbol is a component kind that derives a named state from its tag; quality overrides the state, and a continuing value never drives an animation |
+| [0028](0028-the-gateway-serves-over-tls.md) | The Gateway terminates TLS itself, refuses to start without either a certificate or a declaration that something in front of it is doing so, and does not enable HSTS by default |
 
 ## Template
 

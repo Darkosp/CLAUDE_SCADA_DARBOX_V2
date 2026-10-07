@@ -65,7 +65,13 @@ public sealed class StartupCheckTests
 
         var refusal = await Assert.ThrowsAsync<UnsafeDatabaseRoleException>(
             () => GatewayApp.BuildAsync(
-                [$"--ConnectionStrings:ScadaDb={database.PrivilegedConnectionString}", "--urls=http://127.0.0.1:0"]));
+                [
+                    $"--ConnectionStrings:ScadaDb={database.PrivilegedConnectionString}",
+                    "--urls=http://127.0.0.1:0",
+                    // Declared so THIS refusal is the one reached: the transport check comes first
+                    // (ADR-0028), and a test for the database check must get past it.
+                    "--Server:TlsTerminatedUpstream=true",
+                ]));
 
         Assert.Contains("'scada'", refusal.Message, StringComparison.Ordinal);
     }

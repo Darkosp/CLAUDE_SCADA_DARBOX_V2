@@ -70,14 +70,40 @@ services:
       # nothing here uses it. On a volume, it is created once rather than on every start,
       # each time with a warning in the log.
       DataProtection__KeysDirectory: /app/keys
+      # How this Gateway is reached (ADR-0028). It REFUSES TO START unless one of these two is
+      # given, because the dangerous configuration is the one nobody chose:
+      #
+      #   SCADA_TLS_CERT / SCADA_TLS_KEY   paths INSIDE the container, under /app/tls, of the
+      #                                    PEM pair this Gateway serves. Put the files in
+      #                                    SCADA_TLS_DIR on the host.
+      #   SCADA_TLS_TERMINATED_UPSTREAM    true when a proxy in front of this stack terminates
+      #                                    TLS. Serving HTTP is then deliberate, and the Gateway
+      #                                    says so in its startup log every time.
+      #
+      # deploy/README.md has both, and what a certificate for a plant usually is.
+      Server__CertificatePath: ${SCADA_TLS_CERT:-}
+      Server__KeyPath: ${SCADA_TLS_KEY:-}
+      Server__TlsTerminatedUpstream: ${SCADA_TLS_TERMINATED_UPSTREAM:-false}
+      # Off unless asked for, and that is deliberate (ADR-0028 §5): HSTS is remembered by the
+      # browser and cannot be overridden by the person using it, so a plant on a self-signed or
+      # internal-CA certificate would lock its own operators out of the screen.
+      Server__Hsts: ${SCADA_TLS_HSTS:-false}
+      # Both schemes: the HTTPS listener serves, and the HTTP one exists so a bare host name is
+      # redirected rather than refused. With TLS terminated upstream only the HTTP listener is
+      # ever reached.
+      ASPNETCORE_URLS: http://+:8080;https://+:8443
     ports:
       - "${SCADA_HTTP_PORT:-8080}:8080"
+      - "${SCADA_HTTPS_PORT:-8443}:8443"
     volumes:
       # The OPC UA driver's client certificate and trust lists. Kept across container
       # re-creation: a new certificate on every upgrade would be refused by any server that
       # trusted the old one.
       - gateway-pki:/app/pki
       - gateway-keys:/app/keys
+      # The web certificate and its key, read-only (ADR-0028). An empty directory when TLS is
+      # terminated upstream — the Gateway is then not told to look in it.
+      - ${SCADA_TLS_DIR:-./tls}:/app/tls:ro
     restart: unless-stopped
 
   modbus-sim:

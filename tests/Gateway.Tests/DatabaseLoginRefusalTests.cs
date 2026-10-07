@@ -106,5 +106,8 @@ public sealed class DatabaseLoginRefusalTests
     [
         $"--ConnectionStrings:ScadaDb={new NpgsqlConnectionStringBuilder(database.PrivilegedConnectionString) { Username = user, Password = password }}",
         "--urls=http://127.0.0.1:0",
+        // Declared so the login refusal is what this process prints, not the transport one
+        // (ADR-0028): the transport check runs first, before anything needs a database.
+        "--Server:TlsTerminatedUpstream=true",
     ];
 }
