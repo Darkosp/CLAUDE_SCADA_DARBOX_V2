@@ -791,13 +791,19 @@ export const TREND_WINDOWS: readonly TrendWindow[] = [
 ];
 
 /**
- * How many points a trend is drawn from, and therefore how many it asks the server for (ADR-0029).
+ * How many points a trend **asks the server for**, and the width it is drawn at before it has been
+ * measured (ADR-0029 §3).
  *
- * **One number for both, because they are one decision.** A chart that asked for more than it can
- * draw would fetch a reduction it throws away; one that asked for fewer would draw a curve coarser
- * than its own width with nothing on screen to say why. It is also the whole of the reduction's
- * budget: without it the server answers with every reading in the window, which for seven days of a
- * tag scanned once a second is 100,552 readings and 22 MB.
+ * **A budget, not the pixel width.** The chart fills whatever card it is in and measures itself
+ * (see `TrendChart.width`), so on a wide pane the same 600 points are drawn across more pixels —
+ * a smooth line rather than a loss, with the resolution stated under the chart ("593 points"). Asking
+ * for exactly the measured width is the next step and it is not a one-liner: a screen may hold two
+ * trends on one tag in tiles of different widths, one fetch serves both, and the budget would then be
+ * the widest of them. Recorded in `open-work.md` §2.6.
+ *
+ * It is what bounds the answer, and that is the point: without it the server answers with every
+ * reading in the window, which for seven days of a tag scanned once a second is 100,552 readings and
+ * 22 MB.
  */
 export const TREND_POINTS = 600;
 

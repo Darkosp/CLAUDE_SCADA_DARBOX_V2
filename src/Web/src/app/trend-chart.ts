@@ -1,4 +1,14 @@
-import { Component, computed, input } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  ElementRef,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  viewChild,
+} from '@angular/core';
 import {
   TREND_POINTS,
   TrendSeries,
@@ -31,7 +41,7 @@ interface Point {
     @if (points().length < 2) {
       <p class="empty">Not enough history yet.</p>
     } @else {
-      <svg [attr.viewBox]="'0 0 ' + width + ' ' + height" class="chart" role="img"
+      <svg #chart [attr.viewBox]="'0 0 ' + width() + ' ' + height()" class="chart" role="img"
            [attr.aria-label]="'Trend for ' + unitSymbol()">
         <!-- Behind the line: what each column's readings actually reached. -->
         @for (bar of envelope(); track bar.x) {
@@ -42,7 +52,7 @@ interface Point {
           <polyline class="line" [attr.points]="segment" />
         }
         <text class="tick" [attr.x]="4" [attr.y]="12">{{ high().toFixed(2) }}</text>
-        <text class="tick" [attr.x]="4" [attr.y]="height - 4">{{ low().toFixed(2) }}</text>
+        <text class="tick" [attr.x]="4" [attr.y]="height() - 4">{{ low().toFixed(2) }}</text>
       </svg>
       <!--
         **The period, under the chart, always.** A curve with no stated period is a curve nobody can
@@ -113,11 +123,79 @@ export class TrendChart {
   readonly from = input.required<Date>();
   readonly to = input.required<Date>();
 
+  /**
+   * The size the chart is **drawn at**, in its own coordinates — measured from the element it is in.
+   *
+   * **A fixed coordinate system in a responsive box is a lie about time, and this is the walk of
+   * 2026-10-07 finding it.** The viewBox was the constant `0 0 600 160` inside a chart element that
+   * filled its card, and the default `preserveAspectRatio` scales such a drawing uniformly to fit the
+   * *shorter* side and centres it. On a 1920 panel that card is ~1480 px wide, so the curve was drawn
+   * in a **607 px strip in the middle** while the axis beneath it ran the full width: every reading sat
+   * at the wrong time by the width of the empty band — about seven hours on a day-long window — and the
+   * two value ticks floated in the middle of the chart rather than at its left edge.
+   *
+   * No test could see it: the arithmetic was right, the buckets were right, and only the *rendered*
+   * box disagreed with the coordinate system. Measured facts, from the running client: svg box
+   * 1482×162, viewBox 600×160, first drawn point at x=846 of 1887.
+   *
+   * So the coordinate system is the element. Until the first measurement the fallback is
+   * `TREND_POINTS`, which is one point per pixel at the width this chart used to be.
+   */
+  protected readonly width = signal(TREND_POINTS);
+  protected readonly height = signal(160);
+
+  private readonly destroyRef = inject(DestroyRef);
+  private observer: ResizeObserver | null = null;
+
+  /**
+   * The drawing element itself, which **is not there on the first render and that cost this fix one
+   * attempt.** Empty history draws the words "Not enough history yet" instead of a chart, so a
+   * measurement taken after the component's first render found no SVG at all, returned, and never
+   * looked again — the viewBox stayed the constant and the defect stayed with it. The element arrives
+   * when the history does, so this is bound to it rather than to a moment.
+   */
+  private readonly chart = viewChild<ElementRef<SVGSVGElement>>('chart');
+
+  constructor() {
+    effect(() => {
+      const svg = this.chart()?.nativeElement;
+
+      if (svg === undefined) {
+        return;
+      }
+
+      this.observer ??= new ResizeObserver(() => this.measure(svg));
+      this.observer.observe(svg);
+
+      // Re-measured rather than assumed, because the card moves: the pane is resized by the window, by
+      // the tree beside it, and by a screen's own column count.
+      this.measure(svg);
+    });
+
+    this.destroyRef.onDestroy(() => this.observer?.disconnect());
+  }
+
+  /** Writes the element's content box into the coordinate system the chart draws in. */
+  private measure(svg: SVGSVGElement): void {
+    const box = svg.getBoundingClientRect();
+    const style = getComputedStyle(svg);
+    const border = (side: 'borderLeftWidth' | 'borderRightWidth' | 'borderTopWidth' | 'borderBottomWidth') =>
+      Number.parseFloat(style[side]) || 0;
+
+    // The SVG's *viewport* is its content box, not its border box, and the two differ by the border
+    // this chart draws. Measured off by a pixel on either side, `preserveAspectRatio` would letterbox
+    // the drawing again — the same defect, two orders of magnitude smaller.
+    const width = Math.round(box.width - border('borderLeftWidth') - border('borderRightWidth'));
+    const height = Math.round(box.height - border('borderTopWidth') - border('borderBottomWidth'));
+
+    if (width > 0 && height > 0 && (width !== this.width() || height !== this.height())) {
+      this.width.set(width);
+      this.height.set(height);
+    }
+  }
+
   /** Both ends of the axis, as a reader can place them. */
   protected readonly axis = computed(() => trendAxis(this.from(), this.to()));
-
-  protected readonly width = TREND_POINTS;
-  protected readonly height = 160;
 
   /**
    * The buckets placed across the chart, each keeping the extremes of what was measured in it.
@@ -126,7 +204,7 @@ export class TrendChart {
    * with a count, and drawing it as a value would be the fabrication ADR-0003 refuses.
    */
   protected readonly columns = computed(() =>
-    bucketColumns(this.series(), this.from().getTime(), this.to().getTime(), this.width),
+    bucketColumns(this.series(), this.from().getTime(), this.to().getTime(), this.width()),
   );
 
   /** How many readings the curve is drawn from — what the caption means by "readings" (ADR-0029 §4). */
@@ -143,7 +221,7 @@ export class TrendChart {
     const span = Math.max(this.high() - low, Number.EPSILON);
     const padding = 8;
     const y = (value: number) =>
-      this.height - padding - ((value - low) / span) * (this.height - padding * 2);
+      this.height() - padding - ((value - low) / span) * (this.height() - padding * 2);
 
     // The midpoint of each bucket's envelope carries the line; the envelope itself is drawn behind
     // it, so neither hides the other.
@@ -161,7 +239,7 @@ export class TrendChart {
     const span = Math.max(this.high() - low, Number.EPSILON);
     const padding = 8;
     const y = (value: number) =>
-      this.height - padding - ((value - low) / span) * (this.height - padding * 2);
+      this.height() - padding - ((value - low) / span) * (this.height() - padding * 2);
 
     return this.columns()
       .filter((column) => column.high > column.low)

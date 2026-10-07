@@ -108,11 +108,15 @@ test('both ends of an axis are formatted the same way, which is what makes them 
 // (`tests/Persistence.Tests/HistorizedHistoryTests.cs`, where the SQL is), and the arithmetic of
 // placing buckets and finding holes to `trend-buckets.test.mjs`.
 
-test('a trend asks for as many points as it draws, which is one number and not two', () => {
-  // ADR-0029 §3. The chart's width and the fetch's budget used to be the same 600 written in two
-  // places, which is the shape this project has been bitten by twice: a rule and every place that
-  // applies it drift apart. Asking for more than it draws fetches a reduction it throws away; asking
-  // for fewer draws a coarser curve than its own width with nothing on screen to say why.
+test('a trend asks for a bounded number of points, and says how many it was given', () => {
+  // ADR-0029 §3. The budget is what bounds the answer: without it the server answers with every reading
+  // in the window, and the reason this exists is that seven days of a tag scanned once a second came
+  // back as 100,552 readings and 22.2 MB.
+  //
+  // **It is deliberately not the width the chart draws at**, which it measures for itself: on a wide
+  // card the same points are spread across more pixels, which is a smooth line rather than a loss, and
+  // the caption states the resolution ("593 points"). Asking for exactly the measured width is the next
+  // step and needs the budget to be the widest trend of a tag on the screen — `open-work.md` §2.6.
   assert.equal(TREND_POINTS, 600);
   assert.ok(TREND_POINTS >= 2, 'and it is a number a trend can be drawn from at all');
 });
