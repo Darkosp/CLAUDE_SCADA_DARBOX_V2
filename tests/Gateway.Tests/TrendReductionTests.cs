@@ -56,7 +56,7 @@ public sealed class TrendReductionTests : IClassFixture<GatewayTestHost>
 
         // The stretch the source answered with nothing plottable is a bucket of its own, with its
         // count and no envelope — a hole, rather than a bucket that quietly disappears.
-        var unplottable = Assert.Single(buckets.Where(bucket => bucket.GetProperty("low").ValueKind == JsonValueKind.Null));
+        var unplottable = Assert.Single(buckets, bucket => bucket.GetProperty("low").ValueKind == JsonValueKind.Null);
         Assert.Equal(At.AddMinutes(5), unplottable.GetProperty("startUtc").GetDateTimeOffset());
         Assert.Equal(10, unplottable.GetProperty("count").GetInt64());
 
