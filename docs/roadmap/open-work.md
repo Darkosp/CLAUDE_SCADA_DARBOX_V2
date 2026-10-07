@@ -563,10 +563,20 @@ from *the plant says it is off* was a change of colour. Fixed in
 all. **Every test passed before and after**; what was wrong was what the lines added up to, and nothing
 here can see a sum of lines.
 
-**What is still unjudged**, and it needs the same eye: whether the rotation reads at a glance, whether
-the drawing reads as a **pump** rather than a fan or a compass, whether a deliberately dimmed `0.00`
-reads as a true zero or as something broken, and whether the mapping form is usable by somebody who has
-not read ADR-0027. They need the same thing everything else in Phase
+**Three of the four open judgements are answered**, in
+[the record](walk-2026-10-07.md#the-answers-from-the-person-who-looked). **The rotation reads at a
+glance** — settled, and no instrument here could have settled it. **The drawing reads as a *symbol of*
+a pump** rather than as a pump: *"four thin arms in a circle, turning"*. That may be exactly right — on
+a P&ID a pump is an abstract mark — but the convention most plant people are trained on is a circle
+with a **wedge** for the discharge, and four vanes reads closer to an impeller or a fan. Changing it is
+cheap (ADR-0027 §6) and **is a decision nobody has made**; it is in §3. A dimmed `0.00` was **not
+objected to**, which is weaker than judged and is recorded as such.
+
+**The fourth is unanswered, and how it went unanswered is the finding.** Asked whether *"the mapping
+form"* was usable, the reader answered that they did not know what that was. **The name exists only in
+ADR-0027**: the form on screen says `Symbol`, `is`, `above`, `below`, `otherwise`, and never the word
+*mapping*. A feature whose name lives only in an ADR is one an author cannot ask about — and this is
+the second time this slice has produced one. They need the same thing everything else in Phase
 8 needs: eyes.
 
 **One more thing worth knowing before touching these queries.** The same Dapper trap bit **twice in one
@@ -1284,6 +1294,7 @@ decided inside an implementation pull request.
 | The Modbus 5 s response bound: driver constant or per-device setting | `phase-plan.md`, Phase 7 note | **closed 2026-10-05** — a per-device `responseTimeoutSeconds` setting, defaulting to 5 s; see §2.0f |
 | **A decimal comma, in two forms of one client** | found 2026-10-07 while closing §2.0l item 1 | **a decision.** `parseNumberField` converts `1,5` to `1.5` for the alarm threshold form, *"a decimal comma is what a Macedonian keyboard produces"*. A symbol's mapping does not: ADR-0027 stores the text **exactly as the author typed it**, so `1,5` is refused. Both behaviours are defensible and the pair is not — the same person typing the same key into two forms of one application gets two answers. Normalising at the symbol form's input would be the smaller change and would contradict ADR-0027's stated reason for keeping the text exact, so it needs an ADR rather than a patch. Until then the refusal names what to type |
 | **An edit that silently releases a device from its edge** | found by the write walk, 2026-10-06; §2.0 | **a decision about the API's shape.** A `PUT` of a device that omits `edgeId` releases it, which is ADR-0019's documented contract — *"assigning and releasing are ordinary edits of the device"* — and a full replacement is a defensible REST shape. What the walk showed is that **the design makes it easy to do by accident**: changing one field means resending every other, and the only signal that an assignment was dropped is a write failing 4.75 s later with a message about DNS, after the cloud has tried to reach a plant device **directly**. The consequence is on the write path, which is the one path where being wrong means a plant was changed or an operator was told it was. Options span a PATCH, an explicit release endpoint, and leaving it and saying so louder — all three are ADR territory |
+| **What a pump should look like** | answered by the eye-walk of 2026-10-07; §2.0j | **a decision, and a cheap one either way.** The reader saw *"something that symbolises a pump — four thin arms in a circle, turning"*. That is arguably success: on a P&ID a pump **is** an abstract mark. But the convention plant people are trained on is a circle with a **wedge** marking the discharge, and four vanes reads closer to an impeller or a fan. ADR-0027 §6 makes a second drawing *"a drawing and a state list, not a decision"*, so the cost is small and the question is only which reading the product wants. Nobody has decided |
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
 | TimescaleDB continuous aggregates and native compression | ADR-0006 | the legal review ADR-0006 asks for; the code deliberately does not use them |
 | Rollback of a schema migration (down-scripts) | ADR-0012, ADR-0014, `phase-plan.md` Phase 6 | **stays forward-only by decision**; the guide's backup-and-restore is the answer |
