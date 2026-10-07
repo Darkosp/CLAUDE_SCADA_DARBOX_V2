@@ -381,6 +381,10 @@ const WIDEST = 12;
        a drop will land before they commit to it. */
     .cell-head { cursor: grab; }
     .cell-head:active { cursor: grabbing; }
+    /* **Found by dragging one**: a drag that starts on the heading and is then abandoned leaves the
+       page text-selected from the heading to wherever the pointer went, because a mousedown on text
+       is a selection until the browser decides it is a drag. The handle is a control, not prose. */
+    .cell-head { user-select: none; -webkit-user-select: none; }
     .grip {
       color: var(--text-muted);
       font-size: var(--text-xs);
