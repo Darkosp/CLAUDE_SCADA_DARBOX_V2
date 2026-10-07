@@ -19,7 +19,7 @@ phase.
 | Frontend | Angular, latest stable release, signals/zoneless reactivity model | signals are a natural fit for a live tag value; strong typing suits a long-lived enterprise HMI |
 | Historian / database | PostgreSQL + TimescaleDB | open, standard SQL; configuration data and time-series data live in one engine. **Flag:** TimescaleDB's continuous aggregates and native compression are licensed under the Timescale License (TSL), not Apache 2.0 — get legal confirmation before relying on them if the product is ever resold or sublicensed |
 | Real-time push | SignalR, with a Redis backplane added only once multiple backend instances are actually running | native to .NET; no third-party real-time layer needed at single-instance scale |
-| Driver layer | OPC UA .NET stack (OPC Foundation), NModbus (Modbus TCP/RTU), MQTTnet (MQTT / Sparkplug B) | mature, widely used libraries; each protocol is its own module behind the driver framework (ADR-0002) |
+| Driver layer | OPC UA .NET stack (OPC Foundation), NModbus (Modbus TCP/RTU), MQTTnet (MQTT — the payload over it is this project's own, **not** Sparkplug B: [ADR-0017](0017-edge-to-cloud-link.md) §2) | mature, widely used libraries; each protocol is its own module behind the driver framework (ADR-0002) |
 | Scripting / extensibility | JavaScript via Jint (or ClearScript/V8) plus a typed expression language | a modern, sandboxed scripting option, instead of Ignition's legacy Jython 2.7 |
 | Edge agent | .NET, Native AOT publish | small, fast-starting, low-memory native binary; keeps the whole stack to one language instead of adding Go/Rust just for the edge |
 | Deployment | Docker Compose; Kubernetes only if and when actually needed | matches the single-tenant-per-instance deployment model already agreed |

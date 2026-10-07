@@ -1,5 +1,84 @@
 # Handover — SCADA_DARBOX
 
+*Amended 2026-10-07, on `main` at `fdd75e9`. **Read this block first; the rest is history that is still
+mostly true.***
+
+## Two agents shared this one checkout — read this before committing anything
+
+Two agent sessions ran in `C:\GitProjects\CLAUDE_SCADA_DARBOX_V2` at once on 2026-10-07. What actually
+happened: a commit of mine landed on a branch the other session had created; two builds failed because one
+session's `testhost` held the other's output; one test run measured a tree the other session was editing; and
+**`git checkout <branch> -- <file>` silently destroyed my uncommitted edits** to this file and `CLAUDE.md`.
+
+**The other session is stopped, and its work is in this tree uncommitted**: `src/Core/Model/Screen.cs`,
+`src/Web/src/app/{screen,screen-editor,symbol}.ts`, `src/Web/tests/symbol-{drawing,state,shapes}.test.mjs`,
+`tests/Core.Tests/SymbolVocabularyTests.cs` — its *"more symbols"* work on `feat/more-symbols` (`4d82f72`).
+**Never `git add -A` here**; commit explicit paths. **One agent per worktree is the fix**:
+`git worktree add ../scada-wt <branch>`.
+
+## What exists now
+
+| decision | `main` | code | missing |
+|---|---|---|---|
+| **ADR-0029** trend reduction | yes | merged, PR #7 `8e89ad0` | — (walked; the walk found the chart-drawn-where-its-axis-was defect) |
+| **ADR-0030** a tag declares its range | yes | **draft PR #8** `feat/tag-declared-range` | **the half a person sees** — no form fields, no marker, so `464 %` still looks like `4.79 bar` |
+| **ADR-0031** sign-in hardened (lockout, headers, `script-src` by hash) | yes | **draft PR #10** `feat/security-surface` | the walk; per-caller limiting (refused pending the caller-address decision) |
+| **ADR-0032** the audit trail is readable | yes | **draft PR #10** | the walk |
+
+Both drafts are **green**, and drafts only because **nobody has looked at the new screens in the running
+product** — this project's rule. Measured: Gateway project **188 passed / 0 failed / 0 skipped**, client
+**241 / 0**, `ng build` clean. **The whole-solution baseline has NOT been re-measured since 648 .NET / 228
+client** (ADR-0031/0032 landed after it; parallel build locks blocked a clean run) — take that run and correct
+`open-work.md` §2.4–§2.6.
+
+**The standards audit is on `main`**: `docs/architecture/standards-baseline.md` — 22 standards, 1 implemented,
+4 partial, 1 not, 16 out of scope. Its three biggest gaps, untouched: **IEC 62443-4-1 (no CI, no SBOM, no
+vulnerability intake, no threat model — the biggest, and not code)**, **OPC UA connects with
+`useSecurity: false` and an anonymous identity and no ADR records the deferral** (`OpcUaDriver.cs:86,99`), and
+**no alarm priority field (ISA-18.2)**, which blocks rationalisation, flood sorting, escalation and metrics.
+
+## Next, in order
+
+1. **Walk PR #10** (eyes only): sign in, open **Audit**, check the *"newest N of M"* line, load older, filter
+   `auth.`, then five wrong passwords to see the lockout message. **Then walk PR #8 once its display half is
+   built** — range low/high fields in `app.ts`/`app.html`, marker in `screen-view.ts`/`app.html`
+   (**`screen.ts` is the other session's file**: coordinate, or do that part last).
+2. Merge both.
+3. Then by value: **OPC UA security** (ADR + certificate story), **alarm priority** (ADR + schema + API +
+   client — highest leverage), ISA-101 HMI (client, judged by eye), **nothing displays `site.time_zone_id`**
+   (ISO 8601's named gap), a partial index on `audit_log.action` when the trail grows.
+
+## Scars from this session — each of these cost time
+
+- **`dotnet test --no-build` after a failed build reports the previous binaries** → a false green, and a
+  mutation that looked like it changed nothing. Rebuild and read the build's result.
+- **A locked file under `tests/*/bin` is a stray `testhost`, not a code fault**:
+  `Get-Process testhost | Stop-Process -Force`.
+- **Dapper + a nullable `timestamptz`**: the row parameter must be `DateTime?` (**not** `DateTimeOffset?`),
+  and the column must match the property after underscore-insensitivity — `locked_until` does *not* match
+  `LockedUntilUtc`, and that failure is **silent** (the lock read as null). Use a class with settable
+  properties and an alias.
+- **The database's clock is not your test process's clock** — derive window boundaries from rows you read.
+- **A paging test that loops until an empty page hangs instead of failing** under the mutation that breaks the
+  cursor: bound the loop and assert it advanced.
+- **A test that cannot fail is not evidence.** Mine asserted a `<script src>` gets no CSP hash, and passed with
+  the rule deleted, because the fixture was empty either way.
+- `src/Gateway/Configuration/SiteTreeBuilder.cs` is the one file whose committed lines end `\r\r\n` (the
+  `edit` tool cannot match multi-line strings there); client `template:`/`styles:` literals must contain no
+  backticks; `src/Web/tests/encoding.test.mjs` guards UTF-8 in `src`/`docs`/`tools` but **not** root
+  `HANDOVER.md`/`CLAUDE.md`.
+
+## Verify in five minutes
+
+```powershell
+docker start scada-test-db-5433     # or the tests skip, and 422 skipped looks like a pass
+dotnet build ScadaDarbox.slnx       # 0 Errors; a lock here is a stray testhost
+$env:SCADA_TEST_DB_PORT='5433'; dotnet test ScadaDarbox.slnx
+cd src/Web; npm test; npx ng build
+```
+
+*End of the 2026-10-07 amendment.*
+
 Written 2026-09-27, on `main` at `886d959`, worktree clean, in sync with `origin/main`.
 
 *Amended 2026-10-02, on `main` at `df191b3`: ADR-0019 §8 (an edge declares its own drivers, and the

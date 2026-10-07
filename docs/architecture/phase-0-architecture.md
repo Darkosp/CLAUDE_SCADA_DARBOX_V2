@@ -22,7 +22,8 @@ holding live values in the typed union shape defined in ADR-0003, with units
 resolved through the dimensioned model in ADR-0005.
 
 **Driver framework + drivers** — the framework is core; concrete drivers
-(OPC UA, Modbus TCP/RTU, MQTT/Sparkplug B — ADR-0006) are modules composed
+(OPC UA, Modbus TCP/RTU, and this project's own payload over MQTT — ADR-0006, and ADR-0017 §2 for why the
+payload is ours rather than Sparkplug B) are modules composed
 at compile time (ADR-0002) against the framework's protocol-agnostic
 contract. A driver reads values into the tag engine and, where a tag is
 writable, carries writes back out to the device.
@@ -59,7 +60,8 @@ customer's VPN; local users reach it directly over the LAN.
 **Cloud:** Gateway, historian and the Angular client are hosted centrally.
 The edge agent runs on the customer's site, holds the driver connections to
 the actual field devices, and forwards data to the Gateway over an
-**outbound** MQTT/Sparkplug B connection secured with TLS. This deliberately
+**outbound** MQTT connection carrying this project's own payload (ADR-0017 §2 — deliberately not Sparkplug
+B) secured with TLS. This deliberately
 avoids requiring any inbound firewall port at the customer's site — a
 recurring blocker with industrial/OT security teams. The edge agent buffers
 locally (store-and-forward) when the link to the Gateway is down, and
