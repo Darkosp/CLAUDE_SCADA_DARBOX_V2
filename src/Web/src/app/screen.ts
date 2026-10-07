@@ -152,9 +152,12 @@ function matchesRule(rule: SymbolStateRule, value: TagValue): boolean {
     return false;
   }
 
-  const threshold = Number(rule.value);
+  const threshold = parseInvariantNumber(rule.value);
 
-  if (!Number.isFinite(threshold)) {
+  // A threshold that is not a finite number never matches, and Core's `SymbolStates.Matches` says the
+  // same. `ScreenRules` refuses such a rule at save, so this is the second line — and it has to exist,
+  // because the editor's live preview evaluates a draft that has not been near the server.
+  if (threshold === null || !Number.isFinite(threshold)) {
     return false;
   }
 
@@ -163,6 +166,50 @@ function matchesRule(rule: SymbolStateRule, value: TagValue): boolean {
     : rule.when === 'below'
       ? value.numeric < threshold
       : false;
+}
+
+/**
+ * What an author typed, read as a number the way **Core reads it** — or null when it is not one.
+ *
+ * **This exists because `Number()` and .NET's `double.TryParse` disagree, and the disagreement was
+ * reachable.** ADR-0027 has the same rules evaluated in two languages, and the argument for tolerating
+ * that is that both sides are held to the same cases. Three cases where they were not, measured on
+ * 2026-10-07 rather than assumed:
+ *
+ * | typed      | `double.TryParse(…, Float, Invariant)` | `Number()`        |
+ * |------------|----------------------------------------|-------------------|
+ * | `""`       | refused                                | **0**             |
+ * | `"   "`    | refused                                | **0**             |
+ * | `"0x10"`   | refused                                | **16**            |
+ *
+ * The empty one was not theoretical. The editor's `addRule` creates a rule with an empty value, and
+ * **the live preview evaluates the draft immediately** — so an author adding a state to a symbol bound
+ * to a tag reading `0.00` saw the preview jump into that state, and then the save was refused because
+ * the API will not store a comparison with nothing to compare against. The preview's whole purpose is
+ * to show what an operator will see, and it was showing a state the product cannot produce.
+ *
+ * So: a decimal number, with an optional sign, an optional exponent and surrounding space — and
+ * nothing else. `Infinity` and `NaN` are accepted because .NET accepts them, and they are then handled
+ * exactly as .NET handles them: `NaN` equals nothing, and a non-finite **threshold** never matches on
+ * either side (`SymbolStates.Matches` has the same guard, and `ScreenRules` refuses one at save).
+ */
+function parseInvariantNumber(typed: string | null): number | null {
+  if (typed === null) {
+    return null;
+  }
+
+  // `trim()` removes the same Unicode whitespace .NET's AllowLeadingWhite / AllowTrailingWhite do.
+  const text = typed.trim();
+
+  if (/^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/.test(text)) {
+    return Number(text);
+  }
+
+  if (/^[+-]?Infinity$/.test(text)) {
+    return text.startsWith('-') ? -Infinity : Infinity;
+  }
+
+  return text === 'NaN' ? Number.NaN : null;
 }
 
 /**
@@ -180,8 +227,8 @@ function equalsValue(value: TagValue, typed: string | null): boolean {
 
   switch (value.kind) {
     case 'numeric': {
-      const wanted = Number(typed);
-      return Number.isFinite(wanted) && value.numeric === wanted;
+      const wanted = parseInvariantNumber(typed);
+      return wanted !== null && value.numeric === wanted;
     }
     case 'boolean':
       return String(value.boolean).toLowerCase() === typed.trim().toLowerCase();
@@ -190,6 +237,163 @@ function equalsValue(value: TagValue, typed: string | null): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * Which of a symbol's rules can never match a tag of this kind, and why (ADR-0027).
+ *
+ * **This exists because of one defect, and it is worth stating what the defect was.** A new symbol was
+ * born with `running when the value is true` and `stopped otherwise`, which is right for a pump driven
+ * by a boolean and silently wrong for every other tag: a number never compares equal to `true`, so the
+ * fallback is taken for every reading the tag will ever report and the symbol draws `stopped` forever.
+ * **A fallback that is always taken is the dangerous shape** — it does not look broken, it looks like a
+ * working symbol reporting a stopped machine, which is a claim about a plant that nothing measured.
+ *
+ * ADR-0027 §3 designed `unknown` to be the visible sign that a mapping does not cover a reading. A
+ * fallback replaces that sign with a definite state, which is the author's right — so the product
+ * cannot call this an error. What it can do is make the mistake hard to make (a default that follows
+ * the tag, in `newComponent`) and easy to see (this, in the editor).
+ *
+ * **Why this is not a save-time refusal.** It would need the tag's kind in `ScreenRules`, and a stored
+ * screen would stop being saveable the moment somebody changed a tag's kind underneath it. The one part
+ * that needs no tag — a numeric comparison against something that is not a number — *is* refused on the
+ * server, and that split is recorded in `ScreenRules` itself.
+ *
+ * A kind of `none` means nothing has been measured yet, and then **nothing is known**: the answer is no
+ * warnings rather than a guess, because warning about a rule that may well be right is how a reader
+ * learns to ignore warnings.
+ */
+export function unmatchableRules(
+  rules: readonly SymbolStateRule[],
+  kind: TagValue['kind'],
+): readonly { at: number; reason: string }[] {
+  if (kind === 'none') {
+    return [];
+  }
+
+  const found: { at: number; reason: string }[] = [];
+
+  for (let at = 0; at < rules.length; at++) {
+    const rule = rules[at];
+
+    // A fallback matches anything by definition, so it is never unmatchable. Whether it is the *right*
+    // thing to draw when nothing matched is exactly the judgement this function must not make.
+    if (rule.otherwise) {
+      continue;
+    }
+
+    const reason = whyUnmatchable(rule, kind);
+
+    if (reason !== null) {
+      found.push({ at, reason });
+    }
+  }
+
+  return found;
+}
+
+/**
+ * Why one rule can never match a reading of this kind, or null when it could.
+ *
+ * Every arm mirrors a branch of `matchesRule` and `equalsValue` above, and it has to stay that way:
+ * this function claims a rule is dead, and a claim like that is only as true as its agreement with the
+ * code that actually evaluates the rule. A `discrete` reading is the blunt case — `equalsValue` has no
+ * arm for it, so no comparison of any kind can match one, which is worth saying plainly rather than
+ * leaving an author to discover it from a symbol that never changes.
+ */
+function whyUnmatchable(rule: SymbolStateRule, kind: TagValue['kind']): string | null {
+  if (kind === 'discrete') {
+    return 'this tag reports a discrete code, and a symbol cannot compare against one yet';
+  }
+
+  if (rule.when === 'above' || rule.when === 'below') {
+    if (kind !== 'numeric') {
+      return `'${rule.when}' compares numbers, and this tag reports ${describeKind(kind)}`;
+    }
+
+    const threshold = parseInvariantNumber(rule.value);
+
+    return threshold !== null && Number.isFinite(threshold)
+      ? null
+      : `'${rule.value}' is not a number to be ${rule.when}`;
+  }
+
+  if (rule.when !== 'equals') {
+    // A comparison this build does not evaluate. The API refuses one at save, so an author should
+    // never see this — it is here because `matchesRule` treats it as "no match", and a rule that can
+    // never match is what this function is for.
+    return `this build does not evaluate '${rule.when}'`;
+  }
+
+  const typed = (rule.value ?? '').trim();
+
+  if (kind === 'numeric') {
+    return parseInvariantNumber(typed) !== null
+      ? null
+      : `this tag reports a number, and '${rule.value}' is not one`;
+  }
+
+  if (kind === 'boolean') {
+    const lowered = typed.toLowerCase();
+    return lowered === 'true' || lowered === 'false'
+      ? null
+      : `this tag reports true or false, and '${rule.value}' is neither`;
+  }
+
+  // Text. Any string is something a text reading could equal, so there is nothing to warn about —
+  // including the empty string, which the API refuses at save for its own reasons.
+  return null;
+}
+
+/** How to name a value kind in a sentence an author reads. */
+function describeKind(kind: TagValue['kind']): string {
+  switch (kind) {
+    case 'numeric':
+      return 'a number';
+    case 'boolean':
+      return 'true or false';
+    case 'text':
+      return 'text';
+    case 'discrete':
+      return 'a discrete code';
+    default:
+      return 'nothing yet';
+  }
+}
+
+/**
+ * The mapping a new symbol starts with, for the kind of tag it is being bound to (ADR-0027).
+ *
+ * **The default follows the tag because the old fixed one was a defect**, not because it is tidier: see
+ * `unmatchableRules`. Every default here is a mapping whose rules *can* match the tag — never a
+ * guarantee that it is the mapping the plant wants, which no code can know.
+ *
+ * A tag with no reading yet still gets the boolean default, and that is a deliberate bet rather than an
+ * oversight: most pumps are driven by a run signal, the author sees the mapping in the form in front of
+ * them, and the warning appears as soon as a reading arrives and disagrees. Starting such a symbol on a
+ * bare `unknown` fallback would make the common case worse to protect the uncommon one.
+ */
+function defaultSymbolStates(kind: TagValue['kind']): SymbolStateRule[] {
+  if (kind === 'numeric') {
+    // Above zero rather than `is 1`: a pump's run signal arriving as a number is a 0/1, a 0/100 or a
+    // flow, and "above zero" is the one reading of it that is true in all three.
+    return [
+      { state: 'running', when: 'above', value: '0', otherwise: false },
+      { state: 'stopped', when: null, value: null, otherwise: true },
+    ];
+  }
+
+  if (kind === 'text' || kind === 'discrete') {
+    // Nothing to guess, and guessing would be worse than admitting it: a single fallback of `unknown`
+    // is saveable, draws ADR-0027 §3's own "the mapping does not cover this" state, and says to the
+    // author that it is theirs to fill in. It is not a mapping pretending to work.
+    return [{ state: 'unknown', when: null, value: null, otherwise: true }];
+  }
+
+  return [
+    { state: 'running', when: 'equals', value: 'true', otherwise: false },
+    { state: 'stopped', when: null, value: null, otherwise: true },
+  ];
 }
 
 /**
@@ -664,6 +868,13 @@ export function newComponent(
   kind: ScreenComponentKind,
   tagId: string | null,
   title: string | null,
+  /**
+   * What the tag being bound is currently reading, for a `symbol`'s starting mapping.
+   *
+   * Defaulted so every other kind can ignore it, and `'none'` is the honest value for a tag nothing
+   * has measured — `defaultSymbolStates` says what it does with that and why.
+   */
+  valueKind: TagValue['kind'] = 'none',
 ): ScreenComponent {
   return {
     id: `new-${nextId++}`,
@@ -673,23 +884,18 @@ export function newComponent(
     kind,
     title,
     tagId,
-    // A new symbol starts as a pump with two rules: `running` when its tag is true, and a fallback of
-    // `stopped` for anything else. That is a decision rather than a default — the API refuses a symbol
-    // with no states, so "start empty and let the author fill it in" would hand them a component that
-    // cannot be saved until they have understood the mapping. A pump that runs when its tag is true is
-    // what most of them are, and every part of it is editable.
+    // A new symbol starts as a pump with a mapping it can be saved with. That is a decision rather
+    // than a default — the API refuses a symbol with no states, so "start empty and let the author
+    // fill it in" would hand them a component that cannot be saved until they have understood the
+    // mapping — and the mapping now **follows the kind of tag being bound**, because a fixed one was
+    // right for a boolean and silently wrong for everything else. `defaultSymbolStates` has the
+    // argument and `unmatchableRules` has the defect it came from.
     //
     // **The fallback carries no comparison**, which the API insists on: a rule that matches anything
     // cannot also state what it matches, and one that did would be text the author believed was doing
     // something.
     symbol: kind === 'symbol' ? 'pump' : null,
-    states:
-      kind === 'symbol'
-        ? [
-            { state: 'running', when: 'equals', value: 'true', otherwise: false },
-            { state: 'stopped', when: null, value: null, otherwise: true },
-          ]
-        : [],
+    states: kind === 'symbol' ? defaultSymbolStates(valueKind) : [],
     // What the reader may see is the server's to decide (ADR-0024 5). A component being authored is
     // shown as readable until a save comes back and says otherwise, because the client has no
     // standing to answer it -- and a component that hid itself mid-edit would be one an author could

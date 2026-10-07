@@ -379,12 +379,20 @@ fails, it renders as nonsense. Use the editor tools or Node. The guard is
 `src/Web/tests/encoding.test.mjs`, it covers `src`, `docs` and `tools`, and it caught real damage the day
 it was written; `node tools/repair-encoding.mjs <files>` is the repair.
 
-**Three things that session left open are in `open-work.md` §2.0l**, and the first is the only one that
-puts a wrong reading on a screen: **a new symbol is born assuming its tag is boolean and says nothing
-when it is not** — a numeric tag never compares equal to `true`, so the fallback is silently always
-taken and the symbol draws `stopped` forever. The other two are a question needing a decision before any
-code (nothing marks a value that *cannot* be true — a percentage above 100 is drawn exactly like a
-pressure) and the `discrete` kind having no editor.
+**Three things that session left open are in `open-work.md` §2.0l, and the first — the only one that put
+a wrong reading on a screen — was closed on 2026-10-07.** A new symbol was born assuming its tag was
+boolean: a numeric tag never compares equal to `true`, so the fallback was silently always taken and the
+symbol drew `stopped` forever. **A fallback that is always taken is the dangerous shape** — it looks
+like a working symbol reporting a stopped machine. A symbol's starting mapping now follows the bound
+tag's kind, and the editor names a rule that can never match it; the server refuses only the half that
+needs no tag (`above 'hot'`), because refusing the rest would unsave a stored screen the moment a tag's
+kind changed underneath it. **Three boundaries are pinned by tests that fail if they move** — a merely
+unlikely mapping is not faulted, a tag nothing has measured says nothing, and the tag-dependent case is
+not a refusal. §2.0l has the walk and two gaps it closed on the way.
+
+**The other two are still open**: a question needing a decision before any code (nothing marks a value
+that *cannot* be true — a percentage above 100 is drawn exactly like a pressure) and the `discrete` kind
+having no editor.
 
 **The suite is green and its baseline is `open-work.md` §2.4–§2.5, with the current numbers measured on
 2026-10-07: 586 .NET across seven projects with 0 skipped, and the client's 162.** A stopped test

@@ -1,3 +1,4 @@
+using System.Globalization;
 using ScadaDarbox.Core.Model;
 
 namespace ScadaDarbox.Core.Configuration;
@@ -112,16 +113,24 @@ public static class ScreenRules
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Four ways a mapping is wrong, and each is refused **by name** for the reason every other
-    /// refusal here is: a mapping naming a state the drawing does not have, or a comparison this build
-    /// does not evaluate, produces a symbol that sits on `unknown` forever while looking configured.
-    /// The author is the only person who can fix that, and they can only fix it if they are told which
-    /// rule is at fault.
+    /// Five ways a mapping is wrong, and each is refused **by name** for the reason every other
+    /// refusal here is: a mapping naming a state the drawing does not have, a comparison this build
+    /// does not evaluate, or a numeric comparison against something that is not a number, produces a
+    /// symbol that sits on one state forever while looking configured. The author is the only person
+    /// who can fix that, and they can only fix it if they are told which rule is at fault.
     /// </para>
     /// <para>
     /// What is deliberately **not** checked is whether a well-formed mapping is the right one for a
     /// plant. `running when true` is valid on a pump driven by a boolean and wrong on one driven by a
     /// pressure, and no rule can tell the difference. That is a walk's job.
+    /// </para>
+    /// <para>
+    /// <b>Between those two there is a third case, and it is not refused here either:</b> a rule that
+    /// is well formed and can never match <i>the tag it is bound to</i> — `is true` on a numeric tag,
+    /// which is the defect the 2026-10-06 walk found. Deciding that needs the tag's kind, which this
+    /// rule does not have and should not fetch, and refusing it at save would make a stored screen
+    /// unsaveable the moment somebody changed a tag's kind underneath it. The editor warns instead:
+    /// see `unmatchableRules` in the client's `screen.ts`.
     /// </para>
     /// </remarks>
     private static string? ProblemWithStates(ScreenComponent component)
@@ -183,8 +192,57 @@ public static class ScreenRules
             {
                 return $"A 'symbol' component's {at} compares with '{rule.When}' and has nothing to compare against.";
             }
+
+            if (rule.When is SymbolComparisons.Above or SymbolComparisons.Below
+                && !IsAThreshold(rule.Value))
+            {
+                // `above` and `below` are numeric comparisons, so a threshold that is not a number is
+                // a rule that can never match ANY reading — the same "configured and dead" shape as a
+                // state the symbol cannot draw, and refused here for the same reason.
+                //
+                // This needs nothing about the bound tag, which is why it belongs on the server at
+                // all: it is a property of the rule alone. Whether a *well-formed* rule can match the
+                // tag it is bound to is a different question, it needs the tag's kind, and the editor
+                // answers it — see `unmatchableRules` in the client's `screen.ts` and the note there
+                // about why it is not refused here.
+                return $"A 'symbol' component's {at} compares '{rule.When}' against '{rule.Value}', "
+                    + "which is not a number to compare against."
+                    + DecimalPointHint(rule.Value);
+            }
         }
 
         return null;
     }
+
+    /// <summary>
+    /// Whether what the author typed is a number a reading could be above or below.
+    /// </summary>
+    /// <remarks>
+    /// Invariant culture, because this is the text the API stores and the client parses the same way —
+    /// a threshold that meant one thing to a Macedonian browser and another to the server would be the
+    /// worst kind of drift here. Infinity and NaN parse and are refused anyway: a reading is never
+    /// above infinity and every comparison with NaN is false, so both are dead rules that look live.
+    /// </remarks>
+    /// <summary>
+    /// The one extra sentence worth adding when what was typed is a number with a decimal comma.
+    /// </summary>
+    /// <remarks>
+    /// <b>This project's own keyboard produces `1,5`.</b> A refusal that only says "not a number"
+    /// about a string the author can see is a number is the kind of message people stop reading, and
+    /// the client is not even consistent about it: <c>parseNumberField</c> converts a comma for the
+    /// alarm threshold form, while a symbol's mapping stores the text exactly as typed (ADR-0027) and
+    /// parses it invariantly. **Whether that difference should exist at all is a question, recorded in
+    /// `open-work.md` §3** — until it is answered, the refusal at least says what to type.
+    /// </remarks>
+    private static string DecimalPointHint(string? typed) =>
+        typed is not null && typed.Contains(',') && IsAThreshold(typed.Replace(',', '.'))
+            ? $" A decimal point is what this field reads, so type '{typed.Replace(',', '.')}'."
+            : string.Empty;
+
+    private static bool IsAThreshold(string? typed) =>
+        double.TryParse(
+            typed,
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out var threshold) && double.IsFinite(threshold);
 }
