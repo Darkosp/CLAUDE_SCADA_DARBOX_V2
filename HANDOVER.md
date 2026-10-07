@@ -487,8 +487,10 @@ The defects that were already found and fixed are listed in [`HANDOVER-archive.m
   *(Corrected 2026-10-01: this bullet said the list was still typed by hand and that the answer was
   not built. Both had stopped being true — `Edge:Devices` is gone from
   `src/EdgeAgent/EdgeOptions.cs`, and the cloud derives each edge's list and publishes it.)* What is
-  still unproven is the walk: no run has yet had a real broker and a real edge accept a derived
-  configuration. See `docs/roadmap/open-work.md`.
+  walk is **done, three times** — 2026-10-01 on one machine, 2026-10-02 against the real cloud stack
+  over TLS and then on two hosts, and again inside the write walk of 2026-10-06. *(Corrected
+  2026-10-07; this said "what is still unproven is the walk", and it had been proven for five days.)*
+  See `docs/roadmap/open-work.md` §2.1.
 - **A test run without a database is not the same evidence as one with it.** The archive's suite
   table and `docs/roadmap/open-work.md` §2.3 show the shape: with no database reachable, **134 of
   394** .NET tests reported as skipped on 2026-10-01 (it was 133 of 327 on 2026-09-27, and the
@@ -540,14 +542,15 @@ work started is the test database on **5433**, which now carries `--restart unle
 stopped container cannot make a later run look green when it is not.
 
 **The one thing to do next is unchanged and is written out in "What to do next, in order" below:**
-walk ADR-0023's write path end to end. Every joint is now executed by something — the API's answer,
-the router's matching, the payload, the executor against a real device, the uplink off a real broker,
-the retain rule and the ACL against a real broker — and no run has crossed all of them at once. That
-last sentence is the whole reason the walk is still owed, and it needs the hardware (§1.3).
+walk ADR-0023's write path end to end. **That walk was taken on 2026-10-06 and it passed** — HTTP 204
+in 29 ms, the edge logging that it wrote the tag, recorded in `docs/roadmap/walk-2026-10-06.md`.
+*(Corrected 2026-10-07; this said no run had crossed all the joints at once.)* What it still does not
+prove is the hardware (§1.3): the broker, the edge and the device were on one machine over Docker
+networks, so the link was real in being TLS to a real broker and not real in being two machines.
 
-**The one thing to do next is unchanged and is written out in "What to do next, in order" below:**
-walk ADR-0023's write path end to end. Every joint is tested and no run has crossed all of them at
-once, and it needs the hardware (§1.3).
+**That "one thing to do next" is done.** *(Corrected 2026-10-07.)* ADR-0023's write path was walked
+end to end on 2026-10-06 and passed. What Phase 7 still owes is the hardware (§1.3), and what has
+never been walked at all is ADR-0020, ADR-0021 and ADR-0022 — see `open-work.md` §2.0.
 
 ### What the 2026-10-02 session closed
 
@@ -628,27 +631,25 @@ reports a certificate it should trust, check which CA signed the file it was han
 
 ### What to do next, in order
 
-1. **Walk ADR-0023's write path end to end.** `open-work.md` §2.0 records four things written,
-   implemented and tested that have never been through a real link, and **the write is the one to do
-   first**: it is the only one where being wrong means a plant was changed or an operator was told it
-   was. Every *joint* is now executed by something — the API's answer, the router's matching, the
-   payload, the executor against a real Modbus slave, the uplink taking a message off a real broker,
-   the retain rule and the ACL against a real Mosquitto — and **no run has crossed all of them at
-   once**. That is what the walk is for: a browser asking, the router publishing, a real edge taking
-   it off a real broker, a real device changing, and the result reaching the operator's screen.
-   **And one path that was believed bounded is not.** A device that accepts a connection and then
-   says nothing *was* executed, and it came back as a failure with a reason after **about twenty
-   seconds** — the executor's ten-second deadline and `ModbusTcpDriver`'s five-second socket timeout
-   both exist and **neither stopped it**, because NModbus does not honour the cancellation token
-   during a read and the failure surfaced as a transport error instead. ADR-0023's honesty rule
-   holds, so an operator is told it failed rather than that it succeeded; what does not hold is the
-   bound this path was believed to have. Whether it should is a decision nobody has made, and it is
-   the one thing in this path that is a question rather than a gap.
+1. ~~**Walk ADR-0023's write path end to end.**~~ **Done, 2026-10-06, and it passed** — HTTP 204 in
+   29 ms routed to an edge over a real TLS link, the edge logging `Wrote tag … as the cloud asked`;
+   the record is `docs/roadmap/walk-2026-10-06.md`. *(Corrected 2026-10-07; this stood as the next
+   thing to do for a day after it had been done, because the walk was recorded only in its own file.)*
+   What that walk still does not prove is the hardware (§1.3): one machine, Docker networks.
+   **And the twenty-second bound this item used to describe is closed too**, on 2026-10-05. It was
+   **NModbus retrying a failed request three times**, which `ModbusTcpDriver` never configured — so
+   the driver's five-second timeout was worth four attempts, and every comment calling the read bound
+   five seconds was wrong by a factor of four. `Retries = 0` now, measured: **20.9 s before, 5 s
+   after.** Off rather than tuned, because a retried *read* is safe and a retried *write* is a command
+   sent twice, and a transport that cannot tell them apart has to take the safe side of both.
 2. **Then the other three items in `open-work.md` §2.0** — ADR-0020's omission, ADR-0021's
    reporting and its payload version (two builds of different ages on one link), and ADR-0022's
    derived link actually subscribing. All want a broker and an edge, so they belong to the **same
    two hosts** the gate was walked on, and the recipe is the gate record's two-host appendix.
-3. **`open-work.md` §3 has eight decisions left.** None is as consequential as the last four were.
+3. **`open-work.md` §3 holds the decisions left**, and the table there is the count — *a number
+   written out here is a number that goes stale, which is what §3's own history shows.* Two were
+   added on 2026-10-07: an edit that silently releases a device from its edge, and a decimal comma
+   meaning two different things in two forms of one client.
 4. **`open-work.md` §1.3 — a real arm64 board — is untouched.** It is the one item in §1 that no
    amount of software closes; it needs the hardware.
 

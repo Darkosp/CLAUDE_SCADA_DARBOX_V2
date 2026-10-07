@@ -1175,6 +1175,7 @@ decided inside an implementation pull request.
 | Writing a tag from a screen | same place | **closed 2026-10-05 by [ADR-0026](../architecture/decisions/0026-operating-from-a-screen.md)** — one component writes, the server decides whether to offer it; see §2.0h |
 | Scripting (Jint), reporting | `phase-plan.md`, "Later (not yet scoped)" | a phase that creates a concrete need |
 | CI — any pipeline at all | not scoped by any phase | a phase that wants it; today every gate rests on a recorded hand walk |
+| **xunit 2.9.3 is deprecated** | measured 2026-10-07, `dotnet list package --deprecated` | **a decision about when, not whether.** All seven test projects are on `xunit 2.9.3`, which NuGet marks `Legacy` with `xunit.v3` as its replacement. Nothing is wrong today — **zero vulnerable packages across all eighteen projects**, measured the same day — and 614 tests pass on it. v3 changes the runner and the assembly model, so it is a sitting of its own rather than a line in another change, and it buys maintenance rather than behaviour. Worth doing before the suite grows again, not worth interrupting a phase for |
 
 ## 4. Environment, not project
 
