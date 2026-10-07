@@ -15,7 +15,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { TREND_WINDOWS, plotAcross, trendAxis, trendColumns, trendWindowOf } from '../.node-test/models.js';
+import { TREND_POINTS, TREND_WINDOWS, plotAcross, trendAxis, trendWindowOf } from '../.node-test/models.js';
 
 const minutes = (n) => n * 60 * 1000;
 
@@ -101,65 +101,19 @@ test('both ends of an axis are formatted the same way, which is what makes them 
 // into 600 pixels, and what appeared was a solid black block. The window picker was delivered and
 // unusable above its shortest setting — worse than not having it, because a reader would believe they
 // were looking at something.
+//
+// **The reduction itself is not in this file any more, because it is not in the client any more.**
+// From 2026-10-07 until ADR-0029 the browser reduced the readings it had been sent, and the tests for
+// that were here. They moved: the extremes rule to the query's own tests
+// (`tests/Persistence.Tests/HistorizedHistoryTests.cs`, where the SQL is), and the arithmetic of
+// placing buckets and finding holes to `trend-buckets.test.mjs`.
 
-test('a column keeps the extremes of everything that fell in it, not an average', () => {
-  // The rule that matters. An average flattens the spike that made somebody open the trend, and
-  // taking every n-th reading drops it outright: the one-second excursion that tripped an alarm is
-  // exactly the sample a thinning pass throws away.
-  const samples = [
-    { time: 0, value: 4.0 },
-    { time: 1, value: 9.9 },   // the spike
-    { time: 2, value: 4.1 },
-  ];
-
-  const columns = trendColumns(samples, 0, 10, 1);
-
-  assert.equal(columns.length, 1, 'all three fall in one column at this width');
-  assert.equal(columns[0].high, 9.9, 'the spike must survive');
-  assert.equal(columns[0].low, 4.0);
+test('a trend asks for as many points as it draws, which is one number and not two', () => {
+  // ADR-0029 §3. The chart's width and the fetch's budget used to be the same 600 written in two
+  // places, which is the shape this project has been bitten by twice: a rule and every place that
+  // applies it drift apart. Asking for more than it draws fetches a reduction it throws away; asking
+  // for fewer draws a coarser curve than its own width with nothing on screen to say why.
+  assert.equal(TREND_POINTS, 600);
+  assert.ok(TREND_POINTS >= 2, 'and it is a number a trend can be drawn from at all');
 });
 
-test('a short trend is not reduced at all', () => {
-  // Below one reading per column there is nothing to do, and a fifteen-minute trend must look exactly
-  // as it did before this existed.
-  const samples = [
-    { time: 0, value: 1 },
-    { time: 500, value: 2 },
-    { time: 1000, value: 3 },
-  ];
-
-  const columns = trendColumns(samples, 0, 1000, 600);
-
-  assert.equal(columns.length, 3);
-  assert.deepEqual(columns.map((column) => column.high), [1, 2, 3]);
-});
-
-test('columns come back in order across the chart', () => {
-  // The line is drawn by walking them, so out-of-order columns would draw it folding back on itself.
-  const samples = Array.from({ length: 500 }, (_, index) => ({ time: index * 10, value: index % 7 }));
-  const columns = trendColumns(samples, 0, 5000, 100);
-
-  const xs = columns.map((column) => column.x);
-  assert.deepEqual(xs, [...xs].sort((left, right) => left - right));
-  assert.ok(columns.length <= 101, `reduced to ${columns.length} columns, not 500`);
-});
-
-test('a long window really is reduced, which is the whole point', () => {
-  // The measured case, in miniature: eight hours at one reading a second.
-  const eightHours = 8 * 60 * 60 * 1000;
-  const samples = Array.from({ length: 28_402 }, (_, index) => ({
-    time: index * (eightHours / 28_402),
-    value: 3.4 + (index % 100) / 100,
-  }));
-
-  const columns = trendColumns(samples, 0, eightHours, 600);
-
-  assert.ok(columns.length <= 601, `${columns.length} columns for 600 pixels`);
-  // And the envelope still spans what the readings did, so nothing was flattened away.
-  assert.ok(Math.max(...columns.map((column) => column.high)) >= 4.39);
-  assert.ok(Math.min(...columns.map((column) => column.low)) <= 3.41);
-});
-
-test('no samples reduce to no columns rather than to anything invented', () => {
-  assert.deepEqual(trendColumns([], 0, 1000, 600), []);
-});

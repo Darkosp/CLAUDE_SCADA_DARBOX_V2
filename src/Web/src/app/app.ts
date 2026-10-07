@@ -19,8 +19,8 @@ import {
   Edge,
   EdgeOption,
   FolderOption,
-  HistorySample,
   NameField,
+  NO_TREND,
   NumberField,
   SettingEntry,
   SingleFlight,
@@ -29,6 +29,8 @@ import {
   SiteTree,
   TemplateTag,
   TreeDevice,
+  TREND_POINTS,
+  TrendSeries,
   TREND_WINDOWS,
   TrendWindow,
   declarationOf,
@@ -56,6 +58,7 @@ import {
   siteToOpen,
   treeDevices,
   trendWindowOf,
+  trendSeries,
   unreadableOf,
 } from './models';
 import { TagStream } from './tag-stream';
@@ -208,7 +211,14 @@ export class App implements OnInit {
   protected readonly siteId = signal<string | null>(null);
   protected readonly tree = signal<SiteTree | null>(null);
   protected readonly selection = signal<Selection | null>(null);
-  protected readonly history = signal<HistorySample[]>([]);
+  /**
+   * The trend for the selected tag, as the server reduced it.
+   *
+   * `NO_TREND` before it has been read and when a read failed — two different facts that look the
+   * same on screen, which is a chart with no curve. The error path says which one happened out loud
+   * rather than making a tile carry it.
+   */
+  protected readonly history = signal<TrendSeries>(NO_TREND);
   protected readonly error = signal<string | null>(null);
 
   /**
@@ -488,7 +498,7 @@ export class App implements OnInit {
         this.siteId.set(null);
         this.tree.set(null);
         this.selection.set(null);
-        this.history.set([]);
+        this.history.set(NO_TREND);
         this.tagAlarm.set(null);
         this.alarmDraft.set(null);
         this.writeNote.set(null);
@@ -515,7 +525,7 @@ export class App implements OnInit {
     this.siteId.set(null);
     this.tree.set(null);
     this.selection.set(null);
-    this.history.set([]);
+    this.history.set(NO_TREND);
     this.error.set(null);
     this.view.set('browse');
     this.pendingDelete.set(null);
@@ -567,7 +577,7 @@ export class App implements OnInit {
   protected async selectSite(siteId: string): Promise<void> {
     this.siteId.set(siteId);
     this.selection.set(null);
-    this.history.set([]);
+    this.history.set(NO_TREND);
 
     // Screens belong to a Site, so switching Site switches them. Done here rather than in an effect
     // watching siteId, so that the reason is the operator's action and the order — tree first, then
@@ -742,7 +752,7 @@ export class App implements OnInit {
     this.pendingDelete.set(null);
     this.tagDraft.set(null);
     this.deviceDraft.set(null);
-    this.history.set([]);
+    this.history.set(NO_TREND);
     this.writeDraft.set(selection.tag?.valueKind === 'Boolean' ? 'true' : '');
     this.writeNote.set(null);
 
@@ -943,7 +953,8 @@ export class App implements OnInit {
 
     try {
       const { from, to } = this.requestedWindow();
-      this.history.set((await this.api.history(tag.id, from, to)).samples);
+      const answer = await this.api.history(tag.id, from, to, TREND_POINTS);
+      this.history.set(trendSeries(answer) ?? NO_TREND);
     } catch (error) {
       this.report(error);
     }
@@ -1180,7 +1191,7 @@ export class App implements OnInit {
 
       this.pendingDelete.set(null);
       this.selection.set(null);
-      this.history.set([]);
+      this.history.set(NO_TREND);
       await this.reloadTree();
     });
   }
@@ -1484,8 +1495,11 @@ export class App implements OnInit {
    * ever say "Reading…". The history of a trend is the history of its TAG — two trend components
    * bound to one tag are two views of one series — so the tag is also the more honest key, and one
    * fetch serves both.
+   *
+   * Each value is the window **as the server reduced it** (ADR-0029): the width travels with the
+   * buckets, so two charts of one tag cannot disagree about where a bucket sits.
    */
-  protected readonly screenHistory = signal(new Map<string, HistorySample[]>());
+  protected readonly screenHistory = signal(new Map<string, TrendSeries>());
 
   // ---- the trend window ------------------------------------------------------
   //
@@ -1585,16 +1599,16 @@ export class App implements OnInit {
   /** Loads history for exactly these tags and replaces what was held. */
   protected async loadPreviewHistory(tagIds: readonly string[]): Promise<void> {
     const { from, to } = this.requestedWindow();
-    const loaded = new Map<string, HistorySample[]>();
+    const loaded = new Map<string, TrendSeries>();
 
     for (const tagId of tagIds) {
       try {
-        loaded.set(tagId, (await this.api.history(tagId, from, to)).samples);
+        loaded.set(tagId, trendSeries(await this.api.history(tagId, from, to, TREND_POINTS)) ?? NO_TREND);
       } catch {
         // One tag's history failing must not empty the screen: its own component says there is
         // nothing to draw, and every other component keeps what it has. The error is left to that
         // component rather than shown over the whole screen, because it is about one tag.
-        loaded.set(tagId, []);
+        loaded.set(tagId, NO_TREND);
       }
     }
 

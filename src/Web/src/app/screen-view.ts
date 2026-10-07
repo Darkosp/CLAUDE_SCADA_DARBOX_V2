@@ -1,6 +1,6 @@
 import { Component, computed, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Alarm, HistorySample } from './models';
+import { Alarm, TrendSeries } from './models';
 import {
   groupIntoRows,
   resolveComponent,
@@ -116,22 +116,22 @@ import { SymbolView } from './symbol';
                       </span>
                     }
                   </p>
-                  @if (historyFor($any(cell.resolved).tagId); as samples) {
-                    @if (samples.length < 2) {
+                  @if (historyFor($any(cell.resolved).tagId); as series) {
+                    @if (series.buckets.length < 2) {
                       <p class="muted">Not enough history yet.</p>
                     } @else {
                       <!--
                         A trend that has stopped growing says so, and is drawn faded (ADR-0003).
                         Without this it is the one tile an outage does not change: the value tiles go
-                        Bad and show a dash while the line keeps its shape and its sample count, so a
+                        Bad and show a dash while the line keeps its shape and its reading count, so a
                         screen with a dead instrument beside it goes on looking like a running plant.
                         The same failure as the fabricated line Phase 1's walk found in this chart.
                       -->
-                      @if (isStale(samples)) {
-                        <p class="stale-note" role="status">{{ staleNote(samples) }}</p>
+                      @if (isStale(series)) {
+                        <p class="stale-note" role="status">{{ staleNote(series) }}</p>
                       }
-                      <app-trend-chart [samples]="samples"
-                                       [class.stale]="isStale(samples)"
+                      <app-trend-chart [series]="series"
+                                       [class.stale]="isStale(series)"
                                        [from]="historyFrom()"
                                        [to]="historyTo()"
                                        [unitSymbol]="snapshots().get($any(cell.resolved).tagId)?.unitSymbol ?? ''" />
@@ -411,7 +411,7 @@ export class ScreenView {
   readonly historyTo = input.required<Date>();
 
   /**
-   * History for the `trend` components on this screen, **by tag id**.
+   * History for the `trend` components on this screen, **by tag id**, as the server reduced it.
    *
    * Keyed by tag rather than by component because the history of a trend is the history of its tag
    * — two trend components bound to one tag are two views of one series — and because a component an
@@ -422,9 +422,9 @@ export class ScreenView {
    * tag with no entry is still being read and says so, which is not the same as one whose history
    * came back empty.
    */
-  readonly history = input<ReadonlyMap<string, HistorySample[]>>(new Map());
+  readonly history = input<ReadonlyMap<string, TrendSeries>>(new Map());
 
-  protected historyFor(tagId: string | null): HistorySample[] | null {
+  protected historyFor(tagId: string | null): TrendSeries | null {
     return tagId === null ? null : (this.history().get(tagId) ?? null);
   }
 
@@ -435,12 +435,12 @@ export class ScreenView {
    * now** — a component resolved when the screen loaded would carry that moment's answer forever,
    * which is the shape of the defect being fixed.
    */
-  protected isStale(samples: HistorySample[]): boolean {
-    return trendFreshness(samples).stale;
+  protected isStale(series: TrendSeries): boolean {
+    return trendFreshness(series.buckets).stale;
   }
 
-  protected staleNote(samples: HistorySample[]): string | null {
-    return trendFreshness(samples).note;
+  protected staleNote(series: TrendSeries): string | null {
+    return trendFreshness(series.buckets).note;
   }
 
   /**

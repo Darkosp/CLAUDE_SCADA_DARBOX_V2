@@ -149,6 +149,12 @@ export interface AlarmDefinition {
  *
  * The names resolve even when the tag or its device has been deleted, so a trend for
  * retired equipment reads as a name rather than an identifier.
+ *
+ * **The payload is one of two answers, never a mixture** (ADR-0029): either every reading in the
+ * window, in `samples`, or the window reduced to `buckets` with the width it was reduced to. Which
+ * one it is, is read off `bucketMilliseconds`. This client always asks for a reduction; `samples` is
+ * still here because the endpoint still answers that way when nothing asks it to reduce, and the
+ * raw path is what a report will want.
  */
 export interface TagHistory {
   tagId: string;
@@ -156,6 +162,85 @@ export interface TagHistory {
   deviceName: string | null;
   isDeleted: boolean;
   samples: HistorySample[];
+  bucketMilliseconds: number | null;
+  buckets: TrendBucket[];
+}
+
+/**
+ * One bucket of a reduced trend, as the server sent it (ADR-0029 §4).
+ *
+ * A bucket is not a reading: it is what a stretch of the window held. The server is the only place
+ * that decides which readings may be plotted, because it is the only place that can — the readings
+ * themselves never leave it.
+ */
+export interface TrendBucket {
+  /** The start of the stretch, on the grid this window's start set, so the first one is the edge. */
+  startUtc: string;
+  /**
+   * The newest reading in it.
+   *
+   * **The only field freshness can be decided on, and `startUtc` is not a measurement time at all**:
+   * it is the edge of the stretch, derived from the window, and no reading need have happened there.
+   * An age measured from it would name a time nothing was measured at in *no reading since …*, and
+   * would call a trend stale up to a bucket early — seventeen minutes early on a seven-day window
+   * (ADR-0003, ADR-0029 §4).
+   */
+  lastUtc: string;
+  /**
+   * How many readings were read in it, whatever their quality — so a device answering with nothing
+   * but Bad is a hole with a count rather than a quiet bucket. Never zero: a stretch nothing was
+   * measured in is absent from the list entirely, which is how a gap is drawn.
+   */
+  count: number;
+  /** The extremes of the readings a trend plots in this bucket, or null when it held none of those. */
+  low: number | null;
+  high: number | null;
+}
+
+/**
+ * A trend's window as it is drawn: how wide one bucket is, and the buckets.
+ *
+ * Produced by `trendSeries` from what the server answered, so a chart cannot be handed a series
+ * whose resolution it does not know.
+ */
+export interface TrendSeries {
+  /**
+   * How wide one bucket is, in milliseconds — the resolution this series was reduced to.
+   *
+   * Zero only on an empty series, where there is nothing to place and nothing divides by it.
+   */
+  bucketMilliseconds: number;
+  buckets: TrendBucket[];
+}
+
+/**
+ * A trend with nothing to draw: before it has been read, and when reading it failed.
+ *
+ * `bucketMilliseconds` is zero because no bucket is placed, so nothing divides by it — the chart's
+ * own empty state is what this draws, and it draws it without asking how wide a bucket was.
+ */
+export const NO_TREND: TrendSeries = { bucketMilliseconds: 0, buckets: [] };
+
+/**
+ * The drawable part of a history response, or null when the server did not reduce it.
+ *
+ * **Null is a refusal, not a fallback.** This client asks for a reduction and cannot draw the
+ * alternative: a raw answer is every reading in the window — 100,552 of them and 22 MB for seven
+ * days of one tag, which is the measurement ADR-0029 exists for — so reducing it here would be the
+ * code this change deletes, kept alive for a case that needs the Gateway and the client to be
+ * different builds. The Gateway serves this client from its own origin as one build (Phase 6,
+ * ADR-0028), so that is not a deployment this project supports.
+ */
+export function trendSeries(history: TagHistory): TrendSeries | null {
+  const width = history.bucketMilliseconds;
+
+  // A width of zero would divide a window into nothing; the server refuses to send one, and a
+  // series that would draw at the same x for every bucket is worse than a series that draws nothing.
+  if (width === null || width === undefined || !(width > 0)) {
+    return null;
+  }
+
+  return { bucketMilliseconds: width, buckets: history.buckets ?? [] };
 }
 
 /** A folder option in a picker, with its depth so the list can read as a tree. */
@@ -705,6 +790,17 @@ export const TREND_WINDOWS: readonly TrendWindow[] = [
   { label: '7 days', milliseconds: 7 * 24 * 60 * 60 * 1000 },
 ];
 
+/**
+ * How many points a trend is drawn from, and therefore how many it asks the server for (ADR-0029).
+ *
+ * **One number for both, because they are one decision.** A chart that asked for more than it can
+ * draw would fetch a reduction it throws away; one that asked for fewer would draw a curve coarser
+ * than its own width with nothing on screen to say why. It is also the whole of the reduction's
+ * budget: without it the server answers with every reading in the window, which for seven days of a
+ * tag scanned once a second is 100,552 readings and 22 MB.
+ */
+export const TREND_POINTS = 600;
+
 /** The window a label names, or the first one when the label is not among them. */
 export function trendWindowOf(label: string): TrendWindow {
   return TREND_WINDOWS.find((window) => window.label === label) ?? TREND_WINDOWS[0];
@@ -729,65 +825,101 @@ export function plotAcross(time: number, from: number, to: number, width: number
 }
 
 /**
- * One column of a trend: the extremes of everything that fell inside it.
+ * One column of a trend: what to draw at one x, and which bucket of the window it came from.
  */
 export interface TrendColumn {
   /** Where across the chart, in the chart's own units. */
   x: number;
-  /** The lowest and highest values in this column — the envelope, not an average. */
+  /** The lowest and highest values in this bucket — the envelope, not an average. */
   low: number;
   high: number;
-  /** When the first reading in this column was taken, for deciding where a gap falls. */
-  firstTime: number;
-  lastTime: number;
+  /**
+   * Which bucket of the window's grid this is, counted from the window's start.
+   *
+   * Kept so a **missing** bucket can be seen: the buckets the server sends are the stretches it
+   * measured something in, so the ordinal skipping a number is exactly one gap (ADR-0029 §6).
+   */
+  ordinal: number;
 }
 
 /**
- * A trend reduced to one column per pixel, keeping the extremes of each.
+ * A reduced trend, as the columns a chart draws.
  *
- * **Found by walking the window picker on 2026-10-07**: eight hours of a tag scanned every second is
- * 28,402 readings drawn into 600 pixels, and what appeared was a solid black block. The feature was
- * delivered and unusable above its shortest window, which is worse than not having it — a reader
- * would believe they were looking at something.
+ * **The reduction itself is not here any more.** It was, in `trendColumns`, from 2026-10-07 until
+ * ADR-0029: min and max per pixel, computed in the browser over every reading the server had sent.
+ * It moved into the query, because the readings were crossing the wire to be thrown away — and the
+ * rule that mattered did not change with the move: **the extremes of what was measured, never an
+ * average and never every n-th reading**, because the one-second excursion that tripped an alarm is
+ * exactly the sample a thinning pass discards.
  *
- * **Min and max per column, never an average and never every n-th reading.** An average flattens the
- * spike that made somebody open the trend in the first place, and decimation drops it outright: the
- * one-second excursion that tripped an alarm is exactly the sample a thinning pass throws away. The
- * envelope keeps it — the column it fell in is drawn from its true low to its true high — which is the
- * same rule as ADR-0003's elsewhere: show what was measured, never a number nobody read.
- *
- * Below one reading per column this does nothing, so a fifteen-minute trend is untouched.
+ * A bucket the server read nothing plottable in is skipped: it is a hole in the line with a count
+ * beside it, not a value.
  */
-export function trendColumns(
-  samples: readonly { time: number; value: number }[],
+export function bucketColumns(
+  series: TrendSeries,
   from: number,
   to: number,
   width: number,
 ): TrendColumn[] {
-  const columns = new Map<number, TrendColumn>();
+  const columns: TrendColumn[] = [];
 
-  for (const sample of samples) {
-    const x = Math.round(plotAcross(sample.time, from, to, width));
-    const existing = columns.get(x);
-
-    if (existing === undefined) {
-      columns.set(x, {
-        x,
-        low: sample.value,
-        high: sample.value,
-        firstTime: sample.time,
-        lastTime: sample.time,
-      });
+  for (const bucket of series.buckets) {
+    if (bucket.low === null || bucket.high === null) {
       continue;
     }
 
-    existing.low = Math.min(existing.low, sample.value);
-    existing.high = Math.max(existing.high, sample.value);
-    existing.firstTime = Math.min(existing.firstTime, sample.time);
-    existing.lastTime = Math.max(existing.lastTime, sample.time);
+    const start = new Date(bucket.startUtc).getTime();
+
+    if (Number.isNaN(start)) {
+      continue;
+    }
+
+    // **The midpoint of the bucket's span.** The readings inside it are within one bucket width of
+    // that position by definition, which is the honest place to draw them once their own times are
+    // no longer in the payload — and it is what makes the ordinals below line up with the window.
+    columns.push({
+      x: plotAcross(start + series.bucketMilliseconds / 2, from, to, width),
+      low: bucket.low,
+      high: bucket.high,
+      ordinal: Math.round((start - from) / series.bucketMilliseconds),
+    });
   }
 
-  return [...columns.values()].sort((left, right) => left.x - right.x);
+  // Sorted here rather than trusted: the API promises no order, and a chart that drew in a wrong
+  // one would fold the line back on itself.
+  return columns.sort((left, right) => left.ordinal - right.ordinal);
+}
+
+/**
+ * The indexes after which the line must break, because a bucket between two columns is missing.
+ *
+ * **This is exact, and the rule it replaced could not be.** Until ADR-0029 the chart inferred an
+ * outage by comparing the space between columns against four times their median, which cannot see a
+ * hole narrower than about four columns — and at a resolution of 1008 s, four columns is over an
+ * hour of nothing. A bucket the server sent is a stretch it measured in, so a skipped ordinal is a
+ * stretch it did not, at every resolution the window can be drawn at.
+ */
+export function bucketGaps(columns: readonly TrendColumn[]): Set<number> {
+  const gaps = new Set<number>();
+
+  for (let index = 1; index < columns.length; index += 1) {
+    if (columns[index].ordinal - columns[index - 1].ordinal > 1) {
+      gaps.add(index - 1);
+    }
+  }
+
+  return gaps;
+}
+
+/**
+ * How many readings the plotted series was reduced from — the sum of the buckets' counts.
+ *
+ * Exact, because every reading in the window falls in exactly one bucket and every non-empty bucket
+ * is sent. It is what the caption has always shown, and the reason the caption can still say how
+ * much is behind a curve that is now drawn from far fewer points than it holds.
+ */
+export function readingsIn(series: TrendSeries): number {
+  return series.buckets.reduce((total, bucket) => total + bucket.count, 0);
 }
 
 /**

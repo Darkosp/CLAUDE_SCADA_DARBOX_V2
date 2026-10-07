@@ -1,4 +1,4 @@
-import { Alarm, HistorySample } from './models';
+import { Alarm, TrendBucket } from './models';
 import { formatValue, Quality, TagSnapshot, TagValue } from './tag';
 
 /** The component kinds this build renders. The server refuses any other (ADR-0024 §3). */
@@ -702,7 +702,7 @@ function clockTime(iso: string): string {
  * **This is a different question from a reading's quality, and the difference is the defect it fixes.**
  * A trend draws only Good numeric samples, which is right — a Bad sample carries no value to plot. But
  * that means **a trend is not stopped by an outage, it is frozen by one**: the line keeps its shape,
- * the sample count keeps its number, and the tile goes on looking like a plant that is running. Found
+ * the reading count keeps its number, and the tile goes on looking like a plant that is running. Found
  * on 2026-10-06 by making a whole Site go Bad and looking at the screen: every value tile said `BAD`
  * and showed a dash, and the trend beside them was unchanged.
  *
@@ -718,32 +718,37 @@ function clockTime(iso: string): string {
  * Rendered by the view rather than resolved into the component, because **age is a fact about now**:
  * the resolver runs when a screen loads and the answer would be frozen at that moment, which is
  * precisely the mistake being fixed.
+ *
+ * **It reads `lastUtc`, the newest reading in each bucket, and it has to** (ADR-0029 §4): a bucket's
+ * `startUtc` is the edge of the stretch rather than a measurement time, so an age decided on it would
+ * name a time nothing was measured at in the note below, and would declare a live trend stale up to
+ * one bucket early — seventeen minutes early on a seven-day window.
  */
 export function trendFreshness(
-  samples: readonly HistorySample[],
+  buckets: readonly TrendBucket[],
   now: Date = new Date(),
   staleAfterMs = 5 * 60 * 1000,
 ): { stale: boolean; note: string | null } {
-  if (samples.length === 0) {
+  if (buckets.length === 0) {
     return { stale: false, note: null };
   }
 
-  // The newest sample, not the last in the array: history comes back in whatever order the API chose,
-  // and reading the last element would make this depend on that order rather than on the data.
-  const newest = samples.reduce((latest, sample) =>
-    new Date(sample.sourceTimestampUtc).getTime() > new Date(latest.sourceTimestampUtc).getTime()
-      ? sample
-      : latest,
+  // The newest reading, not the last bucket in the array: history comes back in whatever order the
+  // API chose, so position says nothing about time — a newest-first array would make a fresh trend
+  // look stale, and an oldest-first one would do the reverse. The maximum of `lastUtc` depends on the
+  // readings and not on the order they arrived in.
+  const newest = buckets.reduce((latest, bucket) =>
+    new Date(bucket.lastUtc).getTime() > new Date(latest.lastUtc).getTime() ? bucket : latest,
   );
 
-  const measured = new Date(newest.sourceTimestampUtc).getTime();
+  const measured = new Date(newest.lastUtc).getTime();
 
   if (Number.isNaN(measured)) {
     return { stale: false, note: null };
   }
 
   return now.getTime() - measured > staleAfterMs
-    ? { stale: true, note: `no reading since ${clockTime(newest.sourceTimestampUtc)}` }
+    ? { stale: true, note: `no reading since ${clockTime(newest.lastUtc)}` }
     : { stale: false, note: null };
 }
 

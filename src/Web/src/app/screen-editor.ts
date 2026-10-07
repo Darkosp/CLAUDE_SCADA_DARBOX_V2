@@ -1,6 +1,6 @@
 import { Component, computed, effect, input, linkedSignal, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Alarm, HistorySample } from './models';
+import { Alarm, TrendSeries } from './models';
 import { TagSnapshot, TagValue } from './tag';
 import { ScreenView } from './screen-view';
 import {
@@ -497,7 +497,7 @@ export class ScreenEditor {
    * id the server has never seen, so history keyed by component id could only ever say "Reading…".
    * The history of a trend is the history of its TAG, so the tag is also the more honest key.
    */
-  readonly history = input<ReadonlyMap<string, HistorySample[]>>(new Map());
+  readonly history = input<ReadonlyMap<string, TrendSeries>>(new Map());
 
   /**
    * Which tags the draft's `trend` components are bound to, so the app knows what to fetch.

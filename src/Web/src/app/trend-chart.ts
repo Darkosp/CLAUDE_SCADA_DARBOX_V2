@@ -1,5 +1,12 @@
 import { Component, computed, input } from '@angular/core';
-import { HistorySample, plotAcross, trendAxis, trendColumns } from './models';
+import {
+  TREND_POINTS,
+  TrendSeries,
+  bucketColumns,
+  bucketGaps,
+  readingsIn,
+  trendAxis,
+} from './models';
 
 interface Point {
   x: number;
@@ -12,6 +19,11 @@ interface Point {
  * Drawn as inline SVG rather than with a charting library: ADR-0006 names no charting
  * dependency, and "basic trend chart" is what this phase scopes. Anything richer —
  * zoom, pan, multiple series — is a library decision that needs its own ADR.
+ *
+ * **It draws buckets, not readings, and that is the point of ADR-0029.** The reduction from a
+ * window's readings to what fits across the chart used to happen here — every reading crossed the
+ * wire first — and it happens in the query now. What this component still owns is the part only it
+ * can know: where across the chart each bucket belongs, and where the line must break.
  */
 @Component({
   selector: 'app-trend-chart',
@@ -37,10 +49,14 @@ interface Point {
         reason about: before this, the same picture could be a quarter of an hour or a week and the
         reader had no way to tell. The ends are the window that was ASKED FOR, not the first and last
         reading held, so an outage at either end reads as empty chart rather than disappearing.
+
+        And **how much is behind the curve**: the readings, then the points they are drawn as. Both,
+        because a reader who is told only the points cannot tell a quiet window from a reduced one —
+        which is the same reason nothing here is capped without saying so (ADR-0029 §3).
       -->
       <p class="axis">
         <span>{{ axis().start }}</span>
-        <span class="count">{{ samples().length }} samples · {{ low().toFixed(2) }}–{{ high().toFixed(2) }} {{ unitSymbol() }}</span>
+        <span class="count">{{ readings() }} readings · {{ points().length }} points · {{ low().toFixed(2) }}–{{ high().toFixed(2) }} {{ unitSymbol() }}</span>
         <span>{{ axis().end }}</span>
       </p>
     }
@@ -76,16 +92,23 @@ interface Point {
   `,
 })
 export class TrendChart {
-  readonly samples = input.required<HistorySample[]>();
+  /**
+   * The window as the server reduced it, with the width it reduced it to.
+   *
+   * One input rather than a list and a width, because those two have to agree: a chart handed
+   * buckets and a width from two places could place every column at the wrong x and look fine.
+   */
+  readonly series = input.required<TrendSeries>();
+
   readonly unitSymbol = input<string>('');
 
   /**
    * The window this trend was asked for — the chart's x-axis, end to end.
    *
-   * Required, and taken from the caller rather than derived from the samples, because the samples
-   * cannot tell a window apart from what happens to be in it: a device offline for the first ten
-   * minutes of a quarter-hour leaves five minutes of readings, and drawn against themselves they
-   * fill the chart as though nothing had been missing.
+   * Required, and taken from the caller rather than derived from the data, because the data cannot
+   * tell a window apart from what happens to be in it: a device offline for the first ten minutes
+   * of a quarter-hour leaves five minutes of buckets, and drawn against themselves they fill the
+   * chart as though nothing had been missing.
    */
   readonly from = input.required<Date>();
   readonly to = input.required<Date>();
@@ -93,32 +116,21 @@ export class TrendChart {
   /** Both ends of the axis, as a reader can place them. */
   protected readonly axis = computed(() => trendAxis(this.from(), this.to()));
 
-  protected readonly width = 600;
+  protected readonly width = TREND_POINTS;
   protected readonly height = 160;
 
   /**
-   * Only Good numeric samples are plotted. A Bad sample carries no value at all, and
-   * drawing a gap is honest where interpolating across it would invent a reading.
-   */
-  /**
-   * The readings reduced to one column per pixel, keeping each column's extremes.
+   * The buckets placed across the chart, each keeping the extremes of what was measured in it.
    *
-   * Below one reading per pixel this changes nothing, so a short trend is drawn exactly as it was
-   * before this existed. Above it, `trendColumns` is what stops eight hours of a tag scanned every
-   * second from arriving as a solid block of ink — and it keeps the envelope rather than an average,
-   * so the spike that made somebody open the trend is still there.
+   * A bucket the server read nothing plottable in is dropped here rather than drawn: it is a hole
+   * with a count, and drawing it as a value would be the fabrication ADR-0003 refuses.
    */
   protected readonly columns = computed(() =>
-    trendColumns(
-      this.usableSamples().map((sample) => ({
-        time: new Date(sample.sourceTimestampUtc).getTime(),
-        value: sample.value.numeric as number,
-      })),
-      this.from().getTime(),
-      this.to().getTime(),
-      this.width,
-    ),
+    bucketColumns(this.series(), this.from().getTime(), this.to().getTime(), this.width),
   );
+
+  /** How many readings the curve is drawn from — what the caption means by "readings" (ADR-0029 §4). */
+  protected readonly readings = computed(() => readingsIn(this.series()));
 
   protected readonly points = computed<Point[]>(() => {
     const columns = this.columns();
@@ -133,7 +145,7 @@ export class TrendChart {
     const y = (value: number) =>
       this.height - padding - ((value - low) / span) * (this.height - padding * 2);
 
-    // The midpoint of each column's envelope carries the line; the envelope itself is drawn behind
+    // The midpoint of each bucket's envelope carries the line; the envelope itself is drawn behind
     // it, so neither hides the other.
     return columns.map((column) => ({ x: column.x, y: y((column.low + column.high) / 2) }));
   });
@@ -141,7 +153,7 @@ export class TrendChart {
   /**
    * The envelope: for each column, the vertical reach of what was measured in it.
    *
-   * Drawn only where a column actually spans a range — on a short trend every column holds one
+   * Drawn only where a column actually spans a range — on a short trend a bucket may hold one
    * reading, so there is nothing to draw and the chart is the line alone.
    */
   protected readonly envelope = computed(() => {
@@ -163,10 +175,14 @@ export class TrendChart {
    * an outage and the first one after — a line no device ever produced. Breaking the
    * stroke shows the absence instead, which is the same reason a Bad reading carries no
    * value rather than a substituted one.
+   *
+   * **The hole is found by a missing bucket** (ADR-0029 §6), which is exact. It used to be inferred
+   * from the distances between columns against four times their median, and that rule could not see
+   * a gap narrower than about four columns — over an hour of nothing at a seven-day resolution.
    */
   protected readonly segments = computed<string[]>(() => {
     const points = this.points();
-    const gaps = this.gapAfterIndex();
+    const gaps = bucketGaps(this.columns());
 
     const result: string[] = [];
     let current: Point[] = [];
@@ -191,64 +207,13 @@ export class TrendChart {
       : points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
   }
 
-  /**
-   * Indexes after which the next sample is far enough away to count as an outage rather
-   * than the normal scan interval. The threshold is derived from the data itself, so it
-   * holds for a tag scanned once a second and one scanned once a minute alike.
-   */
-  private gapAfterIndex(): Set<number> {
-    // **Over the COLUMNS, not the samples.** `points()` now holds one point per column, and an index
-    // into the readings would split the line at places that no longer correspond to anything — a
-    // defect introduced and caught in the same sitting, and the same shape as every other one this
-    // project has found: two halves each correct, and the path between them left behind.
-    //
-    // Each column knows when its first and last reading were taken, so the distance between two
-    // columns is the distance from the last reading of one to the first of the next: on a short
-    // trend, where a column holds a single reading, that is exactly what it used to be.
-    const columns = this.columns();
-
-    if (columns.length < 3) {
-      return new Set();
-    }
-
-    const deltas = columns
-      .slice(1)
-      .map((column, index) => column.firstTime - columns[index].lastTime);
-    const sorted = [...deltas].sort((left, right) => left - right);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    const threshold = Math.max(median * 4, 5_000);
-
-    const gaps = new Set<number>();
-    deltas.forEach((delta, index) => {
-      if (delta > threshold) {
-        gaps.add(index);
-      }
-    });
-
-    return gaps;
-  }
-
   protected readonly low = computed(() => {
-    const values = this.numericValues();
-    return values.length === 0 ? 0 : Math.min(...values);
+    const columns = this.columns();
+    return columns.length === 0 ? 0 : Math.min(...columns.map((column) => column.low));
   });
 
   protected readonly high = computed(() => {
-    const values = this.numericValues();
-    return values.length === 0 ? 0 : Math.max(...values);
+    const columns = this.columns();
+    return columns.length === 0 ? 0 : Math.max(...columns.map((column) => column.high));
   });
-
-  private numericValues(): number[] {
-    return this.usableSamples().map((sample) => sample.value.numeric as number);
-  }
-
-  /**
-   * Samples that can be plotted at all: Good quality, with a numeric value. A Bad sample
-   * carries no value, so there is nothing to place on the axis.
-   */
-  private usableSamples(): HistorySample[] {
-    return this.samples().filter(
-      (sample) => sample.quality === 'Good' && typeof sample.value.numeric === 'number',
-    );
-  }
 }
