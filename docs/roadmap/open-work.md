@@ -1181,6 +1181,15 @@ decided inside an implementation pull request.
 
 Recorded so a later session does not mistake it for a defect in the code.
 
+- **`npm audit` reports nine advisories in the client and none of them ship.** Measured 2026-10-07:
+  three critical and four high, and **every one is in the Angular build chain or needs SSR** —
+  `@angular/build`, `@angular/cli`, `piscina`, `proxy-addr`, `source-map-js`, and an SSR
+  denial-of-service in `@angular/router`. This client has **no SSR** (`angular.json` has only the
+  dev-server builder) and the Gateway serves a pre-built static bundle from its own origin, so none of
+  it reaches a browser. Recorded because "3 critical" at the top of an install is alarming and the
+  answer takes ten minutes to work out twice. The **.NET** side was measured the same day:
+  `dotnet list package --vulnerable --include-transitive` reports **no vulnerable packages in any of
+  the eighteen projects**.
 - **Nothing in history is rewritten on purpose.** Two commits carry Macedonian
   messages (`487e07d`, `fc95f04`) and one carries the message `msg` under 1,491
   lines of real work (`cf457da`). They are on `main` and pushed; rewriting
