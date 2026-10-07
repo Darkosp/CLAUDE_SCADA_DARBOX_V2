@@ -31,6 +31,15 @@ You need:
 - **Docker Desktop**, running.
 - **Git for Windows**. Its `bash` builds the images.
 - A copy of this repository (`git clone`).
+- **A clock that is right, and kept right by NTP.** Every reading carries the time of the machine that
+  measured it, and the Gateway stores that time rather than its own — so a host whose clock has drifted
+  writes history that is wrong about *when*, permanently and silently. This matters more on an edge than in
+  the cloud: the edge agent keeps measuring while the link is down, and its readings are stored later with
+  their own timestamps, which is the whole point of the buffer (ADR-0017). The Gateway **notices** a source
+  whose clock disagrees with it and journals the difference (`SourceClockSkew`), which is a report and not a
+  correction: nothing here adjusts a reading's time, because a corrected timestamp is a guess about a moment
+  nobody observed. Check it with `w32tm /query /status` on Windows, or `timedatectl` on Linux, and make the
+  host sync before it is trusted with a plant's history.
 
 ### 1. Check that the port is free
 

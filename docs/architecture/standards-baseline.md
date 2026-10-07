@@ -62,7 +62,7 @@ they bind an organisation or a deployment rather than a product.
 | 3 | **IEC 61850** (quality bits) | Out of scope | Substation protocol; its 13-bit quality is far finer than our four values, and mapping onto them would be lossy |
 | 4 | **DNP3 / IEEE 1815** | Out of scope | No driver; its flags (remote forced, local forced, chatter) have nowhere to go in our model |
 | 5 | **IEC 60870-5-101/104** | Out of scope | No driver; same reason, its quality descriptor has five bits we cannot hold |
-| 6 | **IEC 62443** (4-1, 4-2, 3-2, 3-3) | **Partial** | The technical requirements have a real foundation; the **product-development lifecycle (4-1) is largely absent** and there is no brute-force protection on login |
+| 6 | **IEC 62443** (4-1, 4-2, 3-2, 3-3) | **Partial** | The technical requirements have a real foundation; **the product-development lifecycle (4-1) is largely absent**. *(Its two named product gaps — no brute-force protection on login and no readable audit trail — were closed on 2026-10-07 by ADR-0031 and ADR-0032; see §3.1.)* |
 | 7 | **ISO/IEC 27001** | Out of scope for the product | It certifies an organisation, not a piece of software; the supplier-side gaps are named under IEC 62443-4-1 |
 | 8 | **NIST SP 800-82r3** | Deployment practice | Asset-owner guidance; the product supports some of it and the guide carries the rest |
 | 9 | **IEEE 1686** | Out of scope | It is about IEDs (protection relays); this product configures none |
@@ -137,13 +137,17 @@ stand-in driver for tests never reports Good unconditionally because the real on
   chose *our own payload over MQTT rather than Sparkplug B*, and PubSub is a different transport for the
   same job. The refusal is recorded and reasoned; what is **not** correct is that three documents still
   name Sparkplug B as something this product speaks. **Checked while this document was reviewed rather
-  than taken from it**, and there are **five mentions in three documents**: `phase-0-architecture.md`
-  lines 25 and 62 (the driver list and the edge link), `phase-plan.md` lines 269 and 711, and — the one
-  that matters most — **ADR-0006's own driver-layer table**, which still reads "MQTTnet (MQTT / Sparkplug
-  B)". An ADR is binding, so a table inside one claiming a payload ADR-0017 §2 rejected is the stale
-  sentence the ADR README's amendment rule exists for: no decision changes, the sentence stopped being
-  true, and it should be corrected in one pass. `CLAUDE.md` and ADR-0017 say it correctly ("rather than
-  Sparkplug B"), which is what makes the others look deliberate rather than forgotten.
+  than taken from it, and the first count here was wrong in the other direction — it said five mentions
+  in three documents, and one of them (`phase-plan.md` line 711, *"the payload is ours rather than
+  Sparkplug B"*) says the opposite and is correct.** Verified line by line on 2026-10-07, there are
+  **four places, and all four are now corrected**: `phase-0-architecture.md` lines 25 and 62 (the driver
+  list and the edge link), `phase-plan.md` line 269 (*"MQTT/Sparkplug B is push"*, which named a
+  specification this project rejected as the illustration for MQTT being push), and — the one that
+  matters most — **ADR-0006's own driver-layer table**, which read "MQTTnet (MQTT / Sparkplug B)" for as
+  long as the table has existed. An ADR is binding, so a table inside one claiming a payload ADR-0017 §2
+  rejected is the stale sentence the ADR README's amendment rule exists for: no decision changed, the
+  sentence stopped being true. `CLAUDE.md` and ADR-0017 said it correctly throughout, which is what made
+  the others look deliberate rather than forgotten.
 
 **Also worth saying plainly:** there is no OPC UA *server* here. A third-party system cannot read this
 product's tags over OPC UA; the only interfaces out are the REST API and the SignalR hub.
@@ -253,22 +257,25 @@ unverified.
 
 **Not implemented, named, with cost.** In rough order of what a reviewer would raise first:
 
-1. **No brute-force protection.** A grep for lockout, rate limiting, attempt counting or throttling
-   across the whole repository finds nothing but a database-connection retry constant
-   (`ApplicationRole.MaxAttempts`). An attacker with network access can guess passwords at full speed
-   against `/api/auth/login`, and the only ceiling is the 12-character minimum. **This is the cheapest
-   serious gap in this document**: a failed-attempt counter per identity with a lockout or a delay, and a
-   test that the fourth attempt is refused. **Hours to a day. No ADR needed** — it is a hardening of an
-   existing decision (ADR-0011) rather than a change to it.
-2. **The audit trail cannot be read by the product.** `audit_log` is written and is append-only at the
-   database level, but **there is no endpoint, screen or export for it** — a grep of the Gateway finds
-   no `/api/audit`, and the client mentions the audit trail only in a confirmation sentence about
-   deleting a user. So "the audit trail exists" is true and "a person can review it" is not: an
-   administrator needs database credentials and SQL. 62443 asks for the log to be *accessible* to those
-   who must review it, and 21 CFR Part 11 (below) asks for review and copying explicitly. **Cost: a
-   small slice** — a Site/Admin-scoped read endpoint with paging and a filter, plus a Journal-like
-   screen. **No ADR needed** (it exposes data the API already owns and the roles already gate), though
-   *who* may read the audit trail is a question the ADR-0011 role table does not currently answer.
+1. **No brute-force protection — closed on 2026-10-07 by
+   [ADR-0031](decisions/0031-the-sign-in-path-is-hardened.md), and the estimate here held.** Five
+   consecutive failures lock the account for fifteen minutes; the count lives on the user row, so a restart
+   does not clear it; **an expired lock starts a fresh count**, because a person locked out last week who
+   mistypes once today has not earned a second one; a success clears it and an Admin's password reset clears
+   it. The locked account **is told** it is locked, deliberately, and the ADR argues the trade rather than
+   hiding it. **One thing this document called cheap turned out to be a decision**: per-caller limiting is
+   *not* built, because behind the proxy ADR-0028 allows, `RemoteIpAddress` is the proxy — and a forwarded
+   header trusted without deciding which hops may set it is a bypassable control that looks present. The ADR
+   is on `main` and the code is in PR #10.
+2. **The audit trail cannot be read by the product — closed on 2026-10-07 by
+   [ADR-0032](decisions/0032-the-audit-trail-can-be-read.md).** An Admin reads it in the product now, newest
+   first, filtered by action prefix, actor, subject and window, with **the matching total beside every
+   page** so a cap cannot pass for a whole trail. Two of this document's own claims were wrong and the
+   correction is worth keeping: **"No ADR needed" was wrong** — *who* may read the trail is exactly the
+   question the caveat above says the role table does not answer, and the answer is Admin, because an audit
+   row carries no Site and there is no honest Site filter over it; and **the read is not by time**, because
+   `occurred_at` is not unique — ADR-0031's lock writes two rows in the same millisecond — so pages are cut
+   by `id` and a boundary cannot repeat or drop a row. The ADR is on `main` and the code is in PR #10.
 3. **No vulnerability handling and no disclosure path.** There is no `SECURITY.md`, no
    `.github/` directory, no contributing guide, no CI of any kind (`open-work.md` §3 records "CI — any
    pipeline at all" as needing a phase that wants it), and therefore no build-time scanning, no signed
@@ -736,10 +743,14 @@ of which rest on that one field. The engine itself is in better shape than most 
 schema, API, client and reporting slice; needs an ADR**, for the same reason ADR-0025 did: priority
 changes what an alarm *is*.
 
-**The cheapest high-value fixes, for contrast** — each a day or less, none needing an ADR:
-brute-force protection on login (gap 1 under IEC 62443), an audit-trail read path (gap 2), a CSP and
-clickjacking header (gap 7), an NTP requirement in the deployment guide (§6.1), an SBOM step in the
-build (gap 4), and correcting the Sparkplug B sentence in `phase-0-architecture.md` (§2.1).
+**The cheapest high-value fixes, for contrast** — this list was written on 2026-10-07 and **three of its six
+were built the same day**, which is the point of writing costs down: brute-force protection on login (gap 1
+under IEC 62443, ADR-0031), an audit-trail read path (gap 2, ADR-0032), and a CSP with clickjacking headers
+(gap 7, ADR-0031 §8 — including `script-src` by hash, which the ADR first deferred and then corrected).
+**Two of the three needed an ADR after all**, which is recorded as a correction in §3.1 items 1 and 2. What
+remains of the list: an NTP requirement in the deployment guide (§6.1), an SBOM step in the build (gap 4),
+and correcting the Sparkplug B claims (§2.1, which turned out to be five mentions in three documents rather
+than one sentence).
 
 ---
 
