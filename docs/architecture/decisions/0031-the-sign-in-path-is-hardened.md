@@ -72,25 +72,35 @@ answered: ADR-0028 §2 allows something in front of the Gateway to terminate TLS
 than having no per-caller limit, because it converts a missing control into a bypassable one that looks
 present. Recorded open in `open-work.md` §3.
 
-**8. Response headers are set, and `script-src` is deliberately not among them yet.**
+**8. Response headers are set, and the inline theme script is allowed by hash rather than by
+`'unsafe-inline'`.**
 
 The Gateway sends `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
-`X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'; object-src 'none'; base-uri 'self'`,
-and `Permissions-Policy` closing the device APIs a plant console has no use for. What that buys is real and
-bounded: the interface cannot be framed by another site, a response cannot be sniffed into executing, and no
-referrer leaks out of a plant.
+`X-Frame-Options: DENY`, `Permissions-Policy` closing the device APIs a plant console has no use for, and a
+`Content-Security-Policy` of `frame-ancestors 'none'; object-src 'none'; base-uri 'self'; script-src …`.
+What that buys is real and bounded: the interface cannot be framed by another site, a response cannot be
+sniffed into executing, and no referrer leaks out of a plant.
 
-**`script-src` is left unset on purpose.** `index.html` boots the stored theme with an inline script so the
-dark theme applies before the first paint (ADR-0027) — a `script-src 'self'` would break it, and a
-`script-src 'self' 'unsafe-inline'` would be a directive that does not do the thing it is named for. Doing
-it properly means hashing the served file at startup and allowing that hash, which is real work and a
-separate slice; **until then this CSP is honest about what it covers** rather than being a header that looks
-like a policy.
+**`script-src` was left out when this ADR was written, and it is the one thing here that has since been
+corrected.** The reason it was left out was real — `index.html` boots the stored theme with an inline script
+so the dark theme applies before the first paint (ADR-0027), so `script-src 'self'` alone would break it, and
+`'unsafe-inline'` is a directive that does not do the thing it is named for. **The answer turned out to be
+smaller than "a separate slice"**: at startup the Gateway reads the `index.html` it is about to serve and
+puts the SHA-256 of each inline script's own text into the header (`ScriptHashes`). Two details are the whole
+of the correctness — **the hash covers the element's text and not its tags**, because hashing the element
+produces a header that looks right and a script the browser refuses; and **a `<script src>` gets no hash**,
+because `'self'` is what loads it and a hash of content the browser ignores allows nothing. With no built
+client in the web root — a developer running `ng serve` — the source is the bare `'self'`, which is then
+exactly true rather than a hash nobody can satisfy.
+
+The hash is computed once, at startup: the file changes only with an upgrade, and an upgrade restarts the
+Gateway. **A deployment that replaced the client without restarting the Gateway would leave the header
+describing the previous build**, and that is written here rather than left to be discovered as a theme that
+stops applying.
 
 **9. It is journalled.** The transition into a lock appends `auth.account_locked` with the user name, beside
-the `auth.login_failed` rows that already exist (ADR-0013's append-only journal). The trail records the
-lock; **reading it is still not possible from the product** — the audit's other cheap gap, recorded in
-`open-work.md` §3 rather than half-built here.
+the `auth.login_failed` rows that already exist (ADR-0013's append-only journal). **Reading the trail was the
+audit's other cheap gap and is no longer open**: ADR-0032 decides it and the same pull request builds it.
 
 ## Consequences
 
@@ -120,4 +130,7 @@ lock; **reading it is still not possible from the product** — the audit's othe
 - `Security:Lockout:Attempts` or `:Minutes` set to a value the check cannot mean is refused at startup with
   the value and the range named.
 - Every response carries the five headers, and the client still boots its stored theme — the second is what
-  proves `script-src` was left out deliberately rather than forgotten.
+  proves the inline script is allowed by the right hash rather than by `'unsafe-inline'`.
+- **The hash is of the script's text and not of its tags**, and a `<script src>` gets none. Both are paths
+  where the header still looks correct and the browser refuses the script, so both have a test whose
+  expected digest is computed from the script's own text rather than copied from a run.
