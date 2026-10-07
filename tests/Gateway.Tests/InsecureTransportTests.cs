@@ -108,6 +108,38 @@ public sealed class InsecureTransportTests
     }
 
     [Fact]
+    public void Terminating_TLS_upstream_leaves_the_listeners_alone()
+    {
+        // **The defect this pins was found by walking a documented configuration, and it stopped the
+        // Gateway from starting at all.** The deployment carried `ASPNETCORE_URLS` as the constant
+        // `http://+:8080;https://+:8443`, which made the URL list and the certificate setting two
+        // things that had to agree. Declare TLS terminated upstream — correctly, as the guide says —
+        // and Kestrel died with *"Unable to configure HTTPS endpoint. No server certificate was
+        // specified"*. A deployment doing the right thing would not run.
+        //
+        // The Gateway owns its listeners now, and only when it has a certificate to put on one. These
+        // ports must therefore mean nothing without one: if they ever start being consulted anyway,
+        // the pair is back and so is the crash.
+        var options = new ServerTlsOptions { TlsTerminatedUpstream = true };
+
+        Assert.False(options.ServesTls, "nothing may open an HTTPS listener without a certificate");
+        Assert.Null(options.Problem());
+    }
+
+    [Fact]
+    public void A_Gateway_that_serves_TLS_has_a_port_for_each_listener()
+    {
+        // The other half: with a certificate there are two listeners, and both need somewhere to be.
+        // Defaults rather than required settings, so the common deployment states neither.
+        using var files = new PemPair();
+        var options = new ServerTlsOptions { CertificatePath = files.Certificate, KeyPath = files.Key };
+
+        Assert.True(options.ServesTls);
+        Assert.NotEqual(options.HttpPort, options.HttpsPort);
+        Assert.True(options.HttpPort > 0 && options.HttpsPort > 0);
+    }
+
+    [Fact]
     public void HSTS_is_off_unless_a_deployment_asks_for_it()
     {
         // ADR-0028 §5, and the opposite of the usual advice. A plant on a self-signed or internal-CA

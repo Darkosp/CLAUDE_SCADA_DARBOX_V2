@@ -88,10 +88,13 @@ services:
       # browser and cannot be overridden by the person using it, so a plant on a self-signed or
       # internal-CA certificate would lock its own operators out of the screen.
       Server__Hsts: ${SCADA_TLS_HSTS:-false}
-      # Both schemes: the HTTPS listener serves, and the HTTP one exists so a bare host name is
-      # redirected rather than refused. With TLS terminated upstream only the HTTP listener is
-      # ever reached.
-      ASPNETCORE_URLS: http://+:8080;https://+:8443
+      # NOT a URL list. When this Gateway has a certificate it opens both listeners itself, and
+      # when it has not it opens only the HTTP one -- because a constant list here and the
+      # certificate setting above are two things that must agree, and when they did not, Kestrel
+      # died at startup and a correctly configured proxied deployment would not run at all.
+      # Found by walking it on 2026-10-07. The ports are below if they have to move.
+      Server__HttpPort: "8080"
+      Server__HttpsPort: "8443"
     ports:
       - "${SCADA_HTTP_PORT:-8080}:8080"
       - "${SCADA_HTTPS_PORT:-8443}:8443"

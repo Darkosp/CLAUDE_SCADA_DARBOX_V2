@@ -1019,6 +1019,34 @@ own mistake.
 marking a value that cannot be true (a decision before any code), and the `discrete` kind having no
 editor.
 
+### The trend window — closed 2026-10-07
+
+Not listed in this phase's scope and found by asking what stood between the project and a real pilot:
+the client asked for **fifteen minutes, hard-coded in two places**, and the chart said how many samples
+it held and what their highest and lowest values were. **Nothing said what period the curve covered**,
+and an operator looking into something that happened two hours ago had no way to ask for it.
+
+- **The chart states its period**, at both ends of its axis, dated when the window crosses midnight —
+  the rule `formatGapWindow` arrived at by being wrong first, and above an hour it is the common case.
+- **It plots against the window asked for**, not against the first and last reading it happens to
+  hold. That is the same defect `f22b9e4` fixed for a gap in the middle of a trend, left standing at
+  the ends: a device offline for ten minutes of a quarter-hour leaves five minutes of readings, and
+  drawn against themselves they fill the chart as though nothing had been missing.
+- **An operator chooses how far back** — fifteen minutes to seven days — from a fixed list rather than
+  two date fields, because the question they are really asking is *how far back*.
+
+**Walking it found the defect that would have made it useless.** Eight hours of a tag scanned every
+second is 28,402 readings drawn into 600 pixels, and what appeared was **a solid block of ink**. The
+chart now reduces to one column per pixel keeping each column's **extremes** — never an average, never
+every n-th reading, because the one-second excursion that tripped an alarm is exactly the sample a
+thinning pass throws away. What is drawn is the envelope with the line through it, which is what a
+trend over hours honestly looks like.
+
+**What it left open is in `open-work.md` §3**, with the measurement: the whole set still crosses the
+wire, and seven days came back as **100,552 samples and 22.2 MB**. Reducing in the query rather than in
+the browser is the answer and it wants an ADR, because ADR-0006 has a note about which TimescaleDB
+features are in scope.
+
 ## Later (not yet scoped)
 
 The scripting engine (Jint) and reporting. These are deliberately left unscoped

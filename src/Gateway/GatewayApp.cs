@@ -66,8 +66,24 @@ public static class GatewayApp
             // Kestrel rather than a proxy (ADR-0028 §1): it keeps the client on the Gateway's own
             // origin, which is what lets there be no CORS allowance anywhere and no Gateway URL in
             // the client.
+            //
+            // **Both listeners are opened here rather than left to ASPNETCORE_URLS, and that is a
+            // fix rather than a preference.** The deployment first carried `http://+:8080;https://+:8443`
+            // as a constant, which made the URL list and the certificate setting two things that had
+            // to agree — and when they did not, Kestrel died at startup with *"Unable to configure
+            // HTTPS endpoint. No server certificate was specified"*. A deployment that had correctly
+            // declared TLS terminated upstream would not start at all. Found by walking it
+            // (2026-10-07), not by reading it.
+            //
+            // The Gateway knows whether it has a certificate, so it is the only thing that should be
+            // deciding whether there is an HTTPS listener.
+            var certificate = tls.Certificate();
+
             builder.WebHost.ConfigureKestrel(kestrel =>
-                kestrel.ConfigureHttpsDefaults(https => https.ServerCertificate = tls.Certificate()));
+            {
+                kestrel.ListenAnyIP(tls.HttpPort);
+                kestrel.ListenAnyIP(tls.HttpsPort, listener => listener.UseHttps(certificate));
+            });
         }
 
         builder.Services.AddSingleton(tls);

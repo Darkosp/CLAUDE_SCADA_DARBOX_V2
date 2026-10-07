@@ -132,6 +132,8 @@ import { SymbolView } from './symbol';
                       }
                       <app-trend-chart [samples]="samples"
                                        [class.stale]="isStale(samples)"
+                                       [from]="historyFrom()"
+                                       [to]="historyTo()"
                                        [unitSymbol]="snapshots().get($any(cell.resolved).tagId)?.unitSymbol ?? ''" />
                     }
                   } @else {
@@ -397,6 +399,16 @@ export class ScreenView {
 
   /** Every standing alarm this session may see. */
   readonly alarms = input.required<readonly Alarm[]>();
+
+  /**
+   * The window every trend on this screen covers, so each one can label its own axis.
+   *
+   * Given by the app rather than computed here, because it is the window the app ASKED the server
+   * for: a component that worked it out again could disagree with the request its own samples came
+   * from, and the axis would then be a second opinion rather than a fact.
+   */
+  readonly historyFrom = input.required<Date>();
+  readonly historyTo = input.required<Date>();
 
   /**
    * History for the `trend` components on this screen, **by tag id**.

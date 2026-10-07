@@ -49,6 +49,17 @@ public sealed class ServerTlsOptions
     /// </remarks>
     public bool Hsts { get; set; }
 
+    /// <summary>The port the HTTP listener uses when this Gateway serves TLS itself.</summary>
+    /// <remarks>
+    /// Only consulted when there is a certificate. Without one the listeners are left to
+    /// <c>ASPNETCORE_URLS</c>, which is what a deployment behind a proxy and every test rely on —
+    /// and what stops this pair becoming a second thing that has to agree with the certificate.
+    /// </remarks>
+    public int HttpPort { get; set; } = 8080;
+
+    /// <summary>The port the TLS listener uses.</summary>
+    public int HttpsPort { get; set; } = 8443;
+
     /// <summary>Whether this Gateway is to terminate TLS itself.</summary>
     public bool ServesTls => !string.IsNullOrWhiteSpace(CertificatePath);
 

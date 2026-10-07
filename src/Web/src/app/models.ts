@@ -673,6 +673,144 @@ function toDate(value: string | Date | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+// ---- trend windows ----------------------------------------------------------
+//
+// **A curve with no stated period is a curve nobody can reason about.** Until 2026-10-07 the client
+// asked for fifteen minutes, hard-coded in two places, and the chart said only how many samples it
+// held and what their highest and lowest values were. Nothing on the screen said whether the line
+// covered a quarter of an hour or a week, and an operator looking into something that happened two
+// hours ago had no way to ask for it.
+
+/** How long a trend looks back, as an operator chooses it. */
+export interface TrendWindow {
+  /** What the picker says. */
+  label: string;
+  /** How far back from now, in milliseconds. */
+  milliseconds: number;
+}
+
+/**
+ * The windows offered, shortest first.
+ *
+ * A fixed list rather than two date fields, for the reason ADR-0025's shelving expiry is a fixed
+ * list: the question an operator is really asking is *how far back*, and a pair of date pickers makes
+ * them answer a harder question than they have. Fifteen minutes stays first because it is what every
+ * trend showed before this existed, so nothing an author built changes appearance by default.
+ */
+export const TREND_WINDOWS: readonly TrendWindow[] = [
+  { label: '15 minutes', milliseconds: 15 * 60 * 1000 },
+  { label: '1 hour', milliseconds: 60 * 60 * 1000 },
+  { label: '8 hours', milliseconds: 8 * 60 * 60 * 1000 },
+  { label: '24 hours', milliseconds: 24 * 60 * 60 * 1000 },
+  { label: '7 days', milliseconds: 7 * 24 * 60 * 60 * 1000 },
+];
+
+/** The window a label names, or the first one when the label is not among them. */
+export function trendWindowOf(label: string): TrendWindow {
+  return TREND_WINDOWS.find((window) => window.label === label) ?? TREND_WINDOWS[0];
+}
+
+/**
+ * Where a reading sits across the chart, as a fraction of **the window that was asked for**.
+ *
+ * Not of the span between the first and last sample it happens to hold, which is what this used to
+ * be. The difference is the whole point: a tag whose device was offline for the first ten minutes of
+ * a quarter-hour window should show **ten minutes of empty chart** and then a line — not a line
+ * stretched across the full width as though it had been there all along. That is the same mistake,
+ * in the same component, that `f22b9e4` fixed for a gap in the middle (ADR-0003), left standing at
+ * the ends.
+ *
+ * Clamped, because a sample fractionally outside the window — the server's bounds are inclusive and
+ * clocks are not identical — belongs at the edge rather than off the chart.
+ */
+export function plotAcross(time: number, from: number, to: number, width: number): number {
+  const span = Math.max(to - from, 1);
+  return Math.max(0, Math.min(1, (time - from) / span)) * width;
+}
+
+/**
+ * One column of a trend: the extremes of everything that fell inside it.
+ */
+export interface TrendColumn {
+  /** Where across the chart, in the chart's own units. */
+  x: number;
+  /** The lowest and highest values in this column — the envelope, not an average. */
+  low: number;
+  high: number;
+  /** When the first reading in this column was taken, for deciding where a gap falls. */
+  firstTime: number;
+  lastTime: number;
+}
+
+/**
+ * A trend reduced to one column per pixel, keeping the extremes of each.
+ *
+ * **Found by walking the window picker on 2026-10-07**: eight hours of a tag scanned every second is
+ * 28,402 readings drawn into 600 pixels, and what appeared was a solid black block. The feature was
+ * delivered and unusable above its shortest window, which is worse than not having it — a reader
+ * would believe they were looking at something.
+ *
+ * **Min and max per column, never an average and never every n-th reading.** An average flattens the
+ * spike that made somebody open the trend in the first place, and decimation drops it outright: the
+ * one-second excursion that tripped an alarm is exactly the sample a thinning pass throws away. The
+ * envelope keeps it — the column it fell in is drawn from its true low to its true high — which is the
+ * same rule as ADR-0003's elsewhere: show what was measured, never a number nobody read.
+ *
+ * Below one reading per column this does nothing, so a fifteen-minute trend is untouched.
+ */
+export function trendColumns(
+  samples: readonly { time: number; value: number }[],
+  from: number,
+  to: number,
+  width: number,
+): TrendColumn[] {
+  const columns = new Map<number, TrendColumn>();
+
+  for (const sample of samples) {
+    const x = Math.round(plotAcross(sample.time, from, to, width));
+    const existing = columns.get(x);
+
+    if (existing === undefined) {
+      columns.set(x, {
+        x,
+        low: sample.value,
+        high: sample.value,
+        firstTime: sample.time,
+        lastTime: sample.time,
+      });
+      continue;
+    }
+
+    existing.low = Math.min(existing.low, sample.value);
+    existing.high = Math.max(existing.high, sample.value);
+    existing.firstTime = Math.min(existing.firstTime, sample.time);
+    existing.lastTime = Math.max(existing.lastTime, sample.time);
+  }
+
+  return [...columns.values()].sort((left, right) => left.x - right.x);
+}
+
+/**
+ * The two ends of a trend's time axis, as a reader can place them.
+ *
+ * Times alone within a day, dates when it crosses one — the rule `formatGapWindow` arrived at by
+ * being wrong first: "15:31 – 14:13" reads as an interval running backwards when it is in fact
+ * nearly a day. A seven-day window crosses midnight every time, so this is not an edge case here.
+ */
+export function trendAxis(from: Date, to: Date): { start: string; end: string } {
+  const sameDay =
+    from.getFullYear() === to.getFullYear() &&
+    from.getMonth() === to.getMonth() &&
+    from.getDate() === to.getDate();
+
+  const time = (at: Date) => `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  const dated = (at: Date) => `${pad(at.getDate())}/${pad(at.getMonth() + 1)} ${time(at)}`;
+
+  return sameDay
+    ? { start: time(from), end: time(to) }
+    : { start: dated(from), end: dated(to) };
+}
+
 /**
  * Why an occurrence was retired, in words rather than in the engine's own vocabulary.
  *

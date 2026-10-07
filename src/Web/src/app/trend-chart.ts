@@ -1,5 +1,5 @@
 import { Component, computed, input } from '@angular/core';
-import { HistorySample } from './models';
+import { HistorySample, plotAcross, trendAxis, trendColumns } from './models';
 
 interface Point {
   x: number;
@@ -21,15 +21,27 @@ interface Point {
     } @else {
       <svg [attr.viewBox]="'0 0 ' + width + ' ' + height" class="chart" role="img"
            [attr.aria-label]="'Trend for ' + unitSymbol()">
+        <!-- Behind the line: what each column's readings actually reached. -->
+        @for (bar of envelope(); track bar.x) {
+          <line class="envelope" [attr.x1]="bar.x" [attr.y1]="bar.top"
+                [attr.x2]="bar.x" [attr.y2]="bar.bottom" />
+        }
         @for (segment of segments(); track $index) {
           <polyline class="line" [attr.points]="segment" />
         }
         <text class="tick" [attr.x]="4" [attr.y]="12">{{ high().toFixed(2) }}</text>
         <text class="tick" [attr.x]="4" [attr.y]="height - 4">{{ low().toFixed(2) }}</text>
       </svg>
-      <p class="range">
-        {{ samples().length }} samples · {{ low().toFixed(2) }}–{{ high().toFixed(2) }}
-        {{ unitSymbol() }}
+      <!--
+        **The period, under the chart, always.** A curve with no stated period is a curve nobody can
+        reason about: before this, the same picture could be a quarter of an hour or a week and the
+        reader had no way to tell. The ends are the window that was ASKED FOR, not the first and last
+        reading held, so an outage at either end reads as empty chart rather than disappearing.
+      -->
+      <p class="axis">
+        <span>{{ axis().start }}</span>
+        <span class="count">{{ samples().length }} samples · {{ low().toFixed(2) }}–{{ high().toFixed(2) }} {{ unitSymbol() }}</span>
+        <span>{{ axis().end }}</span>
       </p>
     }
   `,
@@ -45,14 +57,41 @@ interface Point {
     /* A neutral ink rather than a hue: the accent and the status colours both mean something here,
        and a third meaning for "this is a line" would only compete with them. */
     .line { fill: none; stroke: var(--chart-line); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+    /* The same ink as the line, thinned: it is the same measurement, shown as a reach rather than a
+       value, and a second colour would read as a second quantity. */
+    .envelope { stroke: var(--chart-line); stroke-width: 1; opacity: 0.35; }
     .tick { font-size: 10px; fill: var(--text-muted); }
-    .range { font-size: var(--text-sm); color: var(--text-muted); margin: 0.4rem 0 0; }
+    .axis {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: var(--text-sm);
+      color: var(--text-muted);
+      margin: 0.4rem 0 0;
+    }
+    /* The ends are the axis and belong at the edges; what the line holds is a caption and belongs
+       between them, so the three never read as one sentence. */
+    .axis .count { text-align: center; }
     .empty { color: var(--text-muted); font-size: var(--text-base); margin: 0; }
   `,
 })
 export class TrendChart {
   readonly samples = input.required<HistorySample[]>();
   readonly unitSymbol = input<string>('');
+
+  /**
+   * The window this trend was asked for — the chart's x-axis, end to end.
+   *
+   * Required, and taken from the caller rather than derived from the samples, because the samples
+   * cannot tell a window apart from what happens to be in it: a device offline for the first ten
+   * minutes of a quarter-hour leaves five minutes of readings, and drawn against themselves they
+   * fill the chart as though nothing had been missing.
+   */
+  readonly from = input.required<Date>();
+  readonly to = input.required<Date>();
+
+  /** Both ends of the axis, as a reader can place them. */
+  protected readonly axis = computed(() => trendAxis(this.from(), this.to()));
 
   protected readonly width = 600;
   protected readonly height = 160;
@@ -61,29 +100,60 @@ export class TrendChart {
    * Only Good numeric samples are plotted. A Bad sample carries no value at all, and
    * drawing a gap is honest where interpolating across it would invent a reading.
    */
-  protected readonly points = computed<Point[]>(() => {
-    const usable = this.usableSamples();
+  /**
+   * The readings reduced to one column per pixel, keeping each column's extremes.
+   *
+   * Below one reading per pixel this changes nothing, so a short trend is drawn exactly as it was
+   * before this existed. Above it, `trendColumns` is what stops eight hours of a tag scanned every
+   * second from arriving as a solid block of ink — and it keeps the envelope rather than an average,
+   * so the spike that made somebody open the trend is still there.
+   */
+  protected readonly columns = computed(() =>
+    trendColumns(
+      this.usableSamples().map((sample) => ({
+        time: new Date(sample.sourceTimestampUtc).getTime(),
+        value: sample.value.numeric as number,
+      })),
+      this.from().getTime(),
+      this.to().getTime(),
+      this.width,
+    ),
+  );
 
-    if (usable.length < 2) {
+  protected readonly points = computed<Point[]>(() => {
+    const columns = this.columns();
+
+    if (columns.length < 2) {
       return [];
     }
 
-    const times = usable.map((s) => new Date(s.sourceTimestampUtc).getTime());
-    const values = usable.map((s) => s.value.numeric as number);
-
-    const firstTime = times[0];
-    const timeSpan = Math.max(times[times.length - 1] - firstTime, 1);
     const low = this.low();
     const span = Math.max(this.high() - low, Number.EPSILON);
     const padding = 8;
+    const y = (value: number) =>
+      this.height - padding - ((value - low) / span) * (this.height - padding * 2);
 
-    return usable.map((_, index) => ({
-      x: ((times[index] - firstTime) / timeSpan) * this.width,
-      y:
-        this.height -
-        padding -
-        ((values[index] - low) / span) * (this.height - padding * 2),
-    }));
+    // The midpoint of each column's envelope carries the line; the envelope itself is drawn behind
+    // it, so neither hides the other.
+    return columns.map((column) => ({ x: column.x, y: y((column.low + column.high) / 2) }));
+  });
+
+  /**
+   * The envelope: for each column, the vertical reach of what was measured in it.
+   *
+   * Drawn only where a column actually spans a range — on a short trend every column holds one
+   * reading, so there is nothing to draw and the chart is the line alone.
+   */
+  protected readonly envelope = computed(() => {
+    const low = this.low();
+    const span = Math.max(this.high() - low, Number.EPSILON);
+    const padding = 8;
+    const y = (value: number) =>
+      this.height - padding - ((value - low) / span) * (this.height - padding * 2);
+
+    return this.columns()
+      .filter((column) => column.high > column.low)
+      .map((column) => ({ x: column.x, top: y(column.high), bottom: y(column.low) }));
   });
 
   /**
@@ -127,15 +197,23 @@ export class TrendChart {
    * holds for a tag scanned once a second and one scanned once a minute alike.
    */
   private gapAfterIndex(): Set<number> {
-    const times = this.usableSamples().map((sample) =>
-      new Date(sample.sourceTimestampUtc).getTime(),
-    );
+    // **Over the COLUMNS, not the samples.** `points()` now holds one point per column, and an index
+    // into the readings would split the line at places that no longer correspond to anything — a
+    // defect introduced and caught in the same sitting, and the same shape as every other one this
+    // project has found: two halves each correct, and the path between them left behind.
+    //
+    // Each column knows when its first and last reading were taken, so the distance between two
+    // columns is the distance from the last reading of one to the first of the next: on a short
+    // trend, where a column holds a single reading, that is exactly what it used to be.
+    const columns = this.columns();
 
-    if (times.length < 3) {
+    if (columns.length < 3) {
       return new Set();
     }
 
-    const deltas = times.slice(1).map((time, index) => time - times[index]);
+    const deltas = columns
+      .slice(1)
+      .map((column, index) => column.firstTime - columns[index].lastTime);
     const sorted = [...deltas].sort((left, right) => left - right);
     const median = sorted[Math.floor(sorted.length / 2)];
     const threshold = Math.max(median * 4, 5_000);
