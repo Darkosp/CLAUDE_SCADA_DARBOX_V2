@@ -1042,10 +1042,21 @@ every n-th reading, because the one-second excursion that tripped an alarm is ex
 thinning pass throws away. What is drawn is the envelope with the line through it, which is what a
 trend over hours honestly looks like.
 
-**What it left open is in `open-work.md` §3**, with the measurement: the whole set still crosses the
-wire, and seven days came back as **100,552 samples and 22.2 MB**. Reducing in the query rather than in
-the browser is the answer and it wants an ADR, because ADR-0006 has a note about which TimescaleDB
-features are in scope.
+**What it left open was closed the same day, by the ADR this paragraph asked for** —
+[ADR-0029](../architecture/decisions/0029-a-trend-asks-for-the-points-it-can-draw.md). The reduction
+moved into the query, and it is `date_bin`, which is **PostgreSQL's own function** rather than the
+TSL-licensed TimescaleDB feature ADR-0006 flags — so the flag stays about compression and continuous
+aggregates and nothing else. The caller now asks for `points`, the number it can draw, and the server
+chooses the bucket width and **states it in the answer**; a request without `points` is still every
+reading, because a cap that dropped readings without saying so is the one answer this project must not
+take. Measured on the demo database's busiest tag, 110,782 readings over a day and three quarters:
+**19 MB of JSON and 182 ms before; 417 buckets holding all of them and 56 kB after.** The client's
+`trendColumns` and its six tests were **deleted rather than kept as a fallback**, and the gap rule
+became exact — `ordinalNext − ordinalPrev > 1` — where the old heuristic could not see a hole narrower
+than about four columns. **What this does not fix, and it is worth knowing before the next
+measurement: the query still reads every row to group it**, so this removed bytes from the wire rather
+than work from the database; a precomputed aggregate is the answer for that, and ADR-0006 is why it is
+not taken here.
 
 ## Later (not yet scoped)
 
