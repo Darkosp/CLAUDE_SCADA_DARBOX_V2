@@ -16,16 +16,37 @@ the documents it points to, before doing anything else in this repo.
    its scope, and its test gate
 
 ## Current status
-**How to read a PR number here.** This repository
-(`Darkosp/DEEP_SCADA_DARBOX`) was created on 2026-09-26, with the project's
-history pushed into it, so the merge commits in that history carry the
-predecessor repository's numbers — #1 to #25 — and the notes below use them.
-This repository's own PRs start again at #1, which makes a bare number
-ambiguous. Six are marked *(this repository)* where they appear: its #1, the
-driver logging, its #2, the test-fixture guard, its #3, `certs.sh` under
-`bash`, its #4, `linux-arm64`, its #5, the Journal Note's spacing, and its
-#6, the edge assignment that is ADR-0019's first half.
-`gh pr list` shows what exists here.
+**How to read a PR number here, and there are now three numbering spaces.**
+*(Corrected 2026-10-07: this paragraph named `Darkosp/DEEP_SCADA_DARBOX` as
+"this repository", and it is not — the project has moved again. Verified by
+`git config --get remote.origin.url` and `gh pr list` in both.)*
+
+The project has lived in three GitHub repositories, and **a bare PR number
+means nothing without saying which**:
+
+1. the **original**, whose numbers #1 to #25 are carried by the merge commits
+   in the history and are what the notes below use;
+2. **`Darkosp/DEEP_SCADA_DARBOX`**, created 2026-09-26 with that history
+   pushed into it. Its own PRs started again at #1 and ran to at least #11.
+   Six are marked *(this repository)* where they appear below — its #1, the
+   driver logging; #2, the test-fixture guard; #3, `certs.sh` under `bash`;
+   #4, `linux-arm64`; #5, the Journal Note's spacing; and #6, the edge
+   assignment that is ADR-0019's first half. **Those markings are now wrong
+   in their wording**: they mean *that* repository, not this one. They are
+   left as they are rather than rewritten, because each is a pointer into a
+   repository that still exists;
+3. **`Darkosp/CLAUDE_SCADA_DARBOX_V2`**, which is what this checkout pushes
+   to, and whose PRs start again at #1 — the symbol mapping fix, 2026-10-07.
+
+**There are also two checkouts of this project on this machine**, and they
+push to different places: `C:\GitProjects\CLAUDE_SCADA_DARBOX_V2` has one
+remote, `origin` → V2; `C:\GitProjects\DEEP_SCADA_DARBOX` has two, `origin` →
+DEEP and `new-origin` → V2. The on-premises stack on `localhost:8090` was
+composed from the **second** one, so its `deploy/.env` lives there and not
+here. Check `git remote -v` and `git rev-parse --show-toplevel` before
+drawing a conclusion about "the repository".
+
+`gh pr list` shows what exists in whichever one you are standing in.
 
 
 
