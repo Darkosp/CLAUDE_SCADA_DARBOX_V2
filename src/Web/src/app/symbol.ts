@@ -38,7 +38,17 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
       <!--
         Four vanes on a rotor, plus a hub. Turning the ROTOR rather than the body is what makes the
         motion read at a glance: a rotating circle looks like nothing at all.
+
+        **Not drawn at all when the reading is Bad**, and that is this drawing's whole statement about
+        ADR-0003. Found by looking, 2026-10-07: the vanes sit on a plus and the cross below is a diagonal,
+        so the two together drew an **eight-pointed star** — the crossed-out pump read as a BUSIER
+        pump, not as a cancelled one, and the only thing still separating "nothing is measuring this"
+        from "the plant says it is off" was a change of colour. ADR-0027 §4's own words are that a
+        picture of a machine with no reading "is not drawn as a machine at all", and it was.
+        Now it is not: Bad leaves the dashed body, the pipes and the cross, and the moving part of the
+        machine is simply absent.
       -->
+      @if (state() !== 'bad') {
       <g class="rotor" [class.turning]="animates()" [style.transform-origin]="'60px 46px'">
         <g class="vanes">
           <line x1="60" y1="46" x2="60" y2="20" />
@@ -48,12 +58,14 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
         </g>
         <circle class="hub" cx="60" cy="46" r="5" />
       </g>
+      }
 
-      <!-- A Bad reading is crossed out. A picture of a machine with no reading is the one thing this
-           must not be mistaken for, so it is not drawn as a machine at all. -->
+      <!-- A Bad reading is crossed out, and with the rotor gone above there is nothing left for the
+           cross to be confused with. The cross is drawn heavier than a vane for the same reason: it
+           is not part of the machine, it is the mark that cancels it. -->
       @if (state() === 'bad') {
-        <line class="cross" x1="40" y1="26" x2="80" y2="66" />
-        <line class="cross" x1="80" y1="26" x2="40" y2="66" />
+        <line class="cross" x1="38" y1="24" x2="82" y2="68" />
+        <line class="cross" x1="82" y1="24" x2="38" y2="68" />
       }
     </svg>
   `,
@@ -74,7 +86,9 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
     }
     .vanes line { stroke: var(--equipment-line); stroke-width: 3; stroke-linecap: round; }
     .hub { fill: var(--equipment-line); }
-    .cross { stroke: var(--status-bad-ink); stroke-width: 3.5; stroke-linecap: round; }
+    /* Heavier than a vane (3) on purpose: the cross is not part of the machine, it is the mark that
+       cancels it, and it is the only thing inside the body once the rotor is gone. */
+    .cross { stroke: var(--status-bad-ink); stroke-width: 4.5; stroke-linecap: round; }
 
     /* Turning, and nothing else moves. A duration rather than a value: how fast a pump runs is not
        this build's to guess (ADR-0027 §5), so one speed is used for every running machine. */
@@ -93,8 +107,10 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
     .s-running .vanes line, .s-running .hub, .s-running .pipe { stroke: var(--status-good-ink); }
     .s-fault .body { stroke: var(--status-bad-ink); }
     .s-fault .vanes line, .s-fault .hub, .s-fault .pipe { stroke: var(--status-bad-ink); }
+    /* No rotor rule for this state, and its absence is the point: in bad the rotor is not in the
+       drawing at all, so a rule for it would be a claim about something that is not there. */
     .s-bad .body { stroke: var(--status-bad-ink); stroke-dasharray: 5 4; }
-    .s-bad .vanes line, .s-bad .hub, .s-bad .pipe { stroke: var(--status-bad-ink); }
+    .s-bad .pipe { stroke: var(--status-bad-ink); }
     .s-stale .body { stroke: var(--status-warn-ink); }
     .s-stale .vanes line, .s-stale .hub, .s-stale .pipe { stroke: var(--status-warn-ink); }
     .s-unknown .body { stroke: var(--status-nodata-ink); stroke-dasharray: 5 4; }
