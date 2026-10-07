@@ -36,6 +36,18 @@ public sealed class Tag
     public bool IsWritable { get; init; }
 
     /// <summary>
+    /// The span this tag's readings are expected to fall in, or null when nothing has been declared
+    /// (ADR-0030).
+    /// </summary>
+    /// <remarks>
+    /// A statement about plausibility, not about meaning (the <see cref="Unit"/> does that) and not about
+    /// watching (an alarm definition does that). **Null is not "somewhere in the middle"**: a tag with no
+    /// range produces no verdict at all, so a deployment that has declared nothing is never shown an
+    /// answer nobody gave.
+    /// </remarks>
+    public TagRange? Range { get; set; }
+
+    /// <summary>
     /// The template tag this one was materialised from, or null for a tag created
     /// directly on its device (ADR-0010).
     /// </summary>
