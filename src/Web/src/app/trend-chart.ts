@@ -51,8 +51,8 @@ interface Point {
         @for (segment of segments(); track $index) {
           <polyline class="line" [attr.points]="segment" />
         }
-        <text class="tick" [attr.x]="4" [attr.y]="12">{{ high().toFixed(2) }}</text>
-        <text class="tick" [attr.x]="4" [attr.y]="height() - 4">{{ low().toFixed(2) }}</text>
+        <text class="tick" [attr.x]="4" [attr.y]="plot().top - 2">{{ high().toFixed(2) }}</text>
+        <text class="tick" [attr.x]="4" [attr.y]="height() - 6">{{ low().toFixed(2) }}</text>
       </svg>
       <!--
         **The period, under the chart, always.** A curve with no stated period is a curve nobody can
@@ -60,11 +60,16 @@ interface Point {
         reader had no way to tell. The ends are the window that was ASKED FOR, not the first and last
         reading held, so an outage at either end reads as empty chart rather than disappearing.
 
+        **And it is set to the plot's own edges, not the card's.** The drawing is inset by a gutter for
+        the value labels above, so a row of dates sitting flush with the card would name a time
+        seventy pixels away from the point it belongs to — which is the defect this chart was walked
+        for, an order of magnitude smaller. Both come from the same place, so they cannot drift.
+
         And **how much is behind the curve**: the readings, then the points they are drawn as. Both,
         because a reader who is told only the points cannot tell a quiet window from a reduced one —
         which is the same reason nothing here is capped without saying so (ADR-0029 §3).
       -->
-      <p class="axis">
+      <p class="axis" [style.paddingLeft.px]="plot().left" [style.paddingRight.px]="plot().right">
         <span>{{ axis().start }}</span>
         <span class="count">{{ readings() }} readings · {{ points().length }} points · {{ low().toFixed(2) }}–{{ high().toFixed(2) }} {{ unitSymbol() }}</span>
         <span>{{ axis().end }}</span>
@@ -198,17 +203,59 @@ export class TrendChart {
   protected readonly axis = computed(() => trendAxis(this.from(), this.to()));
 
   /**
-   * The buckets placed across the chart, each keeping the extremes of what was measured in it.
+   * Where the data is drawn inside the chart, and the room the labels need around it.
+   *
+   * **Found by the walk of 2026-10-07, in its second pass**: the two value labels were drawn *inside*
+   * the plot at its left edge, and the reading there is by definition the lowest one — so `3.80` sat
+   * on top of the curve it was labelling. Crowded rather than wrong, and the first pass at 1920 had
+   * them floating in the middle of the card, which is where they should never have been either.
+   *
+   * So the plot is inset: a gutter on the left for the labels, and enough above and below that the
+   * line can reach neither of them. **The axis row under the chart is inset by the same numbers** —
+   * a row of dates flush with the card while the drawing starts seventy pixels in would name times
+   * that belong to points further right, which is the defect this chart was walked for at all.
+   *
+   * The gutter is dropped on a card too narrow to hold both a label and a curve worth reading; a
+   * trend in a tile is the case that has to keep working.
+   */
+  protected readonly plot = computed(() => {
+    const width = this.width();
+    const height = this.height();
+    const gutter = width >= 360 ? 46 : 0;
+
+    return {
+      left: gutter,
+      right: gutter > 0 ? 6 : 0,
+      top: 14,
+      bottom: 22,
+      width: Math.max(width - gutter - (gutter > 0 ? 6 : 0), 1),
+      height: Math.max(height - 14 - 22, 1),
+    };
+  });
+
+  /**
+   * The buckets placed across the plot, each keeping the extremes of what was measured in it.
    *
    * A bucket the server read nothing plottable in is dropped here rather than drawn: it is a hole
    * with a count, and drawing it as a value would be the fabrication ADR-0003 refuses.
    */
-  protected readonly columns = computed(() =>
-    bucketColumns(this.series(), this.from().getTime(), this.to().getTime(), this.width()),
-  );
+  protected readonly columns = computed(() => {
+    const plot = this.plot();
+
+    return bucketColumns(this.series(), this.from().getTime(), this.to().getTime(), plot.width)
+      .map((column) => ({ ...column, x: column.x + plot.left }));
+  });
 
   /** How many readings the curve is drawn from — what the caption means by "readings" (ADR-0029 §4). */
   protected readonly readings = computed(() => readingsIn(this.series()));
+
+  /** A reading's value as a y inside the plot: the lowest sits on the plot's floor, the highest on its roof. */
+  private toY(value: number): number {
+    const plot = this.plot();
+    const low = this.low();
+
+    return plot.top + plot.height - ((value - low) / Math.max(this.high() - low, Number.EPSILON)) * plot.height;
+  }
 
   protected readonly points = computed<Point[]>(() => {
     const columns = this.columns();
@@ -217,15 +264,12 @@ export class TrendChart {
       return [];
     }
 
-    const low = this.low();
-    const span = Math.max(this.high() - low, Number.EPSILON);
-    const padding = 8;
-    const y = (value: number) =>
-      this.height() - padding - ((value - low) / span) * (this.height() - padding * 2);
-
     // The midpoint of each bucket's envelope carries the line; the envelope itself is drawn behind
     // it, so neither hides the other.
-    return columns.map((column) => ({ x: column.x, y: y((column.low + column.high) / 2) }));
+    return columns.map((column) => ({
+      x: column.x,
+      y: this.toY((column.low + column.high) / 2),
+    }));
   });
 
   /**
@@ -234,17 +278,11 @@ export class TrendChart {
    * Drawn only where a column actually spans a range — on a short trend a bucket may hold one
    * reading, so there is nothing to draw and the chart is the line alone.
    */
-  protected readonly envelope = computed(() => {
-    const low = this.low();
-    const span = Math.max(this.high() - low, Number.EPSILON);
-    const padding = 8;
-    const y = (value: number) =>
-      this.height() - padding - ((value - low) / span) * (this.height() - padding * 2);
-
-    return this.columns()
+  protected readonly envelope = computed(() =>
+    this.columns()
       .filter((column) => column.high > column.low)
-      .map((column) => ({ x: column.x, top: y(column.high), bottom: y(column.low) }));
-  });
+      .map((column) => ({ x: column.x, top: this.toY(column.high), bottom: this.toY(column.low) })),
+  );
 
   /**
    * The line, split wherever history has a hole in it.

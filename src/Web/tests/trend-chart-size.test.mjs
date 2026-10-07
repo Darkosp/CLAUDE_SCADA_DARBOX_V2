@@ -75,6 +75,17 @@ test('before the first measurement the chart still has a size to draw at', () =>
   assert.match(source, /height = signal\(160\)/, 'the height no longer falls back to its own height');
 });
 
+test('the axis row is inset by the plot, so each date names the points under it', () => {
+  // **The same defect as the one above, an order of magnitude smaller.** The plot carries a gutter on
+  // the left for the value labels, and a row of dates flush with the card would put its first date ~46
+  // px to the left of the earliest point a reader can see — on a day-long window, most of an hour.
+  // Both the gutter and the row therefore come from `plot()`, which is one place to change.
+  assert.match(source, /\[style\.paddingLeft\.px\]="plot\(\)\.left"/, 'the axis row is not inset with the plot');
+  assert.match(source, /\[style\.paddingRight\.px\]="plot\(\)\.right"/, 'the axis row has no right inset');
+  assert.match(source, /bucketColumns\([^;]*plot\.width\)/s, 'the columns are not measured against the plot');
+  assert.match(source, /column\.x \+ plot\.left/, 'the columns are not placed inside the plot');
+});
+
 test('the scan found the chart it is guarding', () => {
   // The control. A regex that matched nothing would make the tests above vacuous.
   assert.match(source, /selector: 'app-trend-chart'/, 'trend-chart.ts is not the component this guards');
