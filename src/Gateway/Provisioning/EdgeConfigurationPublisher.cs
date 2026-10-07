@@ -262,6 +262,19 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
             var devices = EdgeConfigurationBuilder.DevicesFor(catalog, edge, out var omitted);
             var revision = EdgeConfigurationPayload.RevisionOf(devices);
 
+            // **Before the revision check, and that is the whole point of where it sits.** Assigning a
+            // device with no tags leaves the derived configuration IDENTICAL — the device is omitted
+            // whether or not it is there — so the revision does not change and nothing is published.
+            // While this call sat after the `continue` below, that case logged nothing at all: an
+            // operator assigned a device that would never be read and the Gateway said so only if
+            // some unrelated change happened to republish the configuration. Measured on 2026-10-07:
+            // the line appeared four minutes late, when a different device gained a tag.
+            //
+            // `ReportOmitted` already de-duplicates, which is what makes it safe to call on every
+            // pass — and that de-duplication is also the evidence the placement was the mistake
+            // rather than the intent, because nothing after a publish needs it.
+            ReportOmitted(edge, omitted);
+
             if (_published.TryGetValue(edge.Id, out var last) && last.Revision == revision)
             {
                 continue;
@@ -280,8 +293,6 @@ public sealed class EdgeConfigurationPublisher : BackgroundService
                 topic,
                 devices.Count,
                 revision);
-
-            ReportOmitted(edge, omitted);
         }
 
         foreach (var (edgeId, last) in _published)

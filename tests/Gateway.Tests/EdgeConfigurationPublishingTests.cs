@@ -101,6 +101,46 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_device_assigned_with_no_tags_is_reported_even_though_nothing_is_published()
+    {
+        // **The case the 2026-10-06/07 walk found silent**, and it is the ordinary one: assigning a
+        // device that has no tags yet. ADR-0020 omits it from the derived configuration, so the
+        // configuration is byte for byte what it was, so nothing is published — and the report that
+        // tells an operator their device will never be read used to be written only after a publish.
+        // Measured on the running stack: the line appeared four minutes late, when an unrelated
+        // device gained a tag, and would never have appeared at all if one had not.
+        //
+        // The assertion is deliberately paired: **the report is there AND nothing was published.**
+        // Asserting only the report would pass if the publisher had started republishing an unchanged
+        // configuration, which is the thing ADR-0019 §5 forbids and a neighbouring test pins.
+        var source = new TagCatalogSource(Catalogue(assigned: true));
+        using var publisher = Publisher(source);
+        await publisher.StartAsync(CancellationToken.None);
+
+        await WaitUntilRetainedAsync("the first configuration to be published", devices: 1);
+        var publishes = await PublishCountAsync();
+
+        source.Set(CatalogueWithATaglessDeviceToo());
+
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!_logs.Entries.Any(entry => entry.Contains("Spare skid", StringComparison.Ordinal)))
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                await FailWithEvidenceAsync(
+                    "The tagless device was never reported. An operator assigned a device that will "
+                    + "never be read and was told nothing.");
+            }
+
+            await Task.Delay(50);
+        }
+
+        Assert.Equal(publishes, await PublishCountAsync());
+
+        await publisher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task An_edge_that_is_deleted_has_its_configuration_emptied()
     {
         // The topic keeps the name, so a later edge under that name must start reading nothing
@@ -224,6 +264,33 @@ public sealed class EdgeConfigurationPublishingTests : IAsyncLifetime
         };
 
         return new TagCatalog(tenant, [site], [], [pump], [pressure], null, withEdge ? [edge] : []);
+    }
+
+    /// <summary>The same catalogue, plus a second device assigned to the edge that has no tags.</summary>
+    /// <remarks>
+    /// The derived configuration is unchanged by this device — ADR-0020 omits it — which is exactly
+    /// why the report about it cannot be made to depend on a publish.
+    /// </remarks>
+    private static TagCatalog CatalogueWithATaglessDeviceToo()
+    {
+        var baseline = Catalogue(assigned: true);
+        var spare = new Device
+        {
+            Id = Guid.NewGuid(),
+            SiteId = baseline.Sites.First().Id,
+            Name = "Spare skid",
+            DriverKey = "opc-ua",
+            EdgeId = EdgeId,
+        };
+
+        return new TagCatalog(
+            baseline.Tenant,
+            [.. baseline.Sites],
+            [.. baseline.Folders],
+            [.. baseline.Devices, spare],
+            [.. baseline.Tags],
+            null,
+            [.. baseline.Edges]);
     }
 
     private async Task<Subscription> SubscribeAsync(string topic, TimeSpan? window = null)
