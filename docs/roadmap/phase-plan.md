@@ -266,7 +266,7 @@ below, which does not exist yet.
 - OPC UA first, not MQTT — decided in the design conversation, not just
   an implementation detail. The driver contract today is pull (the
   scanner calls `ReadAsync` on `ScanInterval`); OPC UA fits it directly.
-  MQTT/Sparkplug B is push — the broker delivers on the device's own
+  MQTT is push — the broker delivers on the device's own
   schedule, and there is nothing to poll. Forcing MQTT into `ReadAsync`
   would mean buffering the last-received value and replaying it every
   scan, which either re-historizes a value that didn't recur or requires
