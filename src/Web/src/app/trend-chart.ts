@@ -1,5 +1,5 @@
 import { Component, computed, input } from '@angular/core';
-import { HistorySample, plotAcross, trendAxis } from './models';
+import { HistorySample, plotAcross, trendAxis, trendColumns } from './models';
 
 interface Point {
   x: number;
@@ -21,6 +21,11 @@ interface Point {
     } @else {
       <svg [attr.viewBox]="'0 0 ' + width + ' ' + height" class="chart" role="img"
            [attr.aria-label]="'Trend for ' + unitSymbol()">
+        <!-- Behind the line: what each column's readings actually reached. -->
+        @for (bar of envelope(); track bar.x) {
+          <line class="envelope" [attr.x1]="bar.x" [attr.y1]="bar.top"
+                [attr.x2]="bar.x" [attr.y2]="bar.bottom" />
+        }
         @for (segment of segments(); track $index) {
           <polyline class="line" [attr.points]="segment" />
         }
@@ -52,6 +57,9 @@ interface Point {
     /* A neutral ink rather than a hue: the accent and the status colours both mean something here,
        and a third meaning for "this is a line" would only compete with them. */
     .line { fill: none; stroke: var(--chart-line); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+    /* The same ink as the line, thinned: it is the same measurement, shown as a reach rather than a
+       value, and a second colour would read as a second quantity. */
+    .envelope { stroke: var(--chart-line); stroke-width: 1; opacity: 0.35; }
     .tick { font-size: 10px; fill: var(--text-muted); }
     .axis {
       display: flex;
@@ -92,31 +100,60 @@ export class TrendChart {
    * Only Good numeric samples are plotted. A Bad sample carries no value at all, and
    * drawing a gap is honest where interpolating across it would invent a reading.
    */
-  protected readonly points = computed<Point[]>(() => {
-    const usable = this.usableSamples();
+  /**
+   * The readings reduced to one column per pixel, keeping each column's extremes.
+   *
+   * Below one reading per pixel this changes nothing, so a short trend is drawn exactly as it was
+   * before this existed. Above it, `trendColumns` is what stops eight hours of a tag scanned every
+   * second from arriving as a solid block of ink — and it keeps the envelope rather than an average,
+   * so the spike that made somebody open the trend is still there.
+   */
+  protected readonly columns = computed(() =>
+    trendColumns(
+      this.usableSamples().map((sample) => ({
+        time: new Date(sample.sourceTimestampUtc).getTime(),
+        value: sample.value.numeric as number,
+      })),
+      this.from().getTime(),
+      this.to().getTime(),
+      this.width,
+    ),
+  );
 
-    if (usable.length < 2) {
+  protected readonly points = computed<Point[]>(() => {
+    const columns = this.columns();
+
+    if (columns.length < 2) {
       return [];
     }
 
-    const times = usable.map((s) => new Date(s.sourceTimestampUtc).getTime());
-    const values = usable.map((s) => s.value.numeric as number);
-
-    // Against the window asked for, not against the readings held — see `plotAcross`, which is where
-    // that distinction is tested.
-    const from = this.from().getTime();
-    const to = this.to().getTime();
     const low = this.low();
     const span = Math.max(this.high() - low, Number.EPSILON);
     const padding = 8;
+    const y = (value: number) =>
+      this.height - padding - ((value - low) / span) * (this.height - padding * 2);
 
-    return usable.map((_, index) => ({
-      x: plotAcross(times[index], from, to, this.width),
-      y:
-        this.height -
-        padding -
-        ((values[index] - low) / span) * (this.height - padding * 2),
-    }));
+    // The midpoint of each column's envelope carries the line; the envelope itself is drawn behind
+    // it, so neither hides the other.
+    return columns.map((column) => ({ x: column.x, y: y((column.low + column.high) / 2) }));
+  });
+
+  /**
+   * The envelope: for each column, the vertical reach of what was measured in it.
+   *
+   * Drawn only where a column actually spans a range — on a short trend every column holds one
+   * reading, so there is nothing to draw and the chart is the line alone.
+   */
+  protected readonly envelope = computed(() => {
+    const low = this.low();
+    const span = Math.max(this.high() - low, Number.EPSILON);
+    const padding = 8;
+    const y = (value: number) =>
+      this.height - padding - ((value - low) / span) * (this.height - padding * 2);
+
+    return this.columns()
+      .filter((column) => column.high > column.low)
+      .map((column) => ({ x: column.x, top: y(column.high), bottom: y(column.low) }));
   });
 
   /**
@@ -160,15 +197,23 @@ export class TrendChart {
    * holds for a tag scanned once a second and one scanned once a minute alike.
    */
   private gapAfterIndex(): Set<number> {
-    const times = this.usableSamples().map((sample) =>
-      new Date(sample.sourceTimestampUtc).getTime(),
-    );
+    // **Over the COLUMNS, not the samples.** `points()` now holds one point per column, and an index
+    // into the readings would split the line at places that no longer correspond to anything — a
+    // defect introduced and caught in the same sitting, and the same shape as every other one this
+    // project has found: two halves each correct, and the path between them left behind.
+    //
+    // Each column knows when its first and last reading were taken, so the distance between two
+    // columns is the distance from the last reading of one to the first of the next: on a short
+    // trend, where a column holds a single reading, that is exactly what it used to be.
+    const columns = this.columns();
 
-    if (times.length < 3) {
+    if (columns.length < 3) {
       return new Set();
     }
 
-    const deltas = times.slice(1).map((time, index) => time - times[index]);
+    const deltas = columns
+      .slice(1)
+      .map((column, index) => column.firstTime - columns[index].lastTime);
     const sorted = [...deltas].sort((left, right) => left - right);
     const median = sorted[Math.floor(sorted.length / 2)];
     const threshold = Math.max(median * 4, 5_000);

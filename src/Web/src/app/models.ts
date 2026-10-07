@@ -729,6 +729,68 @@ export function plotAcross(time: number, from: number, to: number, width: number
 }
 
 /**
+ * One column of a trend: the extremes of everything that fell inside it.
+ */
+export interface TrendColumn {
+  /** Where across the chart, in the chart's own units. */
+  x: number;
+  /** The lowest and highest values in this column — the envelope, not an average. */
+  low: number;
+  high: number;
+  /** When the first reading in this column was taken, for deciding where a gap falls. */
+  firstTime: number;
+  lastTime: number;
+}
+
+/**
+ * A trend reduced to one column per pixel, keeping the extremes of each.
+ *
+ * **Found by walking the window picker on 2026-10-07**: eight hours of a tag scanned every second is
+ * 28,402 readings drawn into 600 pixels, and what appeared was a solid black block. The feature was
+ * delivered and unusable above its shortest window, which is worse than not having it — a reader
+ * would believe they were looking at something.
+ *
+ * **Min and max per column, never an average and never every n-th reading.** An average flattens the
+ * spike that made somebody open the trend in the first place, and decimation drops it outright: the
+ * one-second excursion that tripped an alarm is exactly the sample a thinning pass throws away. The
+ * envelope keeps it — the column it fell in is drawn from its true low to its true high — which is the
+ * same rule as ADR-0003's elsewhere: show what was measured, never a number nobody read.
+ *
+ * Below one reading per column this does nothing, so a fifteen-minute trend is untouched.
+ */
+export function trendColumns(
+  samples: readonly { time: number; value: number }[],
+  from: number,
+  to: number,
+  width: number,
+): TrendColumn[] {
+  const columns = new Map<number, TrendColumn>();
+
+  for (const sample of samples) {
+    const x = Math.round(plotAcross(sample.time, from, to, width));
+    const existing = columns.get(x);
+
+    if (existing === undefined) {
+      columns.set(x, {
+        x,
+        low: sample.value,
+        high: sample.value,
+        firstTime: sample.time,
+        lastTime: sample.time,
+      });
+      continue;
+    }
+
+    existing.low = Math.min(existing.low, sample.value);
+    existing.high = Math.max(existing.high, sample.value);
+    existing.firstTime = Math.min(existing.firstTime, sample.time);
+    existing.lastTime = Math.max(existing.lastTime, sample.time);
+  }
+
+  return [...columns.values()].sort((left, right) => left.x - right.x);
+}
+
+/**
  * The two ends of a trend's time axis, as a reader can place them.
  *
  * Times alone within a day, dates when it crosses one — the rule `formatGapWindow` arrived at by
