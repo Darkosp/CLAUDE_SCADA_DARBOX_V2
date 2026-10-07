@@ -100,11 +100,22 @@ everything read in it, and the time of the last reading in it.**
   caption has always shown.
 - **`lastUtc` is the newest reading in the bucket.** Freshness is ADR-0003's other half — a trend that
   has stopped growing has to say so — and with buckets it is a fact about the newest `lastUtc` in the
-  window. No other field can answer it: `startUtc` is one bucket old by construction, and a chart that
-  asked it would report a dead instrument as up to a bucket fresh.
+  window. **`startUtc` cannot answer it, because it is not a measurement time at all**: it is the edge
+  of the stretch, derived from the request, and no reading need have happened there. Deciding age on
+  it would put a time nothing was measured at into the sentence *no reading since …*, and would call a
+  trend stale up to a bucket early — seventeen minutes early on a seven-day window.
 - **An empty bucket is absent, not zero.** `GROUP BY` produces no row for a stretch nothing was
   measured in, and nothing is invented for it. A missing bucket is how a gap is drawn, which is the
   same rule as a Bad reading carrying no value rather than a substituted one.
+
+*Corrected 2026-10-07, in place, before anything was implemented against this ADR: the reason given
+above for `lastUtc` was first written the other way round — that a chart deciding age on `startUtc`
+would report a dead instrument as up to a bucket **fresh**. That is backwards, and the test written
+for it refused to fail: `startUtc` is always at or before `lastUtc`, so an age measured from it runs
+ahead of the truth rather than behind it, and the failure is a live trend reported stale early rather
+than a dead one reported alive. The reason `lastUtc` is in the payload is the one now given — a bucket
+edge is not a measurement time, and ADR-0003 does not let a time nothing was measured at stand in for
+the last reading's.*
 
 **5. The grid is anchored to the window the caller asked for.**
 
@@ -170,4 +181,6 @@ that was asked.
   envelope.
 - A trend with a hole in it draws a broken line at that hole, at a window where the old heuristic
   could not have seen it.
+- A trend that has stopped growing says *no reading since* a time that a reading was measured at, and
+  is not declared stale a whole bucket before it is.
 - `points` outside 2..2000 is refused with the value and the range in the message.
