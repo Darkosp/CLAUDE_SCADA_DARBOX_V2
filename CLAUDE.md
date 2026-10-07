@@ -222,10 +222,16 @@ repository's PR #6, `fe829f0`). The cloud's half is committed too:
 `EdgeConfigurationPublisher` publishes them retained on
 `{prefix}/{edgeId}/config`, `GatewayApp` registers it, the cloud Compose file
 turns `EdgeProvisioning` on, and `deploy/cloud/mosquitto/acl` lets
-`scada-gateway` write that topic and each edge read only its own. **What has
-not happened is the walk** — no run has yet had a real broker and a real edge
-accept a derived configuration end to end. Every unfinished item, with what it
-waits for, is in `docs/roadmap/open-work.md`.
+`scada-gateway` write that topic and each edge read only its own. **And it has
+been walked — three times.** *(Corrected 2026-10-07; this said "what has not
+happened is the walk", and that stopped being true on 2026-10-01. `open-work.md`
+§2.1 recorded every walk while this sentence said none had happened, which is the
+shape of staleness that sends a session to redo finished work.)* On 2026-10-01 a
+real Gateway published three revisions and the edge accepted the last; on
+2026-10-02 the same against the real cloud stack over TLS, and then **on two
+hosts**, where the edge started with 0 devices and accepted a revision derived by
+the cloud; and on 2026-10-06 again, inside the write walk. Every unfinished item,
+with what it waits for, is in `docs/roadmap/open-work.md`.
 
 **Three decisions beside it were closed on 2026-10-02**, in the session that
 walked Phase 7's gate on two hosts. Every one is decided, implemented and

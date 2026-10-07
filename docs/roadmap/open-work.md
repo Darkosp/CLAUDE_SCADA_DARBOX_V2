@@ -113,11 +113,16 @@ untouched: both hosts that walk used were x64.
 
 ### 2.0b Phase 8's first slice, written 2026-10-03
 
-**Screens are built and nothing has looked at one.** The storage, the API, the seeder and the
-client renderer all exist with tests behind them; what no run has done is put a screen in front of
-a person. This is the same split Phase 7's gate used between its terminal half and its screen half,
-and it is recorded here for the same reason: the parts a machine can check are checked, and the part
-that needs eyes has not happened.
+**Screens are built, and when this was written nothing had looked at one.** The storage, the API, the
+seeder and the client renderer all exist with tests behind them; what no run had done was put a screen
+in front of a person. This is the same split Phase 7's gate used between its terminal half and its
+screen half, and it was recorded here for the same reason: the parts a machine can check are checked,
+and the part that needs eyes had not happened.
+
+***That has happened since, twice** — 2026-10-05 (§2.0d, four defects) and 2026-10-06 (§2.0k, six). The
+paragraph above is left in the past tense rather than deleted, because what it says about the split is
+still how this project works. Corrected 2026-10-07: it stood in the present tense while §2.0d and
+§2.0k, in this same file, recorded both walks.*
 
 **What the tests do cover** — six Core rules, five storage tests, eleven through the API, and twelve
 on the client's resolver. Three things they pin that are worth knowing are pinned:
@@ -462,11 +467,16 @@ their own), so the frame came off and the screen is now the page's content rathe
 and a pane heading with three children spread its controls apart, leaving Edit stranded in the middle
 of the page, so they are grouped to the right instead.
 
-**What has not happened:** no operator has used any of this, and **nobody has judged it at the size a
-plant screen is** — whether the value is large enough to read from a step back, whether the Bad pill
-stands out at a glance, and whether the near-black accent reads as deliberate rather than as an
-unstyled button are all unjudged. They are the same class of question `phase-8-manual-gate.md` lists,
-and they need the same thing: eyes.
+**What had not happened when this was written:** no operator had used any of this, and nobody had
+judged it at the size a plant screen is — whether the value is large enough to read from a step back,
+whether the Bad pill stands out at a glance, and whether the near-black accent reads as deliberate
+rather than as an unstyled button.
+
+***The size was judged the next day and it found three defects**, each a decision that was right at
+1440 and wrong at 1920: see §2.0j item 1. Corrected 2026-10-07. **What is still unjudged is narrower
+than this paragraph claimed**: whether the Bad pill stands out at a glance and whether the accent reads
+as deliberate are still nobody's answer, and **no operator — as opposed to the people who built it —
+has used any of it.***
 
 **What this deliberately is not:** a dark theme. The tokens make one cheap to add later — a second set
 of values, not a rewrite of the components — and **that is the whole reason the tokens exist**, so a
@@ -536,11 +546,17 @@ comparison."* That is the refusal working exactly as ADR-0027 describes, and it 
 that matches anything cannot also state what it matches. Both the seed and `newComponent` now write a
 fallback with no comparison.
 
-**Still not walked, and the ADR's own "Verified in review by" list is now true rather than half true:**
-an author has not built a symbol from an empty screen through the browser, and **nobody has looked at a
-turning pump on a plant screen** — whether the rotation reads at a glance, whether `stopped` and `bad`
-are distinguishable without reading the word under them, and whether the mapping form is usable by
-somebody who has not read ADR-0027 are all unjudged. They need the same thing everything else in Phase
+**Partly walked since, and the rest is still open.** *(Corrected 2026-10-07; this said nobody had
+looked at a turning pump, and somebody had.)* **The pump animates** — confirmed by a person watching it
+twice: it runs, and it stops by itself when the simulator flips the tag, which is the one fact about the
+symbol that no instrument in this repository could establish, because a screenshot cannot show rotation.
+A symbol has also been built from the picker through a browser, by `tools/check-authoring.mjs` and again
+by hand on 2026-10-07 while closing §2.0l item 1.
+
+**What is still unjudged**, and it needs a person rather than another run: whether the rotation reads at
+a glance, whether `stopped` and `bad` are distinguishable without reading the word under them, and
+whether the mapping form is usable by somebody who has not read ADR-0027. Those are the questions
+`walk-2026-10-06.md` ends with, and **no answers have been written under it.** They need the same thing everything else in Phase
 8 needs: eyes.
 
 **One more thing worth knowing before touching these queries.** The same Dapper trap bit **twice in one
@@ -690,12 +706,28 @@ defects and not open questions: the work exists and nothing has been through it 
   — and the queue under it — from being dropped by the change.
 - **[ADR-0023](../architecture/decisions/0023-routing-writes-to-an-edge.md) — a tag write is routed
   to the edge that reads the device, and is never queued or retained.** Decided and implemented
-  2026-10-03, with its own tests and four mutations recorded. **What has not happened: a write that
-  travels the whole way.** Every joint is now tested and no run has crossed all of them at once — a
-  browser asking the API, the router publishing, a real edge taking it off a real broker, a real
-  device changing, and the result coming back to the operator's screen. That is the walk this owes,
-  and it is the one to do first of the four here, because it is the only one where being wrong means
-  a plant was changed or an operator was told it was.
+  2026-10-03, with its own tests and four mutations recorded. **WALKED 2026-10-06, and it passed** —
+  [the record](walk-2026-10-06.md#walked-by-script-adr-0023s-write-over-a-real-link--2026-10-06). The
+  cloud stack with its broker over TLS, the Modbus simulator on the cloud network, an edge (`plant-b`)
+  with a certificate signed by the walk's own CA, and a device assigned to it: **the API answered HTTP
+  204 in 29 ms and again in 56 ms**, which cannot be a direct connection because the device is only
+  reachable from the edge's network, and the edge logged `Wrote tag … on device Pump Station PLC as the
+  cloud asked`. The cloud answered after the reply, not on a timer.
+
+  *(Corrected 2026-10-07. This said "**what has not happened: a write that travels the whole way**" and
+  called it the one to do first — and it said so for a day after the walk, because the walk was recorded
+  only in `walk-2026-10-06.md` and nothing came back to the register. This file is what a session reads
+  to decide what to do next; a closed item left open here sends somebody to redo it.)*
+
+  **What the walk still does not prove**, and it is the gap Phase 7's own record carries: the broker,
+  the edge and the device were all on one machine over Docker networks. The link was real in that it
+  was TLS to a real broker with real certificates; it was not two pieces of hardware with a cable
+  between them.
+
+  **And one thing it surfaced that is a question rather than a defect:** a `PUT` that omits `edgeId`
+  releases the device from its edge — the documented contract (ADR-0019: assigning and releasing are
+  ordinary edits), but the only signal is a write failing 4.75 s later with a message about DNS, after
+  the cloud has tried to reach a plant device directly. Recorded in §3.
 
   **What the tests now do cover**, so this entry is not read as "nothing is tested":
   - the cloud's half — the router matching a result to the call waiting for it, the API answering
@@ -1133,6 +1165,7 @@ decided inside an implementation pull request.
 | Filtering the journal (tag, event type, time) | same place | **closed 2026-10-05** — server-side, by tag and by event type; see §2.0e |
 | Routing a tag write to an edge-assigned device | ADR-0019, Consequences | **closed 2026-10-03 by [ADR-0023](../architecture/decisions/0023-routing-writes-to-an-edge.md)** — see §2.0 for what it still owes a walk |
 | The Modbus 5 s response bound: driver constant or per-device setting | `phase-plan.md`, Phase 7 note | **closed 2026-10-05** — a per-device `responseTimeoutSeconds` setting, defaulting to 5 s; see §2.0f |
+| **An edit that silently releases a device from its edge** | found by the write walk, 2026-10-06; §2.0 | **a decision about the API's shape.** A `PUT` of a device that omits `edgeId` releases it, which is ADR-0019's documented contract — *"assigning and releasing are ordinary edits of the device"* — and a full replacement is a defensible REST shape. What the walk showed is that **the design makes it easy to do by accident**: changing one field means resending every other, and the only signal that an assignment was dropped is a write failing 4.75 s later with a message about DNS, after the cloud has tried to reach a plant device **directly**. The consequence is on the write path, which is the one path where being wrong means a plant was changed or an operator was told it was. Options span a PATCH, an explicit release endpoint, and leaving it and saying so louder — all three are ADR territory |
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
 | TimescaleDB continuous aggregates and native compression | ADR-0006 | the legal review ADR-0006 asks for; the code deliberately does not use them |
 | Rollback of a schema migration (down-scripts) | ADR-0012, ADR-0014, `phase-plan.md` Phase 6 | **stays forward-only by decision**; the guide's backup-and-restore is the answer |
