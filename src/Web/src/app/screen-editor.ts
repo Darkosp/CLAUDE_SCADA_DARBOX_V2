@@ -1,4 +1,4 @@
-import { Component, computed, effect, input, linkedSignal, output } from '@angular/core';
+import { Component, computed, effect, input, linkedSignal, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Alarm, HistorySample } from './models';
 import { TagSnapshot, TagValue } from './tag';
@@ -6,6 +6,7 @@ import { ScreenView } from './screen-view';
 import {
   addComponent,
   changeComponent,
+  dropPosition,
   groupIntoRows,
   moveComponent,
   newComponent,
@@ -126,8 +127,29 @@ const WIDEST = 12;
         @for (row of rows(); track row.rowIndex) {
           <div class="row">
             @for (cell of row.components; track cell.id) {
-              <div class="cell" [style.grid-column]="'span ' + cell.columnSpan">
-                <p class="cell-head">
+              <!--
+                Dragging is an ADDITION to the buttons below, never a replacement. A screen can still
+                be built entirely from the keyboard, because a pointer gesture is the one kind of
+                control a person may simply not be able to make — and because the buttons remain the
+                better tool for the one-place adjustment that dragging makes fiddly.
+
+                **The heading is the handle and the whole cell is the target**, which is the pair that
+                makes this workable: a cell full of inputs cannot itself be draggable without taking
+                text selection away from every field in it, while a target the size of the cell is
+                what an author is actually aiming at.
+              -->
+              <div class="cell"
+                   [style.grid-column]="'span ' + cell.columnSpan"
+                   [class.dragging]="dragging() === cell.id"
+                   [class.drop-before]="dropSide(cell.id) === 'before'"
+                   [class.drop-after]="dropSide(cell.id) === 'after'"
+                   (dragover)="dragOver(cell.id, $event)"
+                   (dragleave)="dragLeave(cell.id)"
+                   (drop)="dropOn(cell.id, $event)">
+                <p class="cell-head" draggable="true"
+                   (dragstart)="startDrag(cell.id, $event)"
+                   (dragend)="endDrag()">
+                  <span class="grip" aria-hidden="true">⠿</span>
                   <strong>{{ labelFor(cell.kind) }}</strong>
                   @if (cell.tagId) {
                     <span class="path">{{ pathOf(cell.tagId) }}</span>
@@ -354,6 +376,25 @@ const WIDEST = 12;
     }
     .cell-head { margin: 0 0 6px; font-size: var(--text-base); }
     .path { color: var(--text-muted); margin-left: 6px; }
+    /* Dragging. The heading is the handle, so it says so with the cursor as well as with the grip;
+       everything else here is the insertion line, which is the only thing that tells an author where
+       a drop will land before they commit to it. */
+    .cell-head { cursor: grab; }
+    .cell-head:active { cursor: grabbing; }
+    .grip {
+      color: var(--text-muted);
+      font-size: var(--text-xs);
+      line-height: 1;
+      letter-spacing: -1px;
+      margin-right: 2px;
+    }
+    /* Faded rather than hidden: a cell that vanished while held would leave a gap the author then
+       reads as the place it is going, which is the one thing the line is for. */
+    .cell.dragging { opacity: 0.4; }
+    /* An inset box-shadow rather than a border, because a border would change the cell's size and
+       shove its neighbours sideways at the moment the author is aiming at one. */
+    .cell.drop-before { box-shadow: inset 3px 0 0 0 var(--accent); }
+    .cell.drop-after { box-shadow: inset -3px 0 0 0 var(--accent); }
     .cell-controls { margin: 6px 0 0; display: flex; gap: 4px; align-items: center; }
     .cell-controls button { padding: 1px 7px; }
     .span { font-size: var(--text-xs); color: var(--text-muted); }
@@ -768,6 +809,91 @@ export class ScreenEditor {
 
   protected retitle(componentId: string, title: string): void {
     this.edit((components) => changeComponent(components, componentId, { title }));
+  }
+
+  // ---- dragging (Phase 8's remaining authoring item) -------------------------
+  //
+  // Thin on purpose. The only arithmetic is `dropPosition` in `screen.ts`, where it is tested without
+  // a browser; everything here is which component is in hand and which half of which cell the pointer
+  // is over. A drop handler that worked out places itself is one that can only be checked by dragging.
+
+  /** The component being dragged, or null. */
+  protected readonly dragging = signal<string | null>(null);
+
+  /** The cell the pointer is over and which half of it, so the insertion line has somewhere to go. */
+  private readonly over = signal<{ id: string; side: 'before' | 'after' } | null>(null);
+
+  /** Which side of this cell the drop would land on, or null when it is not the one under the pointer. */
+  protected dropSide(cellId: string): 'before' | 'after' | null {
+    const over = this.over();
+    return over !== null && over.id === cellId && this.dragging() !== cellId ? over.side : null;
+  }
+
+  protected startDrag(componentId: string, event: DragEvent): void {
+    this.dragging.set(componentId);
+
+    // Some browsers refuse to start a drag at all without data on it, and `move` is what this is:
+    // the component is not copied, it changes place.
+    event.dataTransfer?.setData('text/plain', componentId);
+
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+    }
+  }
+
+  protected endDrag(): void {
+    // Cleared on dragend as well as on drop, because a drag abandoned outside any cell never drops
+    // and would otherwise leave an insertion line standing on the screen with nothing in hand.
+    this.dragging.set(null);
+    this.over.set(null);
+  }
+
+  protected dragOver(cellId: string, event: DragEvent): void {
+    if (this.dragging() === null) {
+      return;
+    }
+
+    // Without this the browser refuses the drop, silently: `dragover` defaults to "not a drop target".
+    event.preventDefault();
+
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const side = event.clientX < box.left + box.width / 2 ? 'before' : 'after';
+
+    this.over.set({ id: cellId, side });
+  }
+
+  protected dragLeave(cellId: string): void {
+    // Only if it is still this cell: `dragleave` on the old one can arrive after `dragover` on the
+    // new one, and clearing unconditionally makes the line flicker as the pointer crosses a border.
+    if (this.over()?.id === cellId) {
+      this.over.set(null);
+    }
+  }
+
+  protected dropOn(cellId: string, event: DragEvent): void {
+    event.preventDefault();
+
+    const dragged = this.dragging();
+    const side = this.over()?.side ?? 'before';
+
+    this.endDrag();
+
+    if (dragged === null) {
+      return;
+    }
+
+    this.edit((components) => {
+      const where = dropPosition(components, dragged, cellId, side);
+
+      // Null is a drop that cannot mean anything — onto itself, or onto something no longer here.
+      // The set is returned untouched rather than renumbered, so an author who picks a component up
+      // and puts it back has not changed their screen.
+      return where === null ? [...components] : moveComponent(components, dragged, where.rowIndex, where.at);
+    });
   }
 
   protected reorder(componentId: string, direction: -1 | 1): void {
