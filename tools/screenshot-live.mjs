@@ -185,6 +185,47 @@ for (const [name, label] of [
   }
 }
 
+// The trend, which is the one surface whose *data* a later change moved (ADR-0029): one tag selected,
+// then every window the picker offers, because both the caption and the envelope depend on how much of
+// the window holds readings at all. A 15-minute window and a 7-day one are the two ends of that.
+if (await evaluate(clickButton('Browse'))) {
+  await sleep(2200);
+
+  const picked = await evaluate(`
+    (() => {
+      const tag = document.querySelector('button.tag');
+      if (!tag) return false;
+      tag.click();
+      return true;
+    })()
+  `);
+
+  if (picked) {
+    await sleep(2500);
+
+    for (const window of ['15 minutes', '1 hour', '8 hours', '24 hours', '7 days']) {
+      // Driven the way a person drives it: the select's own setter, then the event Angular listens for.
+      // Assigning `.value` alone leaves the model untouched and the chart on its previous window.
+      const chosen = await evaluate(`
+        (() => {
+          const select = document.querySelector('select[name="trendWindow"]');
+          if (!select) return false;
+          Object.getOwnPropertyDescriptor(Object.getPrototypeOf(select), 'value')
+            .set.call(select, ${JSON.stringify(window)});
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        })()
+      `);
+
+      if (chosen) {
+        // Long enough for the fetch and for the chart to draw: the same wait the picker's own walk used.
+        await sleep(3000);
+        await shot(`live-trend-${window.replace(/ /g, '-')}`);
+      }
+    }
+  }
+}
+
 // The write dialog: the newest surface, and the only one that changes a plant (ADR-0026).
 if (await evaluate(clickButton('Screens'))) {
   await sleep(2200);

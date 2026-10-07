@@ -1313,13 +1313,43 @@ value, that a missing bucket breaks the line exactly, that columns come back in 
 behind the curve are the sum of the counts, that a raw answer is refused rather than reduced here, and
 that a trend's age is its newest reading rather than its bucket edge.
 
-**What has not happened, and it is the gap every screen in this project carries: nobody has looked at a
-trend drawn from buckets.** The caption now carries three things — the readings, the points they were
-drawn as, and the range the readings reached — and a seven-day window's envelope has never been seen by
-an eye. The arithmetic is tested and what the chart draws is asserted, but whether *"28,402 readings ·
-600 points · 4.10–9.90 bar"* reads as information or as clutter, and whether a bucket 1008 s wide draws
-a curve or a comb, are judgements that need someone at a screen. The walk costs a stack built from this
-commit and `tools/screenshot-live.mjs`, which is how this client's look was reviewed the first time.
+**Walked, by eye, on 2026-10-07 — and it found a defect that had nothing to do with the reduction and
+had been on screen since the chart was written.** The record is
+[`walk-2026-10-07.md`](walk-2026-10-07.md#the-trend-walked-by-eye--2026-10-07-second-sitting): a Gateway
+from the branch against a scratch database, `ng serve`, `tools/screenshot-live.mjs` extended with the
+step it lacked (select a tag, then shoot every window the picker offers), and 169,057 seeded readings
+carrying a one-hour outage, ten minutes of Bad and one four-second excursion.
+
+**The chart was not drawn where its axis was.** The element is 1482×162 px, the `viewBox` was the
+constant `0 0 600 160`, and with SVG's default `preserveAspectRatio` the drawing was scaled to fit the
+*shorter* side and centred — so the curve sat in a 607 px strip in the middle of the card while the axis
+under it ran edge to edge, the value ticks floated mid-chart, and **every reading was placed at the wrong
+time by the width of the empty band**: about seven hours on a day-long window. Green tests, clean build,
+correct buckets, and a picture that lied about when things happened. Fixed by measuring the element and
+drawing in its coordinates (verified by re-probing the DOM: `viewBox` `0 0 1480 160`, first point at
+x=407, the hole in the line landing at 16 % — where a Bad stretch twenty hours into a day window
+belongs), and pinned by `src/Web/tests/trend-chart-size.test.mjs`.
+
+**The fix took two attempts**: the first measured once in `afterNextRender`, and empty history draws
+words rather than a chart, so there was no SVG to measure and the viewBox stayed a constant. The
+measurement is bound to the element now, and the test says why.
+
+**What the walk answered, and what it left:**
+- **Answered: the caption reads as information.** *"85885 readings · 592 points · 3.80–9.70 bar"* is
+  legible at 1920 and reads; the envelope at a 1008-second bucket is a band with the line through it
+  rather than a comb; a hole is drawn as a hole; and a 7-day window shows two days of readings in the
+  right-hand 28 % with five days of honest emptiness beside them.
+- **Open, and small: the low value tick sits on the curve**, because the ticks are drawn inside the plot
+  at its left edge and the reading there is the lowest one. Crowded rather than wrong.
+- **Open: the budget is 600 points while the card is ~1480 px wide.** The picture is right and the
+  resolution is stated, but the curve is built from fewer points than it has pixels. Asking for the
+  measured width needs the budget to be **the widest trend of a tag on the screen**, because one fetch
+  serves every chart bound to one tag — a decision about the fetch, not a one-line change.
+- **Not looked at: a trend inside a screen tile.** The seeded screen carries status and alarms and no
+  `trend` component, so only the Browse pane was seen. The tile is the other direction of the same
+  defect and the same measurement governs it, but it was not looked at.
+- **Not the product's own stack**: `localhost:8090` still runs image `504c1d3`, built before this change.
+  The walk ran a Gateway from the branch against its own database, with seeded data rather than a plant's.
 
 **Five mutations were watched, each failing its own named test with a control green beside it**: the
 three non-finite comparisons in the query (failure: the bucket's low was `-∞`), the quality filter

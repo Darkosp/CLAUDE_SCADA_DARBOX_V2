@@ -412,8 +412,23 @@ test with a control green beside it: the non-finite filter, the quality filter, 
 time, and the refusal of an out-of-range `points`. One thing this did **not** fix: the query still reads every row
 to group it, so this removes bytes from the wire and not work from the database.
 
+**And it was walked, by eye, on 2026-10-07 — and the walk found a defect that had nothing to do with the
+reduction and had been on screen since the chart was written.** The record is `walk-2026-10-07.md`'s second
+sitting. **The chart was not drawn where its axis was**: the element is 1482×162 px, the `viewBox` was the
+constant `0 0 600 160`, and SVG's default `preserveAspectRatio` scales such a drawing to fit the *shorter* side
+and centres it — so the curve sat in a 607 px strip in the middle of the card while the axis under it ran edge
+to edge, the value ticks floated mid-chart, and **every reading was placed at the wrong time by the width of the
+empty band**: about seven hours on a day-long window. Green tests, a clean build, correct buckets, and a picture
+that lied about when things happened — found by looking, and findable only that way. Fixed by measuring the
+element and drawing in its coordinates (verified by re-probing the live DOM), and pinned by
+`src/Web/tests/trend-chart-size.test.mjs`. **The fix's first attempt failed and that is pinned too**: it measured
+once in `afterNextRender`, and empty history draws words instead of a chart, so there was no SVG to measure. Also
+answered by the walk: the three-item caption reads as information rather than as clutter, which was §2.6's open
+judgement. Also left open by it: the low tick sits on the curve at the plot's bottom left, the fetch budget is
+600 points against a ~1480 px card, and a trend inside a screen tile was not looked at.
+
 **The suite is green and its baseline is `open-work.md` §2.4–§2.6, with the current numbers measured on
-2026-10-07 after ADR-0029: 648 .NET across seven projects with 0 skipped, and the client's 222.**
+2026-10-07 after ADR-0029 and its walk: 648 .NET across seven projects with 0 skipped, and the client's 227.**
 *(It read 638 and 217 after PR #6 and 636 and 205 after PR #5, both the same day, and 586 and 162 before
 that. **The PR #6 numbers were measured and never written down** — the handover note carried them and no
 document did, which is why this sentence now names all four rather than implying the suite stood still
