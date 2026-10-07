@@ -95,10 +95,14 @@ public sealed class SignInLockoutTests : IClassFixture<GatewayTestHost>
         Assert.Contains("object-src 'none'", policy);
         Assert.Contains("base-uri 'self'", policy);
 
-        // **And `script-src` is deliberately absent** (ADR-0031 §8): the client boots its theme with an
-        // inline script, so a policy naming it without its hash would break the first paint. If somebody
-        // adds it, this test is where they have to say what they did about that.
-        Assert.DoesNotContain("script-src", policy);
+        // **`script-src` is set, and the inline theme script is allowed by hash rather than by
+        // `'unsafe-inline'`** (ADR-0031 §8). The host serves no built client, so there is no inline script
+        // of ours here and the source is the bare `'self'` — which is the case that has to be right, because
+        // a hash for a script that is not there allows nothing and looks like a policy. What the hashing
+        // itself does is pinned in ScriptHashTests, where the expected digest is computed from the script's
+        // own text rather than copied from a run.
+        Assert.Contains("script-src 'self'", policy);
+        Assert.DoesNotContain("unsafe-inline", policy);
 
         Assert.NotNull(Header(response, "Permissions-Policy"));
     }

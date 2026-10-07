@@ -179,22 +179,26 @@ public static class GatewayApp
             }
         }
 
+        // **`script-src` is computed from the page the Gateway itself serves** (ADR-0031 §8). The client
+        // boots the stored theme with an inline script so the dark theme applies before the first paint
+        // (ADR-0027), and a policy naming `script-src` without that script's hash breaks the first paint
+        // while every test that does not look at the browser still passes. Read once, at startup: the file
+        // is replaced only by an upgrade, and an upgrade restarts the Gateway.
+        var clientIndex = Path.Combine(app.Environment.WebRootPath ?? string.Empty, "index.html");
+        var scriptSource = ScriptHashes.ScriptSourceFor(
+            File.Exists(clientIndex) ? File.ReadAllText(clientIndex) : null);
+
         // **Headers that cost nothing and close whole classes of attack** (ADR-0031 §8): the interface
         // cannot be framed by another site, a response cannot be sniffed into executing, no referrer leaks
         // out of a plant, and the device APIs a console has no use for are closed.
-        //
-        // **`script-src` is deliberately absent.** index.html boots the stored theme with an inline script
-        // so the dark theme applies before the first paint (ADR-0027); `script-src 'self'` would break it
-        // and `'unsafe-inline'` would be a directive that does not do what it is named for. Setting it
-        // properly means hashing the served file, which is its own slice — so this is a policy that is
-        // honest about what it covers rather than one that looks like more than it is.
         app.Use(async (context, next) =>
         {
             var headers = context.Response.Headers;
             headers["X-Content-Type-Options"] = "nosniff";
             headers["Referrer-Policy"] = "no-referrer";
             headers["X-Frame-Options"] = "DENY";
-            headers["Content-Security-Policy"] = "frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
+            headers["Content-Security-Policy"] =
+                $"frame-ancestors 'none'; object-src 'none'; base-uri 'self'; script-src {scriptSource}";
             headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), usb=(), payment=()";
 
             await next().ConfigureAwait(false);
