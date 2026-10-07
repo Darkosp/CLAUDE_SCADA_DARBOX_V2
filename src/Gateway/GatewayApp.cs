@@ -229,6 +229,7 @@ public static class GatewayApp
         MapTagReads(app);
         app.MapAuthApi();
         app.MapUserApi();
+        app.MapAuditApi();
         app.MapConfigurationApi();
         app.MapAlarmApi();
         app.MapTemplateApi();
@@ -364,6 +365,10 @@ public static class GatewayApp
         services.AddSingleton(securityStore);
         services.AddSingleton<ISecurityStore>(securityStore);
         services.AddSingleton<IAuditLog>(securityStore);
+
+        // The same object, behind the read contract only (ADR-0032): a component that is handed the log can
+        // append and cannot read, which is the direction the trail is written in.
+        services.AddSingleton<IAuditTrail>(securityStore);
         services.AddSingleton(userDirectorySource);
         services.AddSingleton<SessionManager>();
         services.AddSingleton<Authenticator>();

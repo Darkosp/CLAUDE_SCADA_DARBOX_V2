@@ -5,6 +5,9 @@ import {
   Alarm,
   AlarmDefinition,
   AlarmEvent,
+  AuditFilters,
+  AuditPage,
+  auditQuery,
   DeviceTemplate,
   DriverShape,
   Edge,
@@ -231,6 +234,18 @@ export class Api {
 
   alarms(): Promise<Alarm[]> {
     return this.get<Alarm[]>('/api/alarms');
+  }
+
+  // ---- the audit trail (Admin, ADR-0032) ----------------------------------
+
+  /**
+   * The trail, newest first, with how many rows these filters match in total.
+   *
+   * Admin only, and that is the server's rule rather than this client's: the Gateway answers 403 to
+   * anybody else, so hiding the screen is a courtesy and not the protection.
+   */
+  audit(filters: AuditFilters = {}): Promise<AuditPage> {
+    return this.get<AuditPage>(`/api/audit?${auditQuery(filters)}`);
   }
 
   acknowledge(definitionId: string): Promise<unknown> {

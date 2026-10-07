@@ -1121,3 +1121,96 @@ export function noDataNote(
 
   return `No data since ${since}`;
 }
+
+// ---- the audit trail (ADR-0032) ---------------------------------------------------------------
+
+export interface AuditFilters {
+  /** An action *prefix*: `auth.` asks for the family, `auth.login` for one action in it. */
+  readonly action?: string | null;
+  readonly actor?: string | null;
+  readonly from?: string | null;
+  readonly to?: string | null;
+  /** The cursor: return rows older than this id (ADR-0032 §2). */
+  readonly before?: number | null;
+  readonly limit?: number;
+}
+
+export interface AuditEntry {
+  id: number;
+  occurredAtUtc: string;
+  actorUserId: string | null;
+  /** The actor's name, resolved by the server when the row is read — so an ex-account still reads as a person. */
+  actor: string | null;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  /** The writer's opaque document, as text. Never parsed here (ADR-0032 §6). */
+  detail: string;
+}
+
+export interface AuditPage {
+  entries: AuditEntry[];
+  total: number;
+}
+
+/**
+ * The query string a set of trail filters becomes.
+ *
+ * Pure, and here rather than in `api.ts`, for the same reason `journalQuery` is: `api.ts` injects
+ * Angular and cannot be loaded by the Node test runner, and this is the part worth testing. **The rule
+ * that matters is the absent filter**: `action=` with nothing after it is a filter matching nothing, so
+ * an Admin who had typed nothing would be shown an empty trail and would read it as a system that had
+ * done nothing — which is the one thing a trail must never look like.
+ */
+export function auditQuery(filters: AuditFilters = {}): string {
+  const query = new URLSearchParams();
+  query.set('limit', String(filters.limit ?? 200));
+
+  const action = filters.action?.trim();
+  if (action) {
+    query.set('action', action);
+  }
+
+  if (filters.actor) {
+    query.set('actor', filters.actor);
+  }
+
+  if (filters.from) {
+    query.set('from', filters.from);
+  }
+
+  if (filters.to) {
+    query.set('to', filters.to);
+  }
+
+  // `before` is a cursor and not a filter: id 0 is not a row, and 0 is falsy, so it is tested for
+  // presence rather than truth. A cursor sent as `before=0` would ask for nothing at all.
+  if (filters.before !== undefined && filters.before !== null) {
+    query.set('before', String(filters.before));
+  }
+
+  return query.toString();
+}
+
+/**
+ * What the reader is looking at, said plainly: *the newest 200 of 4,312* (ADR-0032 §3).
+ *
+ * A capped page that does not say it is capped is the journal's own lesson — a limit nobody mentions
+ * looks like a quiet night — and this is the sentence that stops it.
+ */
+export function auditPageNote(page: AuditPage): string {
+  const shown = page.entries.length;
+
+  if (page.total === 0) {
+    return 'Nothing recorded matches.';
+  }
+
+  if (shown === 0) {
+    return `Nothing older than the last row shown; ${page.total} in the trail for these filters.`;
+  }
+
+  return shown >= page.total
+    ? `${page.total} ${page.total === 1 ? 'entry' : 'entries'}, all of them.`
+    : `The newest ${shown} of ${page.total} entries — see the older ones below.`;
+}
+

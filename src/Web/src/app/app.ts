@@ -33,6 +33,8 @@ import {
   TrendSeries,
   TREND_WINDOWS,
   TrendWindow,
+  auditPageNote,
+  AuditEntry,
   declarationOf,
   describeReason,
   describeSourceEvent,
@@ -267,7 +269,7 @@ export class App implements OnInit {
 
   /** Which part of the app is on screen. Templates, Users and Edges exist only for an Admin. */
   protected readonly view = signal<
-    'screens' | 'browse' | 'templates' | 'users' | 'journal' | 'edges'
+    'screens' | 'browse' | 'templates' | 'users' | 'journal' | 'audit' | 'edges'
   >('screens');
 
   /** This Site's operator screens (ADR-0024), and which one is open. */
@@ -315,6 +317,18 @@ export class App implements OnInit {
   protected readonly journalTagIds = signal<readonly string[]>([]);
 
   protected readonly journalTypes = signal<readonly string[]>([]);
+
+  // ---- the audit trail (Admin, ADR-0032) ----------------------------------
+
+  protected readonly auditEntries = signal<AuditEntry[]>([]);
+  protected readonly auditTotal = signal(0);
+  protected readonly auditAction = signal('');
+  protected readonly auditLoading = signal(false);
+
+  /** *The newest 200 of 4,312* — the sentence that stops a capped page passing for a whole trail. */
+  protected readonly auditNote = computed(() =>
+    auditPageNote({ entries: this.auditEntries(), total: this.auditTotal() }),
+  );
 
   /** Every event type, for the picker. The engine's own are included — see ALARM_EVENT_TYPES. */
   protected readonly journalEventTypes = ALARM_EVENT_TYPES;
@@ -1633,6 +1647,62 @@ export class App implements OnInit {
       this.report(error);
     } finally {
       this.journalLoading.set(false);
+    }
+  }
+
+  /** Narrows the journal to one tag, or widens it back when given nothing. */
+  // ---- the audit trail (Admin, ADR-0032) ----------------------------------
+
+  /** Opens the trail and reads its first page. Admin only, by the server's own rule. */
+  protected async showAudit(): Promise<void> {
+    this.view.set('audit');
+    await this.loadAudit(this.auditAction(), null, false);
+  }
+
+  /** Narrows the trail to an action family — `auth.` asks for everything under it. */
+  protected filterAuditByAction(action: string): void {
+    this.auditAction.set(action);
+    void this.loadAudit(action, null, false);
+  }
+
+  /**
+   * The next page, older than the last row on screen.
+   *
+   * The cursor is the row's **id** rather than its time, because `occurred_at` is not unique — the
+   * server orders by id for exactly that reason (ADR-0032 §2), and a client paging by timestamp would
+   * ask for a boundary that two rows can share.
+   */
+  protected async loadOlderAudit(): Promise<void> {
+    const oldest = this.auditEntries().at(-1)?.id ?? null;
+
+    if (oldest !== null) {
+      await this.loadAudit(this.auditAction(), oldest, true);
+    }
+  }
+
+  /** What a row is about, short enough for a table cell. */
+  protected auditEntity(entry: AuditEntry): string {
+    if (!entry.entityType) {
+      return '—';
+    }
+
+    return entry.entityId ? `${entry.entityType} ${entry.entityId.slice(0, 8)}` : entry.entityType;
+  }
+
+  private async loadAudit(action: string, before: number | null, append: boolean): Promise<void> {
+    this.auditLoading.set(true);
+
+    try {
+      const page = await this.api.audit({ action, before });
+
+      // Replaced on a fresh read and appended on a cursor read — the rule the screens' history follows,
+      // and for the same reason: a merge would leave a row on screen that the filters no longer match.
+      this.auditEntries.set(append ? [...this.auditEntries(), ...page.entries] : page.entries);
+      this.auditTotal.set(page.total);
+    } catch (error) {
+      this.report(error);
+    } finally {
+      this.auditLoading.set(false);
     }
   }
 

@@ -8,7 +8,7 @@ using ScadaDarbox.Core.Security;
 namespace ScadaDarbox.Persistence.TimescaleDb;
 
 /// <summary>Users, Site roles, sessions and the audit trail (ADR-0011), over Dapper (ADR-0008).</summary>
-public sealed class SecurityStore : ISecurityStore, IAuditLog
+public sealed class SecurityStore : ISecurityStore, IAuditLog, IAuditTrail
 {
     private const string UniqueViolation = "23505";
     private const string ForeignKeyViolation = "23503";
@@ -332,6 +332,86 @@ public sealed class SecurityStore : ISecurityStore, IAuditLog
             cancellationToken: cancellationToken))
             .ConfigureAwait(false);
     }
+
+    public async Task<AuditTrailPage> ReadAsync(AuditTrailQuery query, CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Every filter is "absent means no narrowing" in one statement rather than assembled from strings:
+        // a query built by concatenation is where an injection lives, and this one is reachable by an Admin
+        // only — which is a reason it would never be found, not a reason it is safe.
+        //
+        // The action filter is `starts_with` rather than `LIKE @action || '%'`, and that is worth a line:
+        // LIKE gives `%` and `_` in a reader's input a meaning they did not ask for, so `auth_` would match
+        // `auth.` and a filter would quietly answer a wider question than the one typed.
+        //
+        // The actor is joined to `app_user` and NOT to `app_user_active` (ADR-0032 §5): reading through the
+        // soft-delete view would print an ex-employee's actions as nobody's, which is the opposite of what
+        // an investigation needs.
+        const string Filters = """
+            WHERE (@from IS NULL OR a.occurred_at >= @from)
+              AND (@to IS NULL OR a.occurred_at < @to)
+              AND (@action IS NULL OR starts_with(a.action, @action))
+              AND (@actor IS NULL OR a.actor_user_id = @actor)
+              AND (@entityType IS NULL OR a.entity_type = @entityType)
+              AND (@entityId IS NULL OR a.entity_id = @entityId)
+              AND (@before IS NULL OR a.id < @before)
+            """;
+
+        // **Reading is by id, not by time** (ADR-0032 §2): `occurred_at` is not unique — ADR-0031's lock
+        // writes two rows in the same millisecond — so a page boundary on it would repeat a row or drop one,
+        // and a reader cannot tell a dropped entry from one that never existed.
+        await using var page = _dataSource.CreateCommand(
+            $"""
+            SELECT a.id, a.occurred_at, a.actor_user_id, u.username, a.action, a.entity_type, a.entity_id,
+                   a.detail::text
+            FROM audit_log a
+            LEFT JOIN app_user u ON u.id = a.actor_user_id
+            {Filters}
+            ORDER BY a.id DESC
+            LIMIT @limit
+            """);
+
+        await using var count = _dataSource.CreateCommand($"SELECT count(*) FROM audit_log a {Filters}");
+
+        foreach (var command in new[] { page, count })
+        {
+            Add(command, "from", NpgsqlDbType.TimestampTz, query.FromUtc);
+            Add(command, "to", NpgsqlDbType.TimestampTz, query.ToUtc);
+            Add(command, "action", NpgsqlDbType.Text, query.ActionPrefix);
+            Add(command, "actor", NpgsqlDbType.Uuid, query.ActorUserId);
+            Add(command, "entityType", NpgsqlDbType.Text, query.EntityType);
+            Add(command, "entityId", NpgsqlDbType.Uuid, query.EntityId);
+            Add(command, "before", NpgsqlDbType.Bigint, query.BeforeId);
+        }
+
+        page.Parameters.AddWithValue("limit", NpgsqlDbType.Integer, query.Limit);
+
+        var entries = new List<StoredAuditEntry>();
+        await using (var reader = await page.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                entries.Add(new StoredAuditEntry(
+                    reader.GetInt64(0),
+                    reader.GetFieldValue<DateTimeOffset>(1),
+                    reader.IsDBNull(2) ? null : reader.GetGuid(2),
+                    reader.IsDBNull(3) ? null : reader.GetString(3),
+                    reader.GetString(4),
+                    reader.IsDBNull(5) ? null : reader.GetString(5),
+                    reader.IsDBNull(6) ? null : reader.GetGuid(6),
+                    reader.GetString(7)));
+            }
+        }
+
+        // The total is what keeps a capped page from passing for a whole trail (ADR-0032 §3).
+        var total = await count.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as long? ?? 0;
+
+        return new AuditTrailPage(entries, total);
+    }
+
+    private static void Add(NpgsqlCommand command, string name, NpgsqlDbType type, object? value) =>
+        command.Parameters.Add(new NpgsqlParameter(name, type) { Value = value ?? DBNull.Value });
 
     public async Task AppendAsync(AuditEntry entry, CancellationToken cancellationToken)
     {
