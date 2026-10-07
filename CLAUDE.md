@@ -296,8 +296,11 @@ Two decisions shape the palette. **The accent is near-black, without hue**, beca
 colours here are the semantic status ones — Good, Uncertain or Stale, Bad, no reading (ADR-0003) — and
 a coloured accent would make "green" mean two things at once on a screen whose whole job is to say
 whether a number can be trusted. And **the direction is soft and neutral**: shadows rather than borders,
-cool greys, layered surfaces. A dark theme is deliberately *not* built, but the tokens make one a
-second set of values rather than a restyle — which is the main reason they exist.
+cool greys, layered surfaces. A dark theme was deliberately *not* built that day, but the tokens were
+meant to make one a second set of values rather than a restyle — and **that claim was tested the
+following day and held**: the dark theme below is one `[data-theme='dark']` block in `src/styles.css`
+and nothing else. *(Corrected 2026-10-07; this said a dark theme "is deliberately not built", which
+stopped being true on 2026-10-06.)*
 
 **How it was reviewed matters as much as what changed: by looking at it.** Three proposals were built
 and shown side by side, one was chosen, and then every view was captured from the **running application,
@@ -307,11 +310,59 @@ left-aligned data and its timestamps wrapped onto two lines, and both it and the
 **bare text on the page background** because the stylesheet's card rule matched only `aside, section`
 while both are `<main>`. Looking again then caught two things the first pass had introduced: a shadow
 inside a shadow on the screens view, and a pane heading whose buttons spread apart with one stranded
-mid-page. `open-work.md` §2.0i records all of it, including that **nobody has yet judged this at the
-size a plant screen is.**
+mid-page. `open-work.md` §2.0i records all of it. It also recorded that nobody had yet judged this at
+the size a plant screen is — **that was done on 2026-10-06 and it found three defects; see the next
+paragraph.**
 
-**The suite is green and its baseline is `open-work.md` §2.4–§2.5: 568 .NET
-across seven projects with 0 skipped, and the client's 124.** It was *not* green
+**The screens were looked at on a 1920×1080 panel on 2026-10-06, a dark theme was built, and ADR-0027
+added the sixth component kind — a symbol.** `open-work.md` §2.0j has all of it. The three defects the
+panel size found were each **a decision that was right at 1440 and wrong at 1920**: a tile captioned
+with the full display path (it carries the tag's name now, the path in a tooltip), every tile printing
+its source timestamp (it appears now only when a reading is *not* fresh, so its presence is the signal),
+and a fixed 1.7rem reading. **The dark theme touched no component** — it is one `[data-theme='dark']`
+block of values, applied before the first paint so there is no flash — and a contrast audit found three
+real AA failures, in both themes, now locked by `src/Web/tests/theme-contrast.test.mjs`. One of them was
+fixed by **deleting** `--text-faint` rather than darkening it: a near-duplicate that fails a contrast
+check is a duplicate.
+
+**ADR-0027 is the first time ADR-0024's "the answer is a new ADR adding a kind" has been acted on.**
+Read it before touching symbols. Three decisions carry the weight: a symbol's mapping is an **ordered
+list of declarative comparisons, not an expression**, because an expression is a language and a language
+needs a parser and a story about what an operator may type; **quality overrides the state**, so a tag
+that has gone Bad never draws a turning pump, because a turning pump is a claim about the world; and **a
+continuing value never drives an animation**.
+
+**That work was walked, and the walk found what no test could.** `docs/roadmap/walk-2026-10-06.md`. Six
+defects; the one worth carrying is that **a tag could be added and deleted from the browser and never
+changed** — the API had `PUT …/tags/{tagId}`, the client's `saveTag` had always taken a tag id, and
+nothing ever opened an existing tag into the draft, so every save was a create. Both halves correct, the
+path between them missing: the same shape as Phase 8's four walk defects, and found faster than any of
+them **by trying to follow an instruction rather than by reading code**. Two more things that are not
+defects: **the pump animates**, which a person established in one sentence and no instrument here could
+— a screenshot cannot show rotation — and it followed a real change from the plant rather than a typed
+value. And the walk's own step 4 told the reader to tick a box on a form that did not exist: **an
+instruction that cannot be carried out is a defect in the instruction**, because the person following it
+cannot tell a missing control from their own mistake.
+
+**One rule from that session will cost you an afternoon if you miss it: do not rewrite a source file
+through PowerShell.** `Set-Content` and here-strings decoded UTF-8 as Windows-1252 and re-encoded it, so
+`Write…` became `Write` plus three stray characters **on a button in the running application**, and `§`
+was damaged eleven times in one file. **The damage is valid UTF-8** — it compiles, it passes, nothing
+fails, it renders as nonsense. Use the editor tools or Node. The guard is
+`src/Web/tests/encoding.test.mjs`, it covers `src`, `docs` and `tools`, and it caught real damage the day
+it was written; `node tools/repair-encoding.mjs <files>` is the repair.
+
+**Three things that session left open are in `open-work.md` §2.0l**, and the first is the only one that
+puts a wrong reading on a screen: **a new symbol is born assuming its tag is boolean and says nothing
+when it is not** — a numeric tag never compares equal to `true`, so the fallback is silently always
+taken and the symbol draws `stopped` forever. The other two are a question needing a decision before any
+code (nothing marks a value that *cannot* be true — a percentage above 100 is drawn exactly like a
+pressure) and the `discrete` kind having no editor.
+
+**The suite is green and its baseline is `open-work.md` §2.4–§2.5, with the current numbers measured on
+2026-10-07: 586 .NET across seven projects with 0 skipped, and the client's 162.** A stopped test
+database does not fail the suite — **it skips it**, and the same run comes back at 422 looking like a
+pass; start `scada-test-db-5433` before drawing any conclusion. The suite was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
 the one that is a proven race from the one that is read off the failure.
 

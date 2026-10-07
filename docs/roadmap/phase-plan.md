@@ -847,7 +847,10 @@ See [`open-work.md`](open-work.md).
 ## Phase 8 — Operator screens (HMI)
 
 **Status: scoped 2026-10-03; the read-and-operate half and the authoring slice are built, the walk has
-been taken, and its four defects are closed.**
+been taken, and its four defects are closed. A second sitting on 2026-10-06 added a dark theme and
+ADR-0027's symbol, looked at the result on a 1920×1080 panel, and walked it again — see
+[the 2026-10-06 walk](walk-2026-10-06.md) and `open-work.md` §2.0j–§2.0l. Three things are open, and the
+first of them is the only defect in the project that puts a wrong reading on a screen.**
 
 ### Why it is scoped now
 
@@ -968,6 +971,31 @@ still open** — whether a Bad tile stands out, whether an unreadable one reads 
 alarming, whether the new writable marker is noticeable without looking like a control, whether twelve
 columns are enough. Those are listed per step in the record, and they are what a person walking the
 same seven steps still has to judge.
+
+**Walked again on 2026-10-06, and this time by a person looking at the screen** — recorded in
+[`walk-2026-10-06.md`](walk-2026-10-06.md), with what was built that day in `open-work.md` §2.0j. It
+closed the judgements above that needed eyes, and found **six defects, five of them fixed**:
+
+1. a tag could be added and deleted from the browser and never changed — the API and the client's
+   `saveTag` both had the id, and nothing opened an existing tag into the draft (`3840fd4`);
+2. the write control ran the full width of its tile (`37ec5b5`);
+3. a trend stopped rather than froze during an outage, which drew a line through time nothing was
+   measured in — ADR-0003's own mistake in the chart layer, for the second time (`f22b9e4`, `8ece2f8`);
+4. the browse tree's text was code-page damaged, on a button in the running application (`8ece2f8`);
+5. the mapping form said two things an author could misread (`50e6cb5`);
+6. **a new symbol assumes its tag is boolean and says nothing when it is not — open**, and the only
+   one of the six that puts a wrong reading on a screen rather than a missing or ugly control.
+
+**Two findings that are not defects, and both are about method.** The pump animates — established in
+one sentence by somebody looking at it, because **a screenshot cannot show rotation**, which makes it
+the one fact about the symbol that no instrument in this repository could settle. And the walk's step 4
+told the reader to tick a box on a form that did not exist: **an instruction that cannot be carried out
+is a defect in the instruction**, since the person following it cannot tell a missing control from their
+own mistake.
+
+**What is still open after it** is `open-work.md` §2.0l: the symbol's silent boolean assumption, nothing
+marking a value that cannot be true (a decision before any code), and the `discrete` kind having no
+editor.
 
 ## Later (not yet scoped)
 

@@ -4,7 +4,8 @@ A modular, web-based SCADA platform, built on .NET and Angular.
 
 ## Status
 
-**Phase 7 — Cloud topology, in progress.** The platform exists and runs:
+**Phase 7 — Cloud topology, in progress; Phase 8 — Operator screens, scoped
+and largely built.** The platform exists and runs:
 Core, the Gateway and its browser client, PostgreSQL/TimescaleDB, the
 on-premises and cloud Compose topologies, and Modbus, OPC UA and MQTT
 drivers. Phases 0–6.5 are complete and merged to `main`, and so are Phase
@@ -19,8 +20,18 @@ Phase 7 still owes is a walk on plant hardware: `linux-arm64` is built and run
 under emulation, not on a board. **ADR-0019 is implemented on both sides** — the
 cloud derives each edge's devices and publishes them on the link the edge already
 holds — but it has not had a walk of its own.
-[`docs/roadmap/open-work.md`](docs/roadmap/open-work.md) registers that and every
-other unfinished or unverified item, with what each one waits for.
+
+**Phase 8 gives the platform operator screens**, and a screen here is
+configuration rather than code (ADR-0024): an author builds one in the browser
+from a closed set of six component kinds, the sixth being an equipment symbol
+that derives a named state from its tag (ADR-0027). An Operator can write a tag
+from a screen (ADR-0026), the client has a light and a dark theme, and both
+halves have been walked by a person — on 2026-10-05 and again on 2026-10-06,
+recorded in [the gate record](docs/roadmap/phase-8-manual-gate.md) and
+[the 2026-10-06 walk](docs/roadmap/walk-2026-10-06.md).
+
+[`docs/roadmap/open-work.md`](docs/roadmap/open-work.md) registers all of that and
+every other unfinished or unverified item, with what each one waits for.
 `CLAUDE.md` carries the current
 state; `docs/roadmap/phase-plan.md` holds the plan and each phase's status.
 
