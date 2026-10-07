@@ -206,7 +206,8 @@ public static class ScreenRules
                 // answers it — see `unmatchableRules` in the client's `screen.ts` and the note there
                 // about why it is not refused here.
                 return $"A 'symbol' component's {at} compares '{rule.When}' against '{rule.Value}', "
-                    + "which is not a number to compare against.";
+                    + "which is not a number to compare against."
+                    + DecimalPointHint(rule.Value);
             }
         }
 
@@ -222,6 +223,22 @@ public static class ScreenRules
     /// worst kind of drift here. Infinity and NaN parse and are refused anyway: a reading is never
     /// above infinity and every comparison with NaN is false, so both are dead rules that look live.
     /// </remarks>
+    /// <summary>
+    /// The one extra sentence worth adding when what was typed is a number with a decimal comma.
+    /// </summary>
+    /// <remarks>
+    /// <b>This project's own keyboard produces `1,5`.</b> A refusal that only says "not a number"
+    /// about a string the author can see is a number is the kind of message people stop reading, and
+    /// the client is not even consistent about it: <c>parseNumberField</c> converts a comma for the
+    /// alarm threshold form, while a symbol's mapping stores the text exactly as typed (ADR-0027) and
+    /// parses it invariantly. **Whether that difference should exist at all is a question, recorded in
+    /// `open-work.md` §3** — until it is answered, the refusal at least says what to type.
+    /// </remarks>
+    private static string DecimalPointHint(string? typed) =>
+        typed is not null && typed.Contains(',') && IsAThreshold(typed.Replace(',', '.'))
+            ? $" A decimal point is what this field reads, so type '{typed.Replace(',', '.')}'."
+            : string.Empty;
+
     private static bool IsAThreshold(string? typed) =>
         double.TryParse(
             typed,

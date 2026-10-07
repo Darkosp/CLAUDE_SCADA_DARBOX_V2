@@ -129,7 +129,17 @@ public static class SymbolStates
             return false;
         }
 
-        if (!double.TryParse(rule.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var threshold))
+        // Invariant, because this is the text the API stored and the client parses the same way — a
+        // threshold meaning one thing to a Macedonian browser and another to the server would be the
+        // worst kind of drift here.
+        //
+        // **Non-finite is refused as well as unparseable**, and that is a guard rather than pedantry:
+        // `double.TryParse` accepts "Infinity" and "NaN", so without it `below Infinity` would match
+        // every numeric reading on this side while the client refused it — a rule that is dead in the
+        // product and alive in its tests. `ScreenRules` refuses such a threshold at save; this is the
+        // second line, for a mapping stored before that rule existed.
+        if (!double.TryParse(rule.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var threshold)
+            || !double.IsFinite(threshold))
         {
             return false;
         }

@@ -152,9 +152,12 @@ function matchesRule(rule: SymbolStateRule, value: TagValue): boolean {
     return false;
   }
 
-  const threshold = Number(rule.value);
+  const threshold = parseInvariantNumber(rule.value);
 
-  if (!Number.isFinite(threshold)) {
+  // A threshold that is not a finite number never matches, and Core's `SymbolStates.Matches` says the
+  // same. `ScreenRules` refuses such a rule at save, so this is the second line — and it has to exist,
+  // because the editor's live preview evaluates a draft that has not been near the server.
+  if (threshold === null || !Number.isFinite(threshold)) {
     return false;
   }
 
@@ -163,6 +166,50 @@ function matchesRule(rule: SymbolStateRule, value: TagValue): boolean {
     : rule.when === 'below'
       ? value.numeric < threshold
       : false;
+}
+
+/**
+ * What an author typed, read as a number the way **Core reads it** — or null when it is not one.
+ *
+ * **This exists because `Number()` and .NET's `double.TryParse` disagree, and the disagreement was
+ * reachable.** ADR-0027 has the same rules evaluated in two languages, and the argument for tolerating
+ * that is that both sides are held to the same cases. Three cases where they were not, measured on
+ * 2026-10-07 rather than assumed:
+ *
+ * | typed      | `double.TryParse(…, Float, Invariant)` | `Number()`        |
+ * |------------|----------------------------------------|-------------------|
+ * | `""`       | refused                                | **0**             |
+ * | `"   "`    | refused                                | **0**             |
+ * | `"0x10"`   | refused                                | **16**            |
+ *
+ * The empty one was not theoretical. The editor's `addRule` creates a rule with an empty value, and
+ * **the live preview evaluates the draft immediately** — so an author adding a state to a symbol bound
+ * to a tag reading `0.00` saw the preview jump into that state, and then the save was refused because
+ * the API will not store a comparison with nothing to compare against. The preview's whole purpose is
+ * to show what an operator will see, and it was showing a state the product cannot produce.
+ *
+ * So: a decimal number, with an optional sign, an optional exponent and surrounding space — and
+ * nothing else. `Infinity` and `NaN` are accepted because .NET accepts them, and they are then handled
+ * exactly as .NET handles them: `NaN` equals nothing, and a non-finite **threshold** never matches on
+ * either side (`SymbolStates.Matches` has the same guard, and `ScreenRules` refuses one at save).
+ */
+function parseInvariantNumber(typed: string | null): number | null {
+  if (typed === null) {
+    return null;
+  }
+
+  // `trim()` removes the same Unicode whitespace .NET's AllowLeadingWhite / AllowTrailingWhite do.
+  const text = typed.trim();
+
+  if (/^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/.test(text)) {
+    return Number(text);
+  }
+
+  if (/^[+-]?Infinity$/.test(text)) {
+    return text.startsWith('-') ? -Infinity : Infinity;
+  }
+
+  return text === 'NaN' ? Number.NaN : null;
 }
 
 /**
@@ -180,8 +227,8 @@ function equalsValue(value: TagValue, typed: string | null): boolean {
 
   switch (value.kind) {
     case 'numeric': {
-      const wanted = Number(typed);
-      return Number.isFinite(wanted) && value.numeric === wanted;
+      const wanted = parseInvariantNumber(typed);
+      return wanted !== null && value.numeric === wanted;
     }
     case 'boolean':
       return String(value.boolean).toLowerCase() === typed.trim().toLowerCase();
@@ -264,7 +311,9 @@ function whyUnmatchable(rule: SymbolStateRule, kind: TagValue['kind']): string |
       return `'${rule.when}' compares numbers, and this tag reports ${describeKind(kind)}`;
     }
 
-    return Number.isFinite(Number(rule.value))
+    const threshold = parseInvariantNumber(rule.value);
+
+    return threshold !== null && Number.isFinite(threshold)
       ? null
       : `'${rule.value}' is not a number to be ${rule.when}`;
   }
@@ -279,7 +328,7 @@ function whyUnmatchable(rule: SymbolStateRule, kind: TagValue['kind']): string |
   const typed = (rule.value ?? '').trim();
 
   if (kind === 'numeric') {
-    return Number.isFinite(Number(typed)) && typed !== ''
+    return parseInvariantNumber(typed) !== null
       ? null
       : `this tag reports a number, and '${rule.value}' is not one`;
   }

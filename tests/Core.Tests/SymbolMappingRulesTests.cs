@@ -160,6 +160,28 @@ public sealed class SymbolMappingRulesTests
     }
 
     [Fact]
+    public void A_decimal_comma_is_refused_and_the_refusal_says_what_to_type()
+    {
+        // This project's own keyboard produces `1,5`, and a refusal that only says "not a number"
+        // about something the author can see is a number is a message people stop reading.
+        var problem = ScreenRules.ProblemWith(Symbol([new(Symbols.Running, SymbolComparisons.Above, "1,5")]));
+
+        Assert.NotNull(problem);
+        Assert.Contains("'1.5'", problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_threshold_that_is_nonsense_with_a_comma_in_it_gets_no_hint()
+    {
+        // The control for the hint, and the reason it is a separate test: a hint offered for `1,a`
+        // would be advice that does not work, which is worse than no advice.
+        var problem = ScreenRules.ProblemWith(Symbol([new(Symbols.Running, SymbolComparisons.Above, "1,a")]));
+
+        Assert.NotNull(problem);
+        Assert.DoesNotContain("decimal point", problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void An_equality_against_text_is_accepted_however_unnumeric_it_is()
     {
         // `is` is not a numeric comparison, so the threshold rule above must not touch it: a text tag
