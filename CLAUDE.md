@@ -395,7 +395,11 @@ that *cannot* be true — a percentage above 100 is drawn exactly like a pressur
 having no editor.
 
 **The suite is green and its baseline is `open-work.md` §2.4–§2.5, with the current numbers measured on
-2026-10-07: 586 .NET across seven projects with 0 skipped, and the client's 162.** A stopped test
+2026-10-07 after PR #1 merged: 626 .NET across seven projects with 0 skipped, and the client's 187.**
+*(It read 586 and 162 earlier the same day, before that PR added forty .NET tests and twenty-five
+client ones. **A number here is a claim about the present tense like any other** — the session that
+writes one owns correcting it, which is the whole lesson of the nine stale claims corrected on this
+date.)* A stopped test
 database does not fail the suite — **it skips it**, and the same run comes back at 422 looking like a
 pass; start `scada-test-db-5433` before drawing any conclusion. The suite was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
