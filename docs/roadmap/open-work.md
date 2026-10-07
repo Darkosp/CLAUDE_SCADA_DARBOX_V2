@@ -692,6 +692,22 @@ decision before code: whether the product should have an opinion at all, and if 
 the tag's definition (a range), to the alarm engine (a limit), or to the screen. The safe default is
 that the product says nothing it was not told.
 
+**Decided 2026-10-07, and the standard decided it rather than this project: [ADR-0030](../architecture/decisions/0030-a-tag-declares-the-range-it-expects.md).**
+OPC UA Part 8 makes a declared `EURange` a mandatory property of an analogue item and puts out-of-range
+information in status-code bits that *do not affect the meaning of the status*; IEC 61850 carries
+`overflow` and `outOfRange` as quality detail bits. So the answer is the tag's definition: both ends of a
+span, nullable; a reading outside it **keeps its value and keeps the quality its driver reported** and is
+marked beside them; null means nothing was declared; and it is **not** an alarm (ADR-0025 owns limits),
+**not** a symbol state (ADR-0027 §4) and **not** a screen's own opinion (ADR-0024 §6).
+
+**What is built, and what is not — because half of it is.** The schema, the model, the verdict, the store
+and the API are in draft [PR #8](https://github.com/Darkosp/CLAUDE_SCADA_DARBOX_V2/pull/8), with the
+verdict decided in the one function every reader goes through, and its arithmetic, its two schema
+constraints and what the API hands a client all pinned by tests. **The half that is missing is the half a
+person sees**: the tag form has no fields to declare a range, and no reading on any screen carries the
+marker — so `464 %` is still drawn exactly like `4.79 bar` until that lands. That is the project's own
+rule (a feature is not done until it is on screen) applied honestly, and it is why the PR is a draft.
+
 **3. The `discrete` kind still has no editor, which is older than this session and easy to forget.**
 
 Noticed while reading `writableAsANumberOrAFlag`: the write dialog accepts numeric and boolean and
@@ -1447,6 +1463,20 @@ Recorded so a later session does not mistake it for a defect in the code.
   before anything else and prints openssl's own words when that fails, instead of sending
   each step's reason to `/dev/null` and exiting in silence. Either way, clear the variable
   (`Remove-Item Env:\OPENSSL_CONF`) before making certificates on this machine.
+- **One file in the tree has doubled carriage returns, in the committed blob.** Measured 2026-10-07 while
+  editing it: **every one of `src/Gateway/Configuration/SiteTreeBuilder.cs`'s 123 lines ends `\r\r\n`**, in
+  `HEAD` and not only in the working copy — the file every other checkout normalises. It is **valid
+  UTF-8**, it compiles, its tests pass, and nothing reads line endings, which is the same shape as the
+  encoding damage open-work's own §2.0k records: *the damage is valid UTF-8 and nothing fails*. It cost
+  this session a confusing `edit` failure (a multi-line match cannot be found in a file whose lines end
+  with two CRs) and it is the reason the file's own change was made one line at a time. **The fix is one
+  commit that rewrites the file with single CRs and lets git normalise the blob to LF**, and it is left
+  for whoever next touches that file rather than done here, because a 123-line whitespace diff inside a
+  feature branch hides the change it is beside.
+- **A file can show as modified with no content difference.** `src/Core/Model/Screen.cs` reported ` M` in
+  `git status` on 2026-10-07 with an empty `git diff`: the blob is LF and the working copy is CRLF, which
+  is the convention §4 opens with, and git normalises it on the way in. Harmless, and recorded so the next
+  session does not go looking for an edit nobody made.
 
 ## 5. Documentation that described an older tree
 

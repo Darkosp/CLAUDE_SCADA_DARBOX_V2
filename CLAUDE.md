@@ -390,9 +390,25 @@ kind changed underneath it. **Three boundaries are pinned by tests that fail if 
 unlikely mapping is not faulted, a tag nothing has measured says nothing, and the tag-dependent case is
 not a refusal. §2.0l has the walk and two gaps it closed on the way.
 
-**The other two are still open**: a question needing a decision before any code (nothing marks a value
-that *cannot* be true — a percentage above 100 is drawn exactly like a pressure) and the `discrete` kind
-having no editor.
+**One of the other two was decided on 2026-10-07, and the standard decided it — ADR-0030.** *Nothing marks
+a value that cannot be true* has an answer that is normative rather than a matter of taste: OPC UA Part 8 makes
+a declared `EURange` a mandatory property of an analogue item and puts out-of-range information in status-code
+bits that **do not affect the meaning of the status**, and IEC 61850 carries `overflow` and `outOfRange` as
+quality detail bits. So a tag may declare both ends of a span, a reading outside it keeps its value and its
+driver's quality and is marked beside them, null means nothing was declared, and it is not an alarm (ADR-0025
+owns limits) nor a symbol state (ADR-0027 §4). **The schema, model, verdict, store and API are in draft PR #8;
+the half that is missing is the half a person sees** — no form fields, no marker on a reading — so `464 %` is
+still drawn like `4.79 bar` until that lands. **The other is still open**: the `discrete` kind has no editor.
+
+**And the standards themselves were audited on 2026-10-07** — `docs/architecture/standards-baseline.md`,
+twenty-two of them read against the code with each one's status and the reason for it: **one implemented, four
+partial, one not implemented, sixteen out of scope by decision**. The three biggest gaps in its own words: no
+secure-development lifecycle at all (IEC 62443-4-1 — no CI, no SBOM, no vulnerability intake, no threat model),
+**the OPC UA driver connects with `useSecurity: false` and an anonymous identity and no ADR records that
+deferral**, and ISA-18.2's alarm *priority* does not exist as a field, so rationalisation, flood sorting and
+escalation all rest on one missing column. Two of its claims were checked against the tree before it was
+committed rather than taken on trust, and one internal cross-reference in its first draft was wrong and is
+corrected in the file.
 
 **A trend no longer sends every reading in its window to be reduced in the browser — ADR-0029, 2026-10-07.**
 Measured on the demo database's busiest tag, 110,782 readings over a day and three quarters: **19 MB of JSON
