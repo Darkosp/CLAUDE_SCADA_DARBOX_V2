@@ -304,6 +304,8 @@ const WIDEST = 12;
                       [snapshots]="snapshots()"
                       [alarms]="alarms()"
                       [history]="history()"
+                      [historyFrom]="historyFrom()"
+                      [historyTo]="historyTo()"
                       (writeRequested)="writeRequested.emit($event)" />        }
       </section>
 
@@ -476,6 +478,10 @@ export class ScreenEditor {
 
   /** Every tag this session may see, for the author to bind to. */
   readonly tags = input.required<readonly TagSnapshot[]>();
+
+  /** The window the preview's trends cover, passed through to the same component the operator sees. */
+  readonly historyFrom = input.required<Date>();
+  readonly historyTo = input.required<Date>();
 
   /** The live values the preview draws with — the operator's own inputs, not copies. */
   readonly snapshots = input.required<ReadonlyMap<string, TagSnapshot>>();

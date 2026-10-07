@@ -162,7 +162,9 @@
       } @else if (editing() && openScreen(); as showing) {
         <!-- The editor is given the screen the server last had, so Cancel has something to return
              to and a failed save leaves the author's work in the editor to fix. -->
-        <app-screen-editor [screen]="showing"
+        <app-screen-editor [historyFrom]="historyFrom()"
+                           [historyTo]="historyTo()"
+                           [screen]="showing"
                            [tags]="allTags()"
                            [snapshots]="snapshotsByTagId()"
                            [alarms]="alarms()"
@@ -179,6 +181,8 @@
                     [snapshots]="snapshotsByTagId()"
                     [alarms]="alarms()"
                     [history]="screenHistory()"
+                    [historyFrom]="historyFrom()"
+                    [historyTo]="historyTo()"
                     (writeRequested)="onScreenWrite($event)" />
       } @else {
         <p class="muted">This Site has no screens.</p>
@@ -885,11 +889,28 @@
           }
 
           <div class="pane-head">
-            <h3>Last 15 minutes</h3>
+            <h3>Trend</h3>
+            <!--
+              How far back, rather than a pair of date fields: the question an operator is really
+              asking is HOW FAR BACK, and two pickers make them answer a harder one. The chart's own
+              axis then says which period they are looking at, so the choice and its effect are
+              never more than a glance apart.
+            -->
+            <label class="window">
+              <span>Last</span>
+              <select [ngModel]="trendWindow().label" (ngModelChange)="chooseTrendWindow($event)"
+                      name="trendWindow" aria-label="How far back the trend looks">
+                @for (window of trendWindows; track window.label) {
+                  <option [value]="window.label">{{ window.label }}</option>
+                }
+              </select>
+            </label>
             <button type="button" class="ghost" (click)="loadHistory()">Refresh</button>
           </div>
           <app-trend-chart
             [samples]="history()"
+            [from]="historyFrom()"
+            [to]="historyTo()"
             [unitSymbol]="chosen.tag.unit?.symbol ?? ''" />
         }
       }

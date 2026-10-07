@@ -1,5 +1,5 @@
 import { Component, computed, input } from '@angular/core';
-import { HistorySample } from './models';
+import { HistorySample, plotAcross, trendAxis } from './models';
 
 interface Point {
   x: number;
@@ -27,9 +27,16 @@ interface Point {
         <text class="tick" [attr.x]="4" [attr.y]="12">{{ high().toFixed(2) }}</text>
         <text class="tick" [attr.x]="4" [attr.y]="height - 4">{{ low().toFixed(2) }}</text>
       </svg>
-      <p class="range">
-        {{ samples().length }} samples · {{ low().toFixed(2) }}–{{ high().toFixed(2) }}
-        {{ unitSymbol() }}
+      <!--
+        **The period, under the chart, always.** A curve with no stated period is a curve nobody can
+        reason about: before this, the same picture could be a quarter of an hour or a week and the
+        reader had no way to tell. The ends are the window that was ASKED FOR, not the first and last
+        reading held, so an outage at either end reads as empty chart rather than disappearing.
+      -->
+      <p class="axis">
+        <span>{{ axis().start }}</span>
+        <span class="count">{{ samples().length }} samples · {{ low().toFixed(2) }}–{{ high().toFixed(2) }} {{ unitSymbol() }}</span>
+        <span>{{ axis().end }}</span>
       </p>
     }
   `,
@@ -46,13 +53,37 @@ interface Point {
        and a third meaning for "this is a line" would only compete with them. */
     .line { fill: none; stroke: var(--chart-line); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
     .tick { font-size: 10px; fill: var(--text-muted); }
-    .range { font-size: var(--text-sm); color: var(--text-muted); margin: 0.4rem 0 0; }
+    .axis {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: var(--text-sm);
+      color: var(--text-muted);
+      margin: 0.4rem 0 0;
+    }
+    /* The ends are the axis and belong at the edges; what the line holds is a caption and belongs
+       between them, so the three never read as one sentence. */
+    .axis .count { text-align: center; }
     .empty { color: var(--text-muted); font-size: var(--text-base); margin: 0; }
   `,
 })
 export class TrendChart {
   readonly samples = input.required<HistorySample[]>();
   readonly unitSymbol = input<string>('');
+
+  /**
+   * The window this trend was asked for — the chart's x-axis, end to end.
+   *
+   * Required, and taken from the caller rather than derived from the samples, because the samples
+   * cannot tell a window apart from what happens to be in it: a device offline for the first ten
+   * minutes of a quarter-hour leaves five minutes of readings, and drawn against themselves they
+   * fill the chart as though nothing had been missing.
+   */
+  readonly from = input.required<Date>();
+  readonly to = input.required<Date>();
+
+  /** Both ends of the axis, as a reader can place them. */
+  protected readonly axis = computed(() => trendAxis(this.from(), this.to()));
 
   protected readonly width = 600;
   protected readonly height = 160;
@@ -71,14 +102,16 @@ export class TrendChart {
     const times = usable.map((s) => new Date(s.sourceTimestampUtc).getTime());
     const values = usable.map((s) => s.value.numeric as number);
 
-    const firstTime = times[0];
-    const timeSpan = Math.max(times[times.length - 1] - firstTime, 1);
+    // Against the window asked for, not against the readings held — see `plotAcross`, which is where
+    // that distinction is tested.
+    const from = this.from().getTime();
+    const to = this.to().getTime();
     const low = this.low();
     const span = Math.max(this.high() - low, Number.EPSILON);
     const padding = 8;
 
     return usable.map((_, index) => ({
-      x: ((times[index] - firstTime) / timeSpan) * this.width,
+      x: plotAcross(times[index], from, to, this.width),
       y:
         this.height -
         padding -

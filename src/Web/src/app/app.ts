@@ -11,49 +11,52 @@ import { TrendChart } from './trend-chart';
 import {
   Access,
   Alarm,
+  ALARM_EVENT_TYPES,
   AlarmDefinition,
   AlarmEvent,
   DeviceTemplate,
+  DriverShape,
   Edge,
   EdgeOption,
   FolderOption,
   HistorySample,
+  NameField,
   NumberField,
   SettingEntry,
+  SingleFlight,
   Site,
   SiteRole,
   SiteTree,
   TemplateTag,
   TreeDevice,
-  folderOptions,
+  TREND_WINDOWS,
+  TrendWindow,
   declarationOf,
-  unreadableOf,
-  edgeOfDevice,
+  describeReason,
+  describeSourceEvent,
+  deviceCount,
   edgeDriverNote,
+  edgeOfDevice,
   edgeOptions,
   edgeReads,
-  linkOptions,
-  treeDevices,
-  DriverShape,
-  deviceCount,
-  noDataNote,
-  pushes,
-  scanIntervalToSend,
-  describeReason,
+  folderOptions,
   formatGapWindow,
-  describeSourceEvent,
-  isEngineEvent,
   formatMeasurement,
-  NameField,
-  SingleFlight,
+  isEngineEvent,
+  linkOptions,
   mapToSettings,
-  ALARM_EVENT_TYPES,
   nameConflictMessage,
+  noDataNote,
   parseNumberField,
   pathWithinSite,
+  pushes,
+  scanIntervalToSend,
   settingsToMap,
   siteName,
   siteToOpen,
+  treeDevices,
+  trendWindowOf,
+  unreadableOf,
 } from './models';
 import { TagStream } from './tag-stream';
 import { formatValue, TagSnapshot } from './tag';
@@ -939,8 +942,7 @@ export class App implements OnInit {
     }
 
     try {
-      const to = new Date();
-      const from = new Date(to.getTime() - 15 * 60 * 1000);
+      const { from, to } = this.requestedWindow();
       this.history.set((await this.api.history(tag.id, from, to)).samples);
     } catch (error) {
       this.report(error);
@@ -1485,6 +1487,47 @@ export class App implements OnInit {
    */
   protected readonly screenHistory = signal(new Map<string, HistorySample[]>());
 
+  // ---- the trend window ------------------------------------------------------
+  //
+  // **One window, held once.** It used to be `15 * 60 * 1000` written out at each call — the shape
+  // this project has been bitten by twice, where a rule and every place that applies it drift apart.
+  // Every trend on screen covers the same period, which is also what makes the axis under each of
+  // them comparable with the one beside it.
+
+  protected readonly trendWindows = TREND_WINDOWS;
+
+  protected readonly trendWindow = signal<TrendWindow>(TREND_WINDOWS[0]);
+
+  /**
+   * When the history now held was asked for.
+   *
+   * Recorded at the moment of the request rather than computed when a chart draws, so the axis says
+   * what the samples under it were asked for. A chart that worked out `now` for itself would creep
+   * forward between fetches and slowly disagree with its own data.
+   */
+  protected readonly historyFrom = signal(new Date(Date.now() - TREND_WINDOWS[0].milliseconds));
+
+  protected readonly historyTo = signal(new Date());
+
+  /** Picks a window and reloads everything that is showing, so the change is visible at once. */
+  protected async chooseTrendWindow(label: string): Promise<void> {
+    this.trendWindow.set(trendWindowOf(label));
+
+    await this.loadHistory();
+    await this.loadScreenHistory();
+  }
+
+  /** The window to ask the server for, and the one the axes will carry. */
+  private requestedWindow(): { from: Date; to: Date } {
+    const to = new Date();
+    const from = new Date(to.getTime() - this.trendWindow().milliseconds);
+
+    this.historyFrom.set(from);
+    this.historyTo.set(to);
+
+    return { from, to };
+  }
+
   protected async loadScreenHistory(): Promise<void> {
     await this.loadPreviewHistory(trendTagIds(this.openScreen()?.components ?? []));
   }
@@ -1541,8 +1584,7 @@ export class App implements OnInit {
 
   /** Loads history for exactly these tags and replaces what was held. */
   protected async loadPreviewHistory(tagIds: readonly string[]): Promise<void> {
-    const to = new Date();
-    const from = new Date(to.getTime() - 15 * 60 * 1000);
+    const { from, to } = this.requestedWindow();
     const loaded = new Map<string, HistorySample[]>();
 
     for (const tagId of tagIds) {
