@@ -556,6 +556,49 @@ nothing was lost, which was checked before the push rather than assumed — and 
 commits halves the same change. Recorded here because the rule exists to stop silent rewrites, and a
 recorded one is not silent.
 
+### 2.0l The three things this session left open — 2026-10-06
+
+All three were found by looking at the running application, and all three are recorded rather than
+fixed because the session ended. Each says what it would take.
+
+**1. A new symbol assumes its tag is boolean, and says nothing when it is not.**
+
+`newComponent('symbol', …)` is born with `running when value is true`, and `stopped otherwise`. That is
+right for the pump this slice shipped, because a pump's run signal is a boolean. It is **wrong for every
+other tag an author might pick** — and picking one produces no warning, no refusal and no visible
+symptom: a numeric tag simply never compares equal to `true`, so the symbol falls through to the
+fallback and draws `stopped` forever, through every value the tag ever reports.
+
+Found by watching an author pick a **setpoint** for a pump. The application was correct — a setpoint is
+a target, not a running state, and ADR-0027 refuses to invent a state it was not told how to derive —
+but nothing told them why. **A fallback that is silently always taken is the dangerous shape here**: it
+looks like a working symbol reporting a stopped machine.
+
+What it would take: either a default that follows the tag's `valueKind`, or a warning in the editor when
+a mapping's comparisons cannot match the bound tag's kind — and probably both. It is a rules question
+rather than a rendering one, so it belongs with `ScreenRules` on the server and in the editor's own
+validation, not in the symbol.
+
+**2. Nothing marks a value that cannot be true.**
+
+`Tank 3 Level` read **`464.00 %`** — impossible for a level — and it was drawn exactly like
+`4.79 bar`. That particular reading was this session's own demo data: the tag was seeded against a raw
+register with no scaling, so the number is the session's fault rather than the product's. **The question
+it raises is not.** A percentage above 100, a negative pressure on a gauge that cannot go below zero, a
+level that exceeds its tank: none of these have anywhere to be said.
+
+ADR-0005 gives a tag a dimension and an SI factor, which is a statement about **what a number means and
+how to convert it** — not about **whether a particular value is possible**. So this is genuinely
+unanswered by the units work, and it needs a decision before code: whether the product should have an
+opinion at all, and if so whether it belongs to the tag's definition (a range), to the alarm engine (a
+limit), or to the screen. The safe default is that the product says nothing it was not told.
+
+**3. The `discrete` kind still has no editor, which is older than this session and easy to forget.**
+
+Noticed while reading `writableAsANumberOrAFlag`: the write dialog accepts numeric and boolean and
+refuses the rest, which is right. But `discrete` tags exist in the model and are readable, and there is
+no way to author or write one from the browser. Recorded here so it is not rediscovered as new.
+
 ### 2.0k What the walk found on 2026-10-06, and one defect in the walk itself
 
 **The walk is being taken, and it found a defect on its own second step.** Recorded separately from
