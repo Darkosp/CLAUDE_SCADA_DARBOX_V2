@@ -224,7 +224,12 @@ test('a symbol whose tag has never reported is missing rather than a pump at res
 test('a symbol this build cannot draw resolves as missing rather than as a blank tile', () => {
   // The server refuses an unknown shape at save time, so reaching here means the row was written
   // another way -- and a blank tile is the outcome ADR-0024 exists to prevent.
-  const component = { ...pumpComponent(), symbol: 'tank' };
+  //
+  // **This said `tank` until 2026-10-07, when a tank became a shape this build draws** and the test
+  // started failing on its own premise rather than on its subject. A plausible name is the wrong
+  // choice for "something that does not exist": the vocabulary grows, and ADR-0027 §6 says it is
+  // meant to. `turbine` is not on anyone's list of next symbols.
+  const component = { ...pumpComponent(), symbol: 'turbine' };
 
   const resolved = resolveComponent(
     component,

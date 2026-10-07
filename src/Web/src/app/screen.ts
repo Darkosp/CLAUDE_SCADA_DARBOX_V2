@@ -13,6 +13,13 @@ export type ScreenComponentKind = 'label' | 'value' | 'trend' | 'alarms' | 'stat
  */
 export const SYMBOL_STATES = {
   pump: ['running', 'stopped', 'fault', 'unknown', 'bad', 'stale'],
+  motor: ['running', 'stopped', 'fault', 'unknown', 'bad', 'stale'],
+  valve: ['open', 'closed', 'fault', 'unknown', 'bad', 'stale'],
+  // **Bands, never a fill that tracks the reading** (ADR-0027 §5). The author says where low ends and
+  // high begins with the same comparisons every other symbol uses; the drawing shows which band the
+  // reading fell in. A proportional fill would be a continuing value driving a picture, and a reader
+  // cannot measure a height.
+  tank: ['low', 'normal', 'high', 'unknown', 'bad', 'stale'],
 } as const;
 
 export type SymbolShape = keyof typeof SYMBOL_STATES;
@@ -373,27 +380,80 @@ function describeKind(kind: TagValue['kind']): string {
  * them, and the warning appears as soon as a reading arrives and disagrees. Starting such a symbol on a
  * bare `unknown` fallback would make the common case worse to protect the uncommon one.
  */
-function defaultSymbolStates(kind: TagValue['kind']): SymbolStateRule[] {
-  if (kind === 'numeric') {
-    // Above zero rather than `is 1`: a pump's run signal arriving as a number is a 0/1, a 0/100 or a
-    // flow, and "above zero" is the one reading of it that is true in all three.
+function defaultSymbolStates(shape: SymbolShape, kind: TagValue['kind']): SymbolStateRule[] {
+  const states = SYMBOL_STATES[shape];
+
+  // Nothing to guess from a tag that reports text, a discrete code, or nothing yet: a lone fallback is
+  // saveable, draws ADR-0027 §3's own "the mapping does not cover this" state, and says to the author
+  // that it is theirs to fill in. It is not a mapping pretending to work.
+  const admitNothing: SymbolStateRule[] = [
+    { state: 'unknown', when: null, value: null, otherwise: true },
+  ];
+
+  if (kind === 'text' || kind === 'discrete') {
+    return admitNothing;
+  }
+
+  if (shape === 'tank') {
+    // A tank reads a level, so a boolean tells it nothing and it says so rather than inventing a band.
+    if (kind !== 'numeric') {
+      return admitNothing;
+    }
+
+    // **Bands the author will move, not bands the product believes.** Twenty and eighty are where a
+    // reader expects "nearly empty" and "nearly full" on a percentage, which is what most level tags
+    // are; on a tag in metres they are wrong and visibly wrong, which is the point — a default that
+    // looked plausible on every unit would be one nobody checked.
     return [
-      { state: 'running', when: 'above', value: '0', otherwise: false },
-      { state: 'stopped', when: null, value: null, otherwise: true },
+      { state: 'high', when: 'above', value: '80', otherwise: false },
+      { state: 'low', when: 'below', value: '20', otherwise: false },
+      { state: 'normal', when: null, value: null, otherwise: true },
     ];
   }
 
-  if (kind === 'text' || kind === 'discrete') {
-    // Nothing to guess, and guessing would be worse than admitting it: a single fallback of `unknown`
-    // is saveable, draws ADR-0027 §3's own "the mapping does not cover this" state, and says to the
-    // author that it is theirs to fill in. It is not a mapping pretending to work.
-    return [{ state: 'unknown', when: null, value: null, otherwise: true }];
+  // A pump, a motor or a valve: on or off, under whichever pair of names this drawing uses.
+  const on = states[0];
+  const off = states[1];
+
+  if (kind === 'numeric') {
+    // Above zero rather than `is 1`: a run or open signal arriving as a number is a 0/1, a 0/100 or a
+    // position, and "above zero" is the one reading of it that is true in all three.
+    return [
+      { state: on, when: 'above', value: '0', otherwise: false },
+      { state: off, when: null, value: null, otherwise: true },
+    ];
   }
 
   return [
-    { state: 'running', when: 'equals', value: 'true', otherwise: false },
-    { state: 'stopped', when: null, value: null, otherwise: true },
+    { state: on, when: 'equals', value: 'true', otherwise: false },
+    { state: off, when: null, value: null, otherwise: true },
   ];
+}
+
+/**
+ * The mapping to keep when an author changes a symbol's drawing.
+ *
+ * **A symbol is a drawing plus a state list, and the list belongs to the drawing.** Changing a pump
+ * into a valve leaves rules naming `running` and `stopped`, which a valve cannot be drawn in — so the
+ * server refuses the save, by name, about rules the author never wrote. That is the shape of defect
+ * this project has found in four walks: a rule and every place that applies it have to move together.
+ *
+ * So the mapping is kept **exactly** when every state it names survives the change — pump to motor is
+ * the same six states, and an author who has tuned thresholds keeps them — and replaced with the new
+ * drawing's default when it does not. Replacing loses work, and it is still the honest answer: the
+ * rules named states that no longer exist, and remapping `running` onto `open` would be the product
+ * deciding what an author meant.
+ */
+export function remapForShape(
+  states: readonly SymbolStateRule[],
+  shape: SymbolShape,
+  kind: TagValue['kind'],
+): SymbolStateRule[] {
+  const drawable: readonly string[] = SYMBOL_STATES[shape];
+
+  return states.every((rule) => drawable.includes(rule.state))
+    ? [...states]
+    : defaultSymbolStates(shape, kind);
 }
 
 /**
@@ -900,7 +960,7 @@ export function newComponent(
     // cannot also state what it matches, and one that did would be text the author believed was doing
     // something.
     symbol: kind === 'symbol' ? 'pump' : null,
-    states: kind === 'symbol' ? defaultSymbolStates(valueKind) : [],
+    states: kind === 'symbol' ? defaultSymbolStates('pump', valueKind) : [],
     // What the reader may see is the server's to decide (ADR-0024 5). A component being authored is
     // shown as readable until a save comes back and says otherwise, because the client has no
     // standing to answer it -- and a component that hid itself mid-edit would be one an author could
