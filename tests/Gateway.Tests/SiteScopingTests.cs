@@ -36,6 +36,9 @@ public sealed class SiteScopingTests : IClassFixture<GatewayTestHost>
             $"/api/tags/{elsewhere.TagId}",
             $"/api/tags/{elsewhere.TagId}/alarms",
             $"/api/tags/{elsewhere.TagId}/history",
+            // The reduced read is the same read: asking for points must not become a way around the
+            // Site rule the path without it enforces (ADR-0029).
+            $"/api/tags/{elsewhere.TagId}/history?points=60",
             $"/api/devices/{elsewhere.DeviceId}",
             $"/api/sites/{Bitola}/tree",
         };

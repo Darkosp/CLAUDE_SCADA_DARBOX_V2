@@ -71,8 +71,19 @@ export class Api {
     return this.get<SiteTree>(`/api/sites/${siteId}/tree`);
   }
 
-  history(tagId: string, from: Date, to: Date): Promise<TagHistory> {
-    const query = `from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
+  /**
+   * A tag's history over a window, reduced to the number of points the caller can draw (ADR-0029).
+   *
+   * **`points` is never omitted by this client**, and that is not a preference: without it the server
+   * answers with every reading in the window — 22 MB for seven days of one tag — which is the
+   * measurement the ADR exists for. The server chooses the bucket width from it and states the width
+   * in the answer, so `trendSeries` is what turns this into something a chart can draw.
+   */
+  history(tagId: string, from: Date, to: Date, points: number): Promise<TagHistory> {
+    const query =
+      `from=${encodeURIComponent(from.toISOString())}` +
+      `&to=${encodeURIComponent(to.toISOString())}` +
+      `&points=${points}`;
     return this.get<TagHistory>(`/api/tags/${tagId}/history?${query}`);
   }
 

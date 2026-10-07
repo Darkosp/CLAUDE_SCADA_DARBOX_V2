@@ -394,12 +394,51 @@ not a refusal. §2.0l has the walk and two gaps it closed on the way.
 that *cannot* be true — a percentage above 100 is drawn exactly like a pressure) and the `discrete` kind
 having no editor.
 
-**The suite is green and its baseline is `open-work.md` §2.4–§2.5, with the current numbers measured on
-2026-10-07 after PR #5 merged: 636 .NET across seven projects with 0 skipped, and the client's 205.**
-*(It read 586 and 162 earlier the same day, before that PR added forty .NET tests and twenty-five
-client ones. **A number here is a claim about the present tense like any other** — the session that
-writes one owns correcting it, which is the whole lesson of the nine stale claims corrected on this
-date.)* A stopped test
+**A trend no longer sends every reading in its window to be reduced in the browser — ADR-0029, 2026-10-07.**
+Measured on the demo database's busiest tag, 110,782 readings over a day and three quarters: **19 MB of JSON
+and 182 ms before, 417 buckets holding all of them and 56 kB after.** The reduction is a **query** — PostgreSQL's
+own `date_bin`, so nothing leans on the TSL-licensed features ADR-0006 flags — the caller asks for `points`, the
+number it can draw, and the server chooses the bucket width and **states it**; a request without `points` is still
+every reading, because a cap that dropped readings without saying so is the one answer this project must not take.
+Four rules are worth carrying: a bucket's envelope is the extremes of what a trend would have plotted — Good,
+numeric **and finite**, because JSON carries neither NaN nor infinity and a Bad reading's stale number must not
+widen it; **an empty bucket is absent, not zero**; a bucket whose readings were all unplottable comes back with a
+count and no value, so a device answering with nothing is a hole rather than a quiet stretch; and the grid is
+anchored to the window the caller asked for. The client's per-pixel reduction and its five tests were **deleted
+rather than kept as a fallback** — a second reduction nothing calls is a rule with two homes — and the gap rule
+became exact (`ordinalNext − ordinalPrev > 1`) where the old one could not see a hole narrower than about four
+columns, which at a seven-day resolution is over an hour. **Five mutations were watched**, each failing its named
+test with a control green beside it: the non-finite filter, the quality filter, the grid anchor, the last-reading
+time, and the refusal of an out-of-range `points`. One thing this did **not** fix: the query still reads every row
+to group it, so this removes bytes from the wire and not work from the database.
+
+**And it was walked, by eye, on 2026-10-07 — and the walk found a defect that had nothing to do with the
+reduction and had been on screen since the chart was written.** The record is `walk-2026-10-07.md`'s second
+sitting. **The chart was not drawn where its axis was**: the element is 1482×162 px, the `viewBox` was the
+constant `0 0 600 160`, and SVG's default `preserveAspectRatio` scales such a drawing to fit the *shorter* side
+and centres it — so the curve sat in a 607 px strip in the middle of the card while the axis under it ran edge
+to edge, the value ticks floated mid-chart, and **every reading was placed at the wrong time by the width of the
+empty band**: about seven hours on a day-long window. Green tests, a clean build, correct buckets, and a picture
+that lied about when things happened — found by looking, and findable only that way. Fixed by measuring the
+element and drawing in its coordinates (verified by re-probing the live DOM), and pinned by
+`src/Web/tests/trend-chart-size.test.mjs`. **The fix's first attempt failed and that is pinned too**: it measured
+once in `afterNextRender`, and empty history draws words instead of a chart, so there was no SVG to measure. Also
+answered by the walk: the three-item caption reads as information rather than as clutter, which was §2.6's open
+judgement. Its second pass fixed the two things it had left: the value labels, which were printed on the line they
+labelled, by insetting the plot **and the axis row under it by the same numbers**, and the tile case, which was
+looked at in two widths through a screen the walk added two trends to. **The third was refused rather than built:
+the fetch budget stays 600 points whatever the card's width** — asking for the measured ~1480 would treble the
+rows and the wire to gain a point every 2.5 px instead of every 1 px, in the one decision whose purpose was to
+stop sending what nobody looks at.
+
+**The suite is green and its baseline is `open-work.md` §2.4–§2.6, with the current numbers measured on
+2026-10-07 after ADR-0029 and its walk: 648 .NET across seven projects with 0 skipped, and the client's 228.**
+*(It read 638 and 217 after PR #6 and 636 and 205 after PR #5, both the same day, and 586 and 162 before
+that. **The PR #6 numbers were measured and never written down** — the handover note carried them and no
+document did, which is why this sentence now names all four rather than implying the suite stood still
+between PR #5 and ADR-0029. **A number here is a claim about the
+present tense like any other** — the session that writes one owns correcting it, which is the whole lesson of the
+nine stale claims corrected on this date.)* A stopped test
 database does not fail the suite — **it skips it**, and the same run comes back at 422 looking like a
 pass; start `scada-test-db-5433` before drawing any conclusion. The suite was *not* green
 earlier on 2026-10-02 — §2.5 diagnoses the two load-induced flakes and separates
@@ -700,6 +739,21 @@ acting on that assumption, and commit/push it yourself.
 PR/review process applies to implementation code (Phase 1 onward) — open a
 PR (draft, if the phase's test gate isn't confirmed yet) rather than
 committing application code straight to main.
+
+**An ADR belongs on `main` the moment it is decided, and it is not a claim about the tree.** It is a
+rule every later pull request is reviewed against, so it has to be in force for work that starts
+before its own implementation lands — which is why a decision goes straight to `main` while the code
+carrying it out goes in a pull request. Its `Verified in review by` section is a checklist for those
+pull requests, not an assertion that any of them has happened; a decision whose implementation is
+deferred says so in its status.
+
+**Checked 2026-10-07, while placing ADR-0029: `ADR-0028` is the one exception on record.** It reached
+`main` inside PR #5, on its branch, and a later session reading the history would otherwise take that
+as the precedent. Every other ADR of that day — 0024, 0025, 0026, 0027 — and ADR-0029 are on `main`'s
+own line. The alternative arrangement was argued and refused for the reason above: a binding rule that
+exists only on an unmerged branch is not binding on anything. Recorded here rather than left as an
+inconsistency in the log, because *a rule and every place that applies it have to move together*, and
+a reader who finds both shapes will believe whichever they saw first.
 
 ## Commits
 

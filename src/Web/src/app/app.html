@@ -908,7 +908,7 @@
             <button type="button" class="ghost" (click)="loadHistory()">Refresh</button>
           </div>
           <app-trend-chart
-            [samples]="history()"
+            [series]="history()"
             [from]="historyFrom()"
             [to]="historyTo()"
             [unitSymbol]="chosen.tag.unit?.symbol ?? ''" />

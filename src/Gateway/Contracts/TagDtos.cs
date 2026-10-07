@@ -73,12 +73,27 @@ public sealed record TagSnapshotDto(
 /// Whether the tag or its device has been deleted. The history is still real; the
 /// client can say so rather than presenting it as live configuration.
 /// </param>
+/// <param name="Samples">
+/// Every reading in the window. Populated exactly when the request asked for no
+/// <c>points</c>, because reduction is requested rather than applied silently (ADR-0029 §3).
+/// </param>
+/// <param name="BucketMilliseconds">
+/// How wide one bucket is, when the answer is a reduction, and null when it is a reading. It is
+/// how the response says which of the two it is, and what resolution it chose.
+/// </param>
+/// <param name="Buckets">
+/// The window reduced to buckets — empty when <paramref name="Samples"/> is the answer. **One or
+/// the other, never a mixture**: a payload holding both would be one whose completeness a reader
+/// has to work out (ADR-0029 §3).
+/// </param>
 public sealed record TagHistoryDto(
     Guid TagId,
     string? TagName,
     string? DeviceName,
     bool IsDeleted,
-    IReadOnlyList<HistorySampleDto> Samples);
+    IReadOnlyList<HistorySampleDto> Samples,
+    long? BucketMilliseconds,
+    IReadOnlyList<HistoryBucketDto> Buckets);
 
 /// <summary>Wire form of one historized sample.</summary>
 public sealed record HistorySampleDto(
@@ -86,3 +101,32 @@ public sealed record HistorySampleDto(
     DateTimeOffset SourceTimestampUtc,
     DateTimeOffset IngestedAtUtc,
     string Quality);
+
+/// <summary>
+/// Wire form of one bucket of a reduced history (ADR-0029).
+/// </summary>
+/// <param name="StartUtc">
+/// The start of the stretch, on the grid the caller's own window set, so the first bucket begins
+/// exactly at the window's edge.
+/// </param>
+/// <param name="LastUtc">
+/// The newest reading in it — the only field that can answer how fresh the trend is, because
+/// <paramref name="StartUtc"/> is the edge of the stretch rather than a measurement time, and an age
+/// decided on it would call a live trend stale up to one bucket early.
+/// </param>
+/// <param name="Count">
+/// How many readings were read in it, whatever their quality, so a bucket the device answered with
+/// nothing but Bad is a hole with a count rather than a quiet bucket. Never zero: a stretch nothing
+/// was measured in is absent from the list.
+/// </param>
+/// <param name="Low">
+/// The extremes of the readings a trend would have plotted — Good, numeric and finite — or null
+/// when the bucket held none of those. Never an average, and never a substituted value.
+/// </param>
+/// <param name="High">The other extreme, or null for the same reason as <paramref name="Low"/>.</param>
+public sealed record HistoryBucketDto(
+    DateTimeOffset StartUtc,
+    DateTimeOffset LastUtc,
+    int Count,
+    double? Low,
+    double? High);

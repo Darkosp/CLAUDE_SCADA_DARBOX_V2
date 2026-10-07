@@ -1,5 +1,22 @@
-import { Component, computed, input } from '@angular/core';
-import { HistorySample, plotAcross, trendAxis, trendColumns } from './models';
+import {
+  Component,
+  DestroyRef,
+  ElementRef,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  viewChild,
+} from '@angular/core';
+import {
+  TREND_POINTS,
+  TrendSeries,
+  bucketColumns,
+  bucketGaps,
+  readingsIn,
+  trendAxis,
+} from './models';
 
 interface Point {
   x: number;
@@ -12,6 +29,11 @@ interface Point {
  * Drawn as inline SVG rather than with a charting library: ADR-0006 names no charting
  * dependency, and "basic trend chart" is what this phase scopes. Anything richer —
  * zoom, pan, multiple series — is a library decision that needs its own ADR.
+ *
+ * **It draws buckets, not readings, and that is the point of ADR-0029.** The reduction from a
+ * window's readings to what fits across the chart used to happen here — every reading crossed the
+ * wire first — and it happens in the query now. What this component still owns is the part only it
+ * can know: where across the chart each bucket belongs, and where the line must break.
  */
 @Component({
   selector: 'app-trend-chart',
@@ -19,7 +41,7 @@ interface Point {
     @if (points().length < 2) {
       <p class="empty">Not enough history yet.</p>
     } @else {
-      <svg [attr.viewBox]="'0 0 ' + width + ' ' + height" class="chart" role="img"
+      <svg #chart [attr.viewBox]="'0 0 ' + width() + ' ' + height()" class="chart" role="img"
            [attr.aria-label]="'Trend for ' + unitSymbol()">
         <!-- Behind the line: what each column's readings actually reached. -->
         @for (bar of envelope(); track bar.x) {
@@ -29,18 +51,27 @@ interface Point {
         @for (segment of segments(); track $index) {
           <polyline class="line" [attr.points]="segment" />
         }
-        <text class="tick" [attr.x]="4" [attr.y]="12">{{ high().toFixed(2) }}</text>
-        <text class="tick" [attr.x]="4" [attr.y]="height - 4">{{ low().toFixed(2) }}</text>
+        <text class="tick" [attr.x]="4" [attr.y]="plot().top - 2">{{ high().toFixed(2) }}</text>
+        <text class="tick" [attr.x]="4" [attr.y]="height() - 6">{{ low().toFixed(2) }}</text>
       </svg>
       <!--
         **The period, under the chart, always.** A curve with no stated period is a curve nobody can
         reason about: before this, the same picture could be a quarter of an hour or a week and the
         reader had no way to tell. The ends are the window that was ASKED FOR, not the first and last
         reading held, so an outage at either end reads as empty chart rather than disappearing.
+
+        **And it is set to the plot's own edges, not the card's.** The drawing is inset by a gutter for
+        the value labels above, so a row of dates sitting flush with the card would name a time
+        seventy pixels away from the point it belongs to — which is the defect this chart was walked
+        for, an order of magnitude smaller. Both come from the same place, so they cannot drift.
+
+        And **how much is behind the curve**: the readings, then the points they are drawn as. Both,
+        because a reader who is told only the points cannot tell a quiet window from a reduced one —
+        which is the same reason nothing here is capped without saying so (ADR-0029 §3).
       -->
-      <p class="axis">
+      <p class="axis" [style.paddingLeft.px]="plot().left" [style.paddingRight.px]="plot().right">
         <span>{{ axis().start }}</span>
-        <span class="count">{{ samples().length }} samples · {{ low().toFixed(2) }}–{{ high().toFixed(2) }} {{ unitSymbol() }}</span>
+        <span class="count">{{ readings() }} readings · {{ points().length }} points · {{ low().toFixed(2) }}–{{ high().toFixed(2) }} {{ unitSymbol() }}</span>
         <span>{{ axis().end }}</span>
       </p>
     }
@@ -76,49 +107,155 @@ interface Point {
   `,
 })
 export class TrendChart {
-  readonly samples = input.required<HistorySample[]>();
+  /**
+   * The window as the server reduced it, with the width it reduced it to.
+   *
+   * One input rather than a list and a width, because those two have to agree: a chart handed
+   * buckets and a width from two places could place every column at the wrong x and look fine.
+   */
+  readonly series = input.required<TrendSeries>();
+
   readonly unitSymbol = input<string>('');
 
   /**
    * The window this trend was asked for — the chart's x-axis, end to end.
    *
-   * Required, and taken from the caller rather than derived from the samples, because the samples
-   * cannot tell a window apart from what happens to be in it: a device offline for the first ten
-   * minutes of a quarter-hour leaves five minutes of readings, and drawn against themselves they
-   * fill the chart as though nothing had been missing.
+   * Required, and taken from the caller rather than derived from the data, because the data cannot
+   * tell a window apart from what happens to be in it: a device offline for the first ten minutes
+   * of a quarter-hour leaves five minutes of buckets, and drawn against themselves they fill the
+   * chart as though nothing had been missing.
    */
   readonly from = input.required<Date>();
   readonly to = input.required<Date>();
 
+  /**
+   * The size the chart is **drawn at**, in its own coordinates — measured from the element it is in.
+   *
+   * **A fixed coordinate system in a responsive box is a lie about time, and this is the walk of
+   * 2026-10-07 finding it.** The viewBox was the constant `0 0 600 160` inside a chart element that
+   * filled its card, and the default `preserveAspectRatio` scales such a drawing uniformly to fit the
+   * *shorter* side and centres it. On a 1920 panel that card is ~1480 px wide, so the curve was drawn
+   * in a **607 px strip in the middle** while the axis beneath it ran the full width: every reading sat
+   * at the wrong time by the width of the empty band — about seven hours on a day-long window — and the
+   * two value ticks floated in the middle of the chart rather than at its left edge.
+   *
+   * No test could see it: the arithmetic was right, the buckets were right, and only the *rendered*
+   * box disagreed with the coordinate system. Measured facts, from the running client: svg box
+   * 1482×162, viewBox 600×160, first drawn point at x=846 of 1887.
+   *
+   * So the coordinate system is the element. Until the first measurement the fallback is
+   * `TREND_POINTS`, which is one point per pixel at the width this chart used to be.
+   */
+  protected readonly width = signal(TREND_POINTS);
+  protected readonly height = signal(160);
+
+  private readonly destroyRef = inject(DestroyRef);
+  private observer: ResizeObserver | null = null;
+
+  /**
+   * The drawing element itself, which **is not there on the first render and that cost this fix one
+   * attempt.** Empty history draws the words "Not enough history yet" instead of a chart, so a
+   * measurement taken after the component's first render found no SVG at all, returned, and never
+   * looked again — the viewBox stayed the constant and the defect stayed with it. The element arrives
+   * when the history does, so this is bound to it rather than to a moment.
+   */
+  private readonly chart = viewChild<ElementRef<SVGSVGElement>>('chart');
+
+  constructor() {
+    effect(() => {
+      const svg = this.chart()?.nativeElement;
+
+      if (svg === undefined) {
+        return;
+      }
+
+      this.observer ??= new ResizeObserver(() => this.measure(svg));
+      this.observer.observe(svg);
+
+      // Re-measured rather than assumed, because the card moves: the pane is resized by the window, by
+      // the tree beside it, and by a screen's own column count.
+      this.measure(svg);
+    });
+
+    this.destroyRef.onDestroy(() => this.observer?.disconnect());
+  }
+
+  /** Writes the element's content box into the coordinate system the chart draws in. */
+  private measure(svg: SVGSVGElement): void {
+    const box = svg.getBoundingClientRect();
+    const style = getComputedStyle(svg);
+    const border = (side: 'borderLeftWidth' | 'borderRightWidth' | 'borderTopWidth' | 'borderBottomWidth') =>
+      Number.parseFloat(style[side]) || 0;
+
+    // The SVG's *viewport* is its content box, not its border box, and the two differ by the border
+    // this chart draws. Measured off by a pixel on either side, `preserveAspectRatio` would letterbox
+    // the drawing again — the same defect, two orders of magnitude smaller.
+    const width = Math.round(box.width - border('borderLeftWidth') - border('borderRightWidth'));
+    const height = Math.round(box.height - border('borderTopWidth') - border('borderBottomWidth'));
+
+    if (width > 0 && height > 0 && (width !== this.width() || height !== this.height())) {
+      this.width.set(width);
+      this.height.set(height);
+    }
+  }
+
   /** Both ends of the axis, as a reader can place them. */
   protected readonly axis = computed(() => trendAxis(this.from(), this.to()));
 
-  protected readonly width = 600;
-  protected readonly height = 160;
+  /**
+   * Where the data is drawn inside the chart, and the room the labels need around it.
+   *
+   * **Found by the walk of 2026-10-07, in its second pass**: the two value labels were drawn *inside*
+   * the plot at its left edge, and the reading there is by definition the lowest one — so `3.80` sat
+   * on top of the curve it was labelling. Crowded rather than wrong, and the first pass at 1920 had
+   * them floating in the middle of the card, which is where they should never have been either.
+   *
+   * So the plot is inset: a gutter on the left for the labels, and enough above and below that the
+   * line can reach neither of them. **The axis row under the chart is inset by the same numbers** —
+   * a row of dates flush with the card while the drawing starts seventy pixels in would name times
+   * that belong to points further right, which is the defect this chart was walked for at all.
+   *
+   * The gutter is dropped on a card too narrow to hold both a label and a curve worth reading; a
+   * trend in a tile is the case that has to keep working.
+   */
+  protected readonly plot = computed(() => {
+    const width = this.width();
+    const height = this.height();
+    const gutter = width >= 360 ? 46 : 0;
+
+    return {
+      left: gutter,
+      right: gutter > 0 ? 6 : 0,
+      top: 14,
+      bottom: 22,
+      width: Math.max(width - gutter - (gutter > 0 ? 6 : 0), 1),
+      height: Math.max(height - 14 - 22, 1),
+    };
+  });
 
   /**
-   * Only Good numeric samples are plotted. A Bad sample carries no value at all, and
-   * drawing a gap is honest where interpolating across it would invent a reading.
-   */
-  /**
-   * The readings reduced to one column per pixel, keeping each column's extremes.
+   * The buckets placed across the plot, each keeping the extremes of what was measured in it.
    *
-   * Below one reading per pixel this changes nothing, so a short trend is drawn exactly as it was
-   * before this existed. Above it, `trendColumns` is what stops eight hours of a tag scanned every
-   * second from arriving as a solid block of ink — and it keeps the envelope rather than an average,
-   * so the spike that made somebody open the trend is still there.
+   * A bucket the server read nothing plottable in is dropped here rather than drawn: it is a hole
+   * with a count, and drawing it as a value would be the fabrication ADR-0003 refuses.
    */
-  protected readonly columns = computed(() =>
-    trendColumns(
-      this.usableSamples().map((sample) => ({
-        time: new Date(sample.sourceTimestampUtc).getTime(),
-        value: sample.value.numeric as number,
-      })),
-      this.from().getTime(),
-      this.to().getTime(),
-      this.width,
-    ),
-  );
+  protected readonly columns = computed(() => {
+    const plot = this.plot();
+
+    return bucketColumns(this.series(), this.from().getTime(), this.to().getTime(), plot.width)
+      .map((column) => ({ ...column, x: column.x + plot.left }));
+  });
+
+  /** How many readings the curve is drawn from — what the caption means by "readings" (ADR-0029 §4). */
+  protected readonly readings = computed(() => readingsIn(this.series()));
+
+  /** A reading's value as a y inside the plot: the lowest sits on the plot's floor, the highest on its roof. */
+  private toY(value: number): number {
+    const plot = this.plot();
+    const low = this.low();
+
+    return plot.top + plot.height - ((value - low) / Math.max(this.high() - low, Number.EPSILON)) * plot.height;
+  }
 
   protected readonly points = computed<Point[]>(() => {
     const columns = this.columns();
@@ -127,34 +264,25 @@ export class TrendChart {
       return [];
     }
 
-    const low = this.low();
-    const span = Math.max(this.high() - low, Number.EPSILON);
-    const padding = 8;
-    const y = (value: number) =>
-      this.height - padding - ((value - low) / span) * (this.height - padding * 2);
-
-    // The midpoint of each column's envelope carries the line; the envelope itself is drawn behind
+    // The midpoint of each bucket's envelope carries the line; the envelope itself is drawn behind
     // it, so neither hides the other.
-    return columns.map((column) => ({ x: column.x, y: y((column.low + column.high) / 2) }));
+    return columns.map((column) => ({
+      x: column.x,
+      y: this.toY((column.low + column.high) / 2),
+    }));
   });
 
   /**
    * The envelope: for each column, the vertical reach of what was measured in it.
    *
-   * Drawn only where a column actually spans a range — on a short trend every column holds one
+   * Drawn only where a column actually spans a range — on a short trend a bucket may hold one
    * reading, so there is nothing to draw and the chart is the line alone.
    */
-  protected readonly envelope = computed(() => {
-    const low = this.low();
-    const span = Math.max(this.high() - low, Number.EPSILON);
-    const padding = 8;
-    const y = (value: number) =>
-      this.height - padding - ((value - low) / span) * (this.height - padding * 2);
-
-    return this.columns()
+  protected readonly envelope = computed(() =>
+    this.columns()
       .filter((column) => column.high > column.low)
-      .map((column) => ({ x: column.x, top: y(column.high), bottom: y(column.low) }));
-  });
+      .map((column) => ({ x: column.x, top: this.toY(column.high), bottom: this.toY(column.low) })),
+  );
 
   /**
    * The line, split wherever history has a hole in it.
@@ -163,10 +291,14 @@ export class TrendChart {
    * an outage and the first one after — a line no device ever produced. Breaking the
    * stroke shows the absence instead, which is the same reason a Bad reading carries no
    * value rather than a substituted one.
+   *
+   * **The hole is found by a missing bucket** (ADR-0029 §6), which is exact. It used to be inferred
+   * from the distances between columns against four times their median, and that rule could not see
+   * a gap narrower than about four columns — over an hour of nothing at a seven-day resolution.
    */
   protected readonly segments = computed<string[]>(() => {
     const points = this.points();
-    const gaps = this.gapAfterIndex();
+    const gaps = bucketGaps(this.columns());
 
     const result: string[] = [];
     let current: Point[] = [];
@@ -191,64 +323,13 @@ export class TrendChart {
       : points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
   }
 
-  /**
-   * Indexes after which the next sample is far enough away to count as an outage rather
-   * than the normal scan interval. The threshold is derived from the data itself, so it
-   * holds for a tag scanned once a second and one scanned once a minute alike.
-   */
-  private gapAfterIndex(): Set<number> {
-    // **Over the COLUMNS, not the samples.** `points()` now holds one point per column, and an index
-    // into the readings would split the line at places that no longer correspond to anything — a
-    // defect introduced and caught in the same sitting, and the same shape as every other one this
-    // project has found: two halves each correct, and the path between them left behind.
-    //
-    // Each column knows when its first and last reading were taken, so the distance between two
-    // columns is the distance from the last reading of one to the first of the next: on a short
-    // trend, where a column holds a single reading, that is exactly what it used to be.
-    const columns = this.columns();
-
-    if (columns.length < 3) {
-      return new Set();
-    }
-
-    const deltas = columns
-      .slice(1)
-      .map((column, index) => column.firstTime - columns[index].lastTime);
-    const sorted = [...deltas].sort((left, right) => left - right);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    const threshold = Math.max(median * 4, 5_000);
-
-    const gaps = new Set<number>();
-    deltas.forEach((delta, index) => {
-      if (delta > threshold) {
-        gaps.add(index);
-      }
-    });
-
-    return gaps;
-  }
-
   protected readonly low = computed(() => {
-    const values = this.numericValues();
-    return values.length === 0 ? 0 : Math.min(...values);
+    const columns = this.columns();
+    return columns.length === 0 ? 0 : Math.min(...columns.map((column) => column.low));
   });
 
   protected readonly high = computed(() => {
-    const values = this.numericValues();
-    return values.length === 0 ? 0 : Math.max(...values);
+    const columns = this.columns();
+    return columns.length === 0 ? 0 : Math.max(...columns.map((column) => column.high));
   });
-
-  private numericValues(): number[] {
-    return this.usableSamples().map((sample) => sample.value.numeric as number);
-  }
-
-  /**
-   * Samples that can be plotted at all: Good quality, with a numeric value. A Bad sample
-   * carries no value, so there is nothing to place on the axis.
-   */
-  private usableSamples(): HistorySample[] {
-    return this.samples().filter(
-      (sample) => sample.quality === 'Good' && typeof sample.value.numeric === 'number',
-    );
-  }
 }

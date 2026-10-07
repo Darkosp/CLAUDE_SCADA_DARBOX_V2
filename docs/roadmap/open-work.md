@@ -1282,6 +1282,92 @@ another process on a loaded machine can win in between, and its wait is a wall-c
 rather than a signal. It matters for the reason the probe fix above does: a test that fails only
 under load makes "the suite is green" mean less than it looks.
 
+### 2.6 The suite after ADR-0029, 2026-10-07 — **648 passed, 0 skipped**
+
+`dotnet test ScadaDarbox.slnx` with `SCADA_TEST_DB_PORT=5433`, beside the native PostgreSQL on 5432,
+**exit 0**. Nothing skipped: `scada-test-db-5433` was up, so the database-enforced guarantees were
+verified rather than waved through.
+
+| Project | Passed | Skipped | Total |
+|---|---|---|---|
+| `ScadaDarbox.Core.Tests` | 196 | 0 | 196 |
+| `ScadaDarbox.Drivers.Modbus.Tests` | 38 | 0 | 38 |
+| `ScadaDarbox.Drivers.OpcUa.Tests` | 13 | 0 | 13 |
+| `ScadaDarbox.Drivers.Mqtt.Tests` | 93 | 0 | 93 |
+| `ScadaDarbox.EdgeAgent.Tests` | 40 | 0 | 40 |
+| `ScadaDarbox.Persistence.Tests` | 93 | 0 | 93 |
+| `ScadaDarbox.Gateway.Tests` | 175 | 0 | 175 |
+| **all seven** | **648** | **0** | **648** |
+
+The client's suite, `npm test` in `src/Web`: **222 passed, 0 failed, 0 skipped**.
+
+**Ten of those .NET tests and the client's bucket tests are ADR-0029's**, and what each one is for is
+worth having here rather than reconstructed later: the envelope is the extremes of what was measured
+(against a control with no unplottable reading in it); an unplottable reading does not widen it, which
+is where the Bad-with-a-number case and the NaN/infinity cases live; a bucket of nothing but those comes
+back with a count and no value; a stretch nothing was measured in produces no bucket and the counts
+still add up to the raw read of the same window; the grid starts at the window asked for; the last
+reading's time is a reading's; and an hour of one-second readings asked for as 60 points is 60 buckets
+holding all 3,600. On the client: where a bucket is placed, that an unplottable one is a hole and not a
+value, that a missing bucket breaks the line exactly, that columns come back in order, that the readings
+behind the curve are the sum of the counts, that a raw answer is refused rather than reduced here, and
+that a trend's age is its newest reading rather than its bucket edge.
+
+**Walked, by eye, on 2026-10-07 — and it found a defect that had nothing to do with the reduction and
+had been on screen since the chart was written.** The record is
+[`walk-2026-10-07.md`](walk-2026-10-07.md#the-trend-walked-by-eye--2026-10-07-second-sitting): a Gateway
+from the branch against a scratch database, `ng serve`, `tools/screenshot-live.mjs` extended with the
+step it lacked (select a tag, then shoot every window the picker offers), and 169,057 seeded readings
+carrying a one-hour outage, ten minutes of Bad and one four-second excursion.
+
+**The chart was not drawn where its axis was.** The element is 1482×162 px, the `viewBox` was the
+constant `0 0 600 160`, and with SVG's default `preserveAspectRatio` the drawing was scaled to fit the
+*shorter* side and centred — so the curve sat in a 607 px strip in the middle of the card while the axis
+under it ran edge to edge, the value ticks floated mid-chart, and **every reading was placed at the wrong
+time by the width of the empty band**: about seven hours on a day-long window. Green tests, clean build,
+correct buckets, and a picture that lied about when things happened. Fixed by measuring the element and
+drawing in its coordinates (verified by re-probing the DOM: `viewBox` `0 0 1480 160`, first point at
+x=407, the hole in the line landing at 16 % — where a Bad stretch twenty hours into a day window
+belongs), and pinned by `src/Web/tests/trend-chart-size.test.mjs`.
+
+**The fix took two attempts**: the first measured once in `afterNextRender`, and empty history draws
+words rather than a chart, so there was no SVG to measure and the viewBox stayed a constant. The
+measurement is bound to the element now, and the test says why.
+
+**What the walk answered, and what it left:**
+- **Answered: the caption reads as information.** *"85885 readings · 592 points · 3.80–9.70 bar"* is
+  legible at 1920 and reads; the envelope at a 1008-second bucket is a band with the line through it
+  rather than a comb; a hole is drawn as a hole; and a 7-day window shows two days of readings in the
+  right-hand 28 % with five days of honest emptiness beside them.
+- **Fixed the same evening: the value labels were drawn on the curve.** They sat inside the plot at its
+  left edge, where the reading is the lowest one, so `3.80` was printed over the line it labelled. The
+  plot is inset now with a gutter for them, **the axis row is inset by the same numbers** (a row of dates
+  flush with the card would name times belonging to points 46 px to its right — the same defect, an order
+  of magnitude smaller), and `src/Web/tests/trend-chart-size.test.mjs` fails if those two stop coming
+  from one place. **And a trend in a screen tile was looked at**, in two widths — six columns and three —
+  added to the seeded screen through the API the browser itself calls; both hold. One branch was not
+  reached: the chart drops its gutter below 360 px and the narrow tile is ~410 px, so that code is
+  reasoned about and unseen.
+- **Decided, and refused rather than built: the fetch budget stays 600 points whatever the card's
+  width.** Asking for the measured width — ~1480 — is the obvious completion of "the caller asks for the
+  points it can draw", and it is the wrong trade: it would treble the rows and the wire to draw a point
+  every 2.5 px instead of every 1 px, which is detail no eye resolves, in the one decision whose purpose
+  was to stop sending what nobody looks at. What makes that acceptable is that the reduction is **legible
+  on the screen**: the caption says how many points the readings were drawn as. A deployment that ever
+  wanted the detail would change the app's fetch, not the chart.
+- **Not the product's own stack**: `localhost:8090` still runs image `504c1d3`, built before this change.
+  The walk ran a Gateway from the branch against its own database, with seeded data rather than a plant's.
+
+**Five mutations were watched, each failing its own named test with a control green beside it**: the
+three non-finite comparisons in the query (failure: the bucket's low was `-∞`), the quality filter
+(failure: the high was the Bad reading's `500`), the grid's origin (`date_bin` anchored to the epoch
+instead of the window: the buckets came back on the minute rather than the caller's `:17`), the
+last-reading time (the bucket edge instead of `max(source_time)`), and the refusal of an out-of-range
+`points` (clamped instead: 200 OK where a 400 was owed). One thing is asserted rather than
+mutation-proven, and it is worth saying which: **the absent-bucket rule is structural in the query** —
+a `GROUP BY` cannot invent a group for a stretch with no rows — so it is pinned by a test but no small
+edit was found that breaks it without rewriting the query.
+
 ## 3. Waits for a decision, before any code
 
 An ADR is changed by a new ADR, never edited into a different decision; and a
@@ -1297,7 +1383,7 @@ decided inside an implementation pull request.
 | **A decimal comma, in two forms of one client** | found 2026-10-07 while closing §2.0l item 1 | **a decision.** `parseNumberField` converts `1,5` to `1.5` for the alarm threshold form, *"a decimal comma is what a Macedonian keyboard produces"*. A symbol's mapping does not: ADR-0027 stores the text **exactly as the author typed it**, so `1,5` is refused. Both behaviours are defensible and the pair is not — the same person typing the same key into two forms of one application gets two answers. Normalising at the symbol form's input would be the smaller change and would contradict ADR-0027's stated reason for keeping the text exact, so it needs an ADR rather than a patch. Until then the refusal names what to type |
 | **An edit that silently releases a device from its edge** | found by the write walk, 2026-10-06; §2.0 | **a decision about the API's shape.** A `PUT` of a device that omits `edgeId` releases it, which is ADR-0019's documented contract — *"assigning and releasing are ordinary edits of the device"* — and a full replacement is a defensible REST shape. What the walk showed is that **the design makes it easy to do by accident**: changing one field means resending every other, and the only signal that an assignment was dropped is a write failing 4.75 s later with a message about DNS, after the cloud has tried to reach a plant device **directly**. The consequence is on the write path, which is the one path where being wrong means a plant was changed or an operator was told it was. Options span a PATCH, an explicit release endpoint, and leaving it and saying so louder — all three are ADR territory |
 | **What a pump should look like** | answered by the eye-walk of 2026-10-07; §2.0j | **a decision, and a cheap one either way.** The reader saw *"something that symbolises a pump — four thin arms in a circle, turning"*. That is arguably success: on a P&ID a pump **is** an abstract mark. But the convention plant people are trained on is a circle with a **wedge** marking the discharge, and four vanes reads closer to an impeller or a fan. ADR-0027 §6 makes a second drawing *"a drawing and a state list, not a decision"*, so the cost is small and the question is only which reading the product wants. **Decided 2026-10-07: it stays as it is for now.** The owner's words: *the pump's appearance is aesthetics; leave it, we will refine the look and the shape later.* Recorded rather than closed, because the question is deferred and not answered |
-| **A long trend transfers every reading** | measured 2026-10-07 while building the window picker | **a decision, and the measurement is the argument.** `GET /api/tags/{id}/history` returns every sample in the window: seven days of one tag scanned each second came back as **100,552 samples and 22.2 MB**, in 0.43 s over localhost. On a plant LAN that is a pause; over the cloud link it is not, and a plant running for months would be several times it. The client reduces for *drawing* (`trendColumns`, min/max per pixel), which is what makes a long window readable — but the whole set still crosses the wire first. The answer is almost certainly bucketing in the query, and TimescaleDB's `time_bucket` is in the Apache build, so this is a question about **where the reduction happens** rather than about a licence — but ADR-0006 has a note about which Timescale features are in scope, so it wants an ADR rather than a patch. **Nothing is silently capped in the meantime**: a cap that dropped readings without saying so is the one answer this project must not take |
+| **A long trend transfers every reading** | measured 2026-10-07 while building the window picker | **closed 2026-10-07 by [ADR-0029](../architecture/decisions/0029-a-trend-asks-for-the-points-it-can-draw.md)** — the client asks for the points it can draw, the server reduces in the window in a `date_bin` query and **states the width it used**, and a request without `points` is still every reading. Measured on the demo database's busiest tag (110,782 readings over a day and three quarters): **19 MB of JSON and 182 ms before; 417 buckets holding all of them, 56 kB, after**. The client's own reduction and its five tests were **deleted rather than kept as a fallback**, and the gap rule became exact where the old heuristic could not see a hole narrower than four columns. **What the entry leaves open and ADR-0029 does not close: the query still reads every row to group it** — this removes bytes from the wire, not work from the database — and a precomputed aggregate is the answer for that, which is precisely what ADR-0006's licensing flag keeps out of scope |
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
 | TimescaleDB continuous aggregates and native compression | ADR-0006 | the legal review ADR-0006 asks for; the code deliberately does not use them |
 | Rollback of a schema migration (down-scripts) | ADR-0012, ADR-0014, `phase-plan.md` Phase 6 | **stays forward-only by decision**; the guide's backup-and-restore is the answer |
@@ -1307,7 +1393,7 @@ decided inside an implementation pull request.
 | Writing a tag from a screen | same place | **closed 2026-10-05 by [ADR-0026](../architecture/decisions/0026-operating-from-a-screen.md)** — one component writes, the server decides whether to offer it; see §2.0h |
 | Scripting (Jint), reporting | `phase-plan.md`, "Later (not yet scoped)" | a phase that creates a concrete need |
 | CI — any pipeline at all | not scoped by any phase | a phase that wants it; today every gate rests on a recorded hand walk |
-| **xunit 2.9.3 is deprecated** | measured 2026-10-07, `dotnet list package --deprecated` | **a decision about when, not whether.** All seven test projects are on `xunit 2.9.3`, which NuGet marks `Legacy` with `xunit.v3` as its replacement. Nothing is wrong today — **zero vulnerable packages across all eighteen projects**, measured the same day — and 614 tests pass on it. v3 changes the runner and the assembly model, so it is a sitting of its own rather than a line in another change, and it buys maintenance rather than behaviour. Worth doing before the suite grows again, not worth interrupting a phase for |
+| **xunit 2.9.3 is deprecated** | measured 2026-10-07, `dotnet list package --deprecated` | **a decision about when, not whether.** All seven test projects are on `xunit 2.9.3`, which NuGet marks `Legacy` with `xunit.v3` as its replacement. Nothing is wrong today — **zero vulnerable packages across all eighteen projects**, measured the same day — and 648 tests pass on it *(re-measured 2026-10-07 after ADR-0029; the row first said 614, which was the count two sessions earlier and had `open-work.md` §2.6's own reason to be corrected)*. v3 changes the runner and the assembly model, so it is a sitting of its own rather than a line in another change, and it buys maintenance rather than behaviour. Worth doing before the suite grows again, not worth interrupting a phase for |
 
 ## 4. Environment, not project
 

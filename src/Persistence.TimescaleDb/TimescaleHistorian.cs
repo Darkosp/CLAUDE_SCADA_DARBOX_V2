@@ -159,6 +159,83 @@ public sealed class TimescaleHistorian : IHistorian
         return results;
     }
 
+    public async Task<IReadOnlyList<HistorianBucket>> ReadBucketsAsync(
+        Guid tagId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        TimeSpan bucketWidth,
+        CancellationToken cancellationToken)
+    {
+        // A bucket of no width is not a bucket, and date_bin refuses one rather than guessing —
+        // so the refusal is here, naming what arrived, instead of a Postgres error naming a stride.
+        if (bucketWidth <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(bucketWidth),
+                bucketWidth,
+                "A bucketed read needs a width above zero.");
+        }
+
+        // **The reduction is the query** (ADR-0029). The readings that are not drawn are never
+        // built, never sent and never materialised by the Gateway — which is the whole point of
+        // deciding this here rather than in the browser or in the host.
+        //
+        // date_bin is PostgreSQL's own function, not a TimescaleDB one, so nothing here leans on
+        // the licensed features ADR-0006 flags. Its origin is the window's own start, so the first
+        // bucket begins exactly at @from and the same request returns the same grid.
+        //
+        // `plottable` is written once, as a CASE, because the alternative is the same predicate
+        // twice in a min() and a max() — the shape this project has been bitten by. It means what
+        // the client used to mean by `usableSamples`: Good and numeric. **The three comparisons
+        // against NaN and the infinities are not decoration.** JSON carries neither, so the raw
+        // read sends such a reading as "no value" and a trend drops it; an envelope built over
+        // them would show a value a raw read of the same window never would. Postgres' float
+        // ordering puts NaN above every number and treats it as equal to itself, so `<>` excludes
+        // it exactly.
+        const string sql = """
+            WITH readings AS (
+                SELECT source_time,
+                       CASE WHEN quality = @good
+                             AND numeric_value IS NOT NULL
+                             AND numeric_value <> 'NaN'::float8
+                             AND numeric_value <> 'Infinity'::float8
+                             AND numeric_value <> '-Infinity'::float8
+                            THEN numeric_value END AS plottable
+                FROM tag_sample
+                WHERE tag_id = @tag_id AND source_time >= @from AND source_time < @to
+            )
+            SELECT date_bin(@width, source_time, @from) AS bucket_start,
+                   count(*) AS readings,
+                   max(source_time) AS last_reading,
+                   min(plottable) AS low_value,
+                   max(plottable) AS high_value
+            FROM readings
+            GROUP BY bucket_start
+            ORDER BY bucket_start
+            """;
+
+        await using var command = _dataSource.CreateCommand(sql);
+        command.Parameters.AddWithValue("tag_id", tagId);
+        command.Parameters.AddWithValue("from", fromUtc);
+        command.Parameters.AddWithValue("to", toUtc);
+        command.Parameters.AddWithValue("good", (short)Quality.Good);
+        command.Parameters.AddWithValue("width", NpgsqlDbType.Interval, bucketWidth);
+
+        var results = new List<HistorianBucket>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            results.Add(new HistorianBucket(
+                reader.GetFieldValue<DateTimeOffset>(0),
+                reader.GetFieldValue<DateTimeOffset>(2),
+                (int)reader.GetInt64(1),
+                reader.IsDBNull(3) ? null : reader.GetDouble(3),
+                reader.IsDBNull(4) ? null : reader.GetDouble(4)));
+        }
+
+        return results;
+    }
+
     public async Task<DateTimeOffset?> LastIngestedAtAsync(CancellationToken cancellationToken)
     {
         // The hypertable is partitioned by source time, not ingestion time, so an unbounded
