@@ -724,10 +724,22 @@ and then *"there is no edit tag"*, and both were reasonable readings of a docume
   opinion about a percentage above 100 is a design question, and it is not answered by the units work
   in ADR-0005, which is about dimension and factor rather than plausibility.
 
-### 2.0 Written, and not yet walked
+### 2.0 Written, and not yet walked — **all four are now walked (2026-10-06, 2026-10-07)**
 
 Decided, implemented, tested — and waiting only for a run that exercises it. These are not
 defects and not open questions: the work exists and nothing has been through it end to end.
+
+***Status 2026-10-07: this section is closed.** ADR-0023's write was walked on 2026-10-06
+([record](walk-2026-10-06.md)); **ADR-0020, ADR-0021 and ADR-0022 were walked on 2026-10-07**, in one
+sitting against one rig, because all three meet at a new edge —
+[`walk-2026-10-07.md`](walk-2026-10-07.md) has every log line, audit row and number. Each entry below
+keeps its original text, with what the walk showed added to it. **The walk found one defect**, in
+ADR-0020's half, and it is the kind only a walk finds: every unit test of the derivation passed and
+still passes, because what nothing tested was whether an operator is ever told.*
+
+***What none of it proves is still one machine.** The broker, the Gateway, the edge and the device were
+all on this host over Docker networks. §1.3 — a real arm64 board — is untouched and is the one item no
+amount of software closes.*
 
 - **[ADR-0020](../architecture/decisions/0020-devices-with-no-tags.md) — a tagless device is
   omitted from the derivation.** Decided and implemented 2026-10-02 from §2.1's finding, with its
@@ -738,6 +750,16 @@ defects and not open questions: the work exists and nothing has been through it 
   cheapest place to watch it: assign a second device to that edge with no tags, confirm the
   edge's configuration is still accepted whole, then add one tag and confirm the edge picks the
   device up without a second edit.
+
+  **Walked 2026-10-07, and it found a defect.** The omission itself was exactly right: a tagless
+  `Tagless Booster` never entered the derived configuration, and when its first tag was added the edge
+  logged `Connected to device Tagless Booster` **with no second edit**. But the log line this entry
+  names was **not written when the device was assigned** — it appeared four minutes later, only because
+  an unrelated device gained a tag and forced a publish, and would never have appeared otherwise.
+  `ReportOmitted` sat after the `continue` that skips an unchanged revision, and the revision never
+  changes in this case, because a tagless device is omitted whether or not it is there. Fixed in
+  [PR #2](https://github.com/Darkosp/CLAUDE_SCADA_DARBOX_V2/pull/2), with a test that asserts the pair:
+  the report is written **and** nothing was published.
 - **[ADR-0021](../architecture/decisions/0021-edge-reports-what-it-cannot-read.md) — an edge says
   which assigned devices it cannot read, on its own declaration (version 2).** Decided and
   implemented 2026-10-02, with its own tests and the client showing the result. **What has not
@@ -751,6 +773,19 @@ defects and not open questions: the work exists and nothing has been through it 
   against two builds of different ages on a real link. **Also not walked:** that the declaration is
   republished when the set changes and not otherwise — the unit tests watch it through a real
   in-process broker, and no walk has watched it over the TLS link.
+
+  **Walked 2026-10-07, all of it, and it passed.** The state was produced the way §8 allows rather than
+  by stripping a build: `plant-c` had never declared, so a `mqtt` device could still be assigned to it,
+  and the edge then refused it by name (`Device Remote Sensor needs driver 'mqtt', which this edge agent
+  does not have.`), accepted the rest of the configuration whole, and said so on the declaration it
+  already publishes. The cloud named the device and the driver, `/api/edges` reported it with
+  `reportedByEdge: true`, and **the assignment was untouched**. §4 showed in two audit rows 200 ms
+  apart: the connect-time declaration with an empty set, then the post-acquisition one naming the
+  device. **The version half was walked by publishing by hand** with the edge's own certificate — which
+  also re-tested the ACL: a **version 1** message recorded `unreadableReported: false`, kept apart in
+  storage from a version 2 message with an empty list (*absent is not empty*), and a **version 3** was
+  refused whole by name with no audit row and nothing changed. The numbers are in
+  [`walk-2026-10-07.md`](walk-2026-10-07.md).
 - **[ADR-0022](../architecture/decisions/0022-derived-link-device.md) — an edge's link device is
   derived, is not overridable, and the edge names its limits.** Decided and implemented
   2026-10-02, with its own tests. **What has not happened:** no run has created an edge against a
@@ -763,6 +798,19 @@ defects and not open questions: the work exists and nothing has been through it 
   **And one thing an upgrade exercises that nothing here does:** an existing deployment's
   hand-made link devices are reused rather than replaced, which is what keeps the broker's session
   — and the queue under it — from being dropped by the change.
+
+  **Walked 2026-10-07.** The edge was created with a deliberately wrong `linkDeviceId` and the API
+  **ignored it** — the link came back derived, while the `edge.create` audit row still holds what was
+  asked for, so the request is not lost, only not obeyed. The Gateway logged the derivation and then
+  `Subscribed to scada/edge/plant-c/samples on broker:8884 (new session)` **while no edge agent
+  existed**; the container was created fifty minutes later. The upgrade half was exercised too, because
+  the walk ran against the previous walks' database rather than a fresh one: `plant-7` and `plant-b`
+  kept their link ids across `25dac80` → `4fa715f`, and the broker audit shows the same client ids
+  across three days. **One thing the walk sharpened:** the subscription is made when the edge first has
+  something to read, not when the edge row is created — which still satisfies *before the edge starts*,
+  and is worth knowing because "created an edge, saw no subscription" is otherwise easy to mistake for a
+  defect. The link then carried **9,319 samples over 2 h 37 m**, all pushed, all Good, average ingest lag
+  **103 ms**.
 - **[ADR-0023](../architecture/decisions/0023-routing-writes-to-an-edge.md) — a tag write is routed
   to the edge that reads the device, and is never queued or retained.** Decided and implemented
   2026-10-03, with its own tests and four mutations recorded. **WALKED 2026-10-06, and it passed** —
@@ -1271,6 +1319,17 @@ Recorded so a later session does not mistake it for a defect in the code.
   ignored.** The cloud stack was once started from a second copy of the
   repository inside WSL, so a running container does not necessarily reflect the
   working tree being read.
+- **Publishing by hand with an edge's certificate disconnects that edge.** Measured 2026-10-07 while
+  walking ADR-0021's payload versions. `mosquitto_pub --cert plant-c.crt` connects **as `plant-c`** —
+  the broker takes the identity from the certificate — and MQTT's same-client-id rule evicts the
+  running agent, which reconnects at once and republishes its own declaration. Not a defect, and
+  arguably the property you want from one certificate per edge; it does mean that to test the cloud's
+  handling of a hand-made message you must **stop the edge first**, or you are watching the edge undo
+  your test 20 ms later.
+- **Git Bash rewrites container paths in `docker run`.** `-e Edge__Broker__CaFile=/app/certs/ca.crt`
+  arrives inside the container as `C:/Program Files/Git/app/certs/ca.crt`. `MSYS_NO_PATHCONV=1` on the
+  command. The edge agent named all three missing files and refused to start, which is what made this a
+  two-minute problem; a component that had started and then failed later would have cost far more.
 - **`OPENSSL_CONF` on this machine points at a file that does not exist**, left by
   another installation: `C:\Program Files\PostgreSQL\psqlODBC\etc\openssl.cnf`. Every
   `openssl` invocation therefore dies before it starts, which cost the 2026-10-01 walk its

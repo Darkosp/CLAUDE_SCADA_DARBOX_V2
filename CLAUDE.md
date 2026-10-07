@@ -440,16 +440,34 @@ mid-run and produced runs with 11 and 17 failures at once, all of them `57P01` o
 three-second *connect* deadline that was too short for thirty parallel test classes, and
 that deadline missing entirely from the shared connection builder.
 
-**What 2026-10-03 left is a walk, not a decision.** `open-work.md` §2.0 records
-four things written, implemented and tested that have never been through a real
-link: ADR-0020's omission, ADR-0021's reporting and its payload version,
-ADR-0022's derived link, and ADR-0023's write. **The write is the one to walk
-first**, because it is the only one where being wrong means a plant was changed
-or an operator was told it was. ADR-0023's own entry lists what its tests *do*
-cover — the cloud's half, the wire format, the edge's half against a real Modbus
-slave, the uplink's handling of a message off a real broker, the retain rule and
-the ACL against a real broker — so it is not read as "nothing is tested". What no
-run has done is cross all of them at once.
+**What 2026-10-03 left was a walk, not a decision — and all four have now been
+walked.** `open-work.md` §2.0 recorded four things written, implemented and tested
+that had never been through a real link: ADR-0020's omission, ADR-0021's reporting
+and its payload version, ADR-0022's derived link, and ADR-0023's write. **ADR-0023's
+write was walked on 2026-10-06** ([`walk-2026-10-06.md`](docs/roadmap/walk-2026-10-06.md))
+— it was the one to do first, being the only one where being wrong means a plant was
+changed or an operator was told it was. **The other three were walked on 2026-10-07**
+([`walk-2026-10-07.md`](docs/roadmap/walk-2026-10-07.md)), in one sitting against one
+rig, because all three meet at a new edge: how its link comes into being (0022), what
+is left out of what it is sent (0020), and what it says back (0021).
+
+**That walk found one defect, and it is the kind only a walk finds.** ADR-0020's
+omission was right — a tagless device never entered the configuration, and the edge
+picked it up with no second edit once it had a tag — but **the operator was never told**.
+The report sat after the `continue` that skips an unchanged revision, and the revision
+never changes in that case, because a tagless device is omitted whether or not it is
+there. Measured: the line appeared **four minutes late**, when an unrelated device forced
+a publish, and would never have appeared otherwise. Every unit test of the derivation
+passed throughout; what nothing tested was whether anybody is ever told.
+
+**Two things from that sitting worth carrying.** Publishing by hand with an edge's
+certificate **disconnects that edge** — the broker takes the identity from the
+certificate, so `mosquitto_pub` connects *as* the edge and MQTT evicts the agent, which
+reconnects and republishes its own answer. Stop the edge first, or you are watching it
+undo your test. And the project's **first payload version bump** is now walked on a real
+link: a version 1 message records `unreadableReported: false`, which storage keeps apart
+from a version 2 with an empty list — *absent is not empty* — and a version 3 is refused
+whole, by name, with nothing changed and no audit row.
 
 **One finding from that work is now closed rather than open.** A device that accepts
 a connection and then says nothing was executed on the write path, and it came back
