@@ -930,11 +930,28 @@ used between its terminal half and its screen half.
 **Two of the four buildable items below were closed on 2026-10-05** — the preview's trend, and the
 sentence on Save — so what is left is the two that need a decision or a slice rather than a wording.
 
-- **Drag and drop.** An author can build a screen today — add, remove, resize, retitle, reorder, move
-  between rows, save, delete — and can see what it will look like while doing it (the live preview,
-  closed 2026-10-05), but by a picker and a pair of buttons rather than by dragging. That is enough to
-  build a screen and it is not what an author would choose twice. A builder is a client feature over
-  the same rows, not a new model.
+- **Drag and drop — closed 2026-10-07.** This entry said a builder would be *"a client feature over the
+  same rows, not a new model"*, and that turned out to be exactly true: `moveComponent` already took a
+  row and a place, so nothing in the model changed. One pure function was added — `dropPosition` —
+  and the editor passes it ids and a side.
+
+  **It also turned out this entry was wrong about what already worked.** It listed *"move between
+  rows"* among the things an author could do; `moveComponent` was wired only to **Move row up**, which
+  merges whole rows. There was no control that moved a single component from one row to another, so
+  dragging is not a nicer way of doing what the buttons did — **it is a capability that was missing.**
+
+  **The arithmetic is the whole of it, and it is off by one in one direction only.** `moveComponent`
+  builds its target row with the moved component already taken out — that is what lets one operation
+  serve both a reorder and a move — so its place-index counts a row that no longer contains the thing
+  being moved. A handler reading the row the author is looking at is one too high for every drop to
+  the **right** of where the component started, and exactly right for every drop to the left. A defect
+  of that shape reads as *"sometimes it goes where I meant"*, which is the hardest kind to report, so
+  the arithmetic lives in `screen.ts` with tests on both directions.
+
+  **The buttons stay.** Dragging is an addition: a screen can still be built entirely from the
+  keyboard, because a pointer gesture is the one kind of control a person may simply not be able to
+  make. The heading is the handle and the whole cell is the target — a cell full of inputs cannot
+  itself be draggable without taking text selection away from every field in it.
 - **A trend in the preview now draws a real series — closed 2026-10-05.** History is keyed by **tag
   id** rather than by component id, so a draft can ask for it: a component an author has just added
   has an id the server has never seen, which is why it used to say "Reading…". Keying by tag is also
