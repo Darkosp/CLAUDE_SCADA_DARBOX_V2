@@ -60,9 +60,76 @@ public sealed class SecurityStore : ISecurityStore, IAuditLog
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        return await connection.QuerySingleOrDefaultAsync<StoredCredential>(new CommandDefinition(
-            "SELECT id AS user_id, password_hash FROM app_user_active WHERE lower(username) = lower(@username)",
+        var row = await connection.QuerySingleOrDefaultAsync<CredentialRow>(new CommandDefinition(
+            """
+            SELECT id AS user_id, password_hash, failed_sign_ins, locked_until AS locked_until_utc
+            FROM app_user_active
+            WHERE lower(username) = lower(@username)
+            """,
             new { username },
+            cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        return row?.ToDomain();
+    }
+
+    /// <summary>
+    /// The credential row as the database hands it over.
+    /// </summary>
+    /// <remarks>
+    /// **A class with settable properties rather than a positional record, and the column is aliased**, both
+    /// for reasons Dapper decided for us and both worth knowing before the next row here is written: a
+    /// nullable `timestamptz` is offered to a constructor as a non-nullable <see cref="DateTime"/>, so a
+    /// `DateTime?` parameter matches nothing, and `locked_until` does not match a property called
+    /// `LockedUntilUtc` (underscores are ignored, suffixes are not) — which would have left the lock silently
+    /// unread rather than failing, the worse of the two.
+    /// </remarks>
+    private sealed class CredentialRow
+    {
+        public Guid UserId { get; set; }
+
+        public string PasswordHash { get; set; } = string.Empty;
+
+        public int FailedSignIns { get; set; }
+
+        public DateTime? LockedUntilUtc { get; set; }
+
+        internal StoredCredential ToDomain() => new(
+            UserId,
+            PasswordHash,
+            FailedSignIns,
+            LockedUntilUtc is { } until
+                ? new DateTimeOffset(DateTime.SpecifyKind(until, DateTimeKind.Utc))
+                : null);
+    }
+
+    public async Task RecordSignInFailureAsync(
+        Guid userId,
+        SignInLockout lockout,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        // One statement, so a failure and the lock it earns cannot land apart. `deleted_at IS NULL` keeps a
+        // deactivated account from being written to by an attempt against a name that is no longer live.
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE app_user
+            SET failed_sign_ins = @FailedSignIns, locked_until = @LockedUntilUtc
+            WHERE id = @userId AND deleted_at IS NULL
+            """,
+            new { userId, lockout.FailedSignIns, lockout.LockedUntilUtc },
+            cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+    }
+
+    public async Task ClearSignInFailuresAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE app_user SET failed_sign_ins = 0, locked_until = NULL WHERE id = @userId AND deleted_at IS NULL",
+            new { userId },
             cancellationToken: cancellationToken))
             .ConfigureAwait(false);
     }
@@ -162,8 +229,15 @@ public sealed class SecurityStore : ISecurityStore, IAuditLog
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
+        // **A reset clears the lock, and that is the way out of one** (ADR-0031 §5): the person who has
+        // forgotten a password and the person who has been locked out are in the same conversation with an
+        // Admin, and the product does not need a second control to reach the same state.
         return await connection.ExecuteAsync(new CommandDefinition(
-            "UPDATE app_user SET password_hash = @passwordHash WHERE id = @userId AND deleted_at IS NULL",
+            """
+            UPDATE app_user
+            SET password_hash = @passwordHash, failed_sign_ins = 0, locked_until = NULL
+            WHERE id = @userId AND deleted_at IS NULL
+            """,
             new { userId, passwordHash },
             cancellationToken: cancellationToken))
             .ConfigureAwait(false) > 0;

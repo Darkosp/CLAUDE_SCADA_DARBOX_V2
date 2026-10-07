@@ -17,11 +17,47 @@ internal static class AuthEndpoints
             IAuditLog audit,
             CancellationToken cancellationToken) =>
         {
-            var outcome = request.Username is null || request.Password is null
-                ? null
+            var attempt = request.Username is null || request.Password is null
+                ? LoginAttempt.Wrong
                 : await authenticator.LoginAsync(request.Username, request.Password, cancellationToken);
 
-            if (outcome is null)
+            if (attempt.JustLocked)
+            {
+                // The transition only, with the moment it reopens, so the trail says when an account was
+                // shut rather than repeating it for every attempt made while it is (ADR-0031 §9).
+                await audit.AppendAsync(
+                    new AuditEntry(
+                        ActorUserId: null,
+                        "auth.account_locked",
+                        Detail: Audit.Detail(
+                            ("username", Truncate(request.Username)),
+                            ("until", attempt.ShutUntilUtc?.ToString("O")))),
+                    CancellationToken.None);
+            }
+
+            if (attempt.ShutUntilUtc is { } until)
+            {
+                await audit.AppendAsync(
+                    new AuditEntry(
+                        ActorUserId: null,
+                        "auth.login_failed",
+                        Detail: Audit.Detail(("username", Truncate(request.Username)))),
+                    CancellationToken.None);
+
+                // **The account is told it is shut, and that is deliberate** (ADR-0031 §4): an operator at
+                // three in the morning who is told "wrong user name or password" goes looking for a password
+                // problem they do not have. The time is sent as an unambiguous instant with its zone rather
+                // than as a wall clock, because the server does not know what the reader's clock says.
+                return Results.Json(
+                    new
+                    {
+                        error = $"Too many failed sign-ins. This account is locked until {until:O} "
+                                + "(UTC); an Admin can reset the password to reopen it.",
+                    },
+                    statusCode: StatusCodes.Status423Locked);
+            }
+
+            if (attempt.Outcome is null)
             {
                 await audit.AppendAsync(
                     new AuditEntry(
@@ -35,10 +71,10 @@ internal static class AuthEndpoints
             }
 
             await audit.AppendAsync(
-                new AuditEntry(outcome.Access.UserId, "auth.login", "session", outcome.Session.SessionId),
+                new AuditEntry(attempt.Outcome.Access.UserId, "auth.login", "session", attempt.Outcome.Session.SessionId),
                 CancellationToken.None);
 
-            return Results.Ok(new LoginResponse(outcome.Session.Token, AccessDto.From(outcome.Access)));
+            return Results.Ok(new LoginResponse(attempt.Outcome.Session.Token, AccessDto.From(attempt.Outcome.Access)));
         }).AllowAnonymous();
 
         app.MapPost("/api/auth/logout", async (

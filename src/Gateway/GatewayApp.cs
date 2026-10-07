@@ -72,6 +72,14 @@ public static class GatewayApp
             throw new InsecureTransportException(insecure);
         }
 
+        // The lockout numbers are refused in the same place and for the same reason (ADR-0031 §6): a
+        // deployment that set thirty minutes and was quietly given three believes a control is there that
+        // is not, and a control believed to be present is worse than one known to be absent.
+        if (LockoutPolicy.From(builder.Configuration).Problem() is { } unusableLockout)
+        {
+            throw new InvalidOperationException(unusableLockout);
+        }
+
         if (tls.ServesTls)
         {
             // Kestrel rather than a proxy (ADR-0028 §1): it keeps the client on the Gateway's own
@@ -171,6 +179,27 @@ public static class GatewayApp
             }
         }
 
+        // **Headers that cost nothing and close whole classes of attack** (ADR-0031 §8): the interface
+        // cannot be framed by another site, a response cannot be sniffed into executing, no referrer leaks
+        // out of a plant, and the device APIs a console has no use for are closed.
+        //
+        // **`script-src` is deliberately absent.** index.html boots the stored theme with an inline script
+        // so the dark theme applies before the first paint (ADR-0027); `script-src 'self'` would break it
+        // and `'unsafe-inline'` would be a directive that does not do what it is named for. Setting it
+        // properly means hashing the served file, which is its own slice — so this is a policy that is
+        // honest about what it covers rather than one that looks like more than it is.
+        app.Use(async (context, next) =>
+        {
+            var headers = context.Response.Headers;
+            headers["X-Content-Type-Options"] = "nosniff";
+            headers["Referrer-Policy"] = "no-referrer";
+            headers["X-Frame-Options"] = "DENY";
+            headers["Content-Security-Policy"] = "frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
+            headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), usb=(), payment=()";
+
+            await next().ConfigureAwait(false);
+        });
+
         // The web client is served from here, so the browser talks to one origin and no
         // cross-origin allowance exists at all (Phase 6). Its files are public — the sign-in
         // screen has to load before anyone has a session — so they are served ahead of
@@ -219,6 +248,7 @@ public static class GatewayApp
         var services = builder.Services;
 
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(LockoutPolicy.From(builder.Configuration));
         services.AddSingleton(dataSource);
         services.AddSingleton(catalogSource);
         services.AddSingleton<IConfigurationStore>(configurationStore);
