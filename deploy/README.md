@@ -61,6 +61,77 @@ Once the system is running, the same command shows Docker's own listeners
 (`com.docker.backend`, and often `wslrelay` on `::1`). Those are expected; before `up` there
 must be none.
 
+## How the Gateway is reached, and why it will not start until you say
+
+**This is the one setting with no default, and it is deliberate (ADR-0028).** Everything an operator
+does crosses this connection: the password they sign in with, and the session token every request
+afterwards carries — and an Operator can write to a plant. A Gateway that quietly fell back to plain
+HTTP would be secure only for as long as whoever installed it happened to remember.
+
+So it **refuses to start** until it is told one of two things, and the refusal names both:
+
+```
+This Gateway has no TLS certificate and has not been told that anything in front of it
+terminates TLS, so it would serve sign-ins and session tokens in the clear (ADR-0028).
+  Give it a certificate:  Server__CertificatePath and Server__KeyPath (PEM).
+  Or say what is in front: Server__TlsTerminatedUpstream=true.
+```
+
+### Either: give it a certificate
+
+Put the PEM pair in a directory on the host and name it in `.env`:
+
+```
+SCADA_TLS_DIR=/etc/scada-darbox/tls      # the host directory holding them
+SCADA_TLS_CERT=/app/tls/server.crt       # the path INSIDE the container
+SCADA_TLS_KEY=/app/tls/server.key
+SCADA_HTTPS_PORT=8443
+```
+
+The Gateway then serves HTTPS and **redirects HTTP to it**, so an operator typing a bare host name
+still arrives. Both ports stay published for that reason.
+
+### Or: say that something in front terminates TLS
+
+```
+SCADA_TLS_TERMINATED_UPSTREAM=true
+```
+
+Serving HTTP is then a choice, and the Gateway **says so in its startup log every time** — a
+deployment's security posture has to be legible from its own logs, because an absence reads the same
+whether it was chosen or forgotten.
+
+### Which certificate
+
+**This project does not make it for you, and that is not an omission.** `deploy/cloud/certs.sh` makes
+the broker's and the edges' certificates because both ends of that link are ours. A browser's trust is
+not ours: it belongs to your organisation's CA, or to a public one.
+
+| What you have | What to do |
+|---|---|
+| A certificate from your IT department's CA | Use it. Operators' machines already trust that CA |
+| A public name and a reachable host | A publicly trusted certificate (Let's Encrypt or similar) |
+| Neither — a plant LAN with no CA | A self-signed certificate works, **and every browser will warn** until each machine is told to trust it. Plan that in, or ask for an internal CA |
+
+**A self-signed certificate is not a setting you can hide behind.** Measured on 2026-10-07: with one,
+a browser refuses the page outright rather than warning gently. It is better than plain HTTP — the
+connection is still encrypted — but it is a thing your operators will meet on day one.
+
+### HSTS is off, on purpose
+
+`SCADA_TLS_HSTS=true` turns it on, and most advice says it should be the default. It is not, here.
+
+HSTS is **remembered by the browser and cannot be overridden by the person using it**. A plant on a
+self-signed or internal-CA certificate would hand its operators a browser that refuses the screen with
+no way past — during an incident, on the machine that matters. Turn it on when the certificate is
+publicly trusted and not before.
+
+### Upgrading an installation that has been serving HTTP
+
+**It will stop.** This is the only breaking change in the project so far, and it is one where
+continuing quietly is worse than stopping loudly: add one of the two settings above to `.env` before
+`docker compose up -d`, and the upgrade proceeds as it always has.
+
 ## Installing
 
 ### 2. Build the images
