@@ -69,6 +69,7 @@ const THEMES = {
       nodataInk: '#5b6672',
       nodataBg: '#eef0f3',
     },
+    notice: { ink: '#8a5a00', surface: '#fdf3dc' },
   },
   dark: {
     page: '#14161a',
@@ -92,6 +93,7 @@ const THEMES = {
       nodataInk: '#a8b0ba',
       nodataBg: '#2a2f36',
     },
+    notice: { ink: '#e8bf6a', surface: '#322812' },
   },
 };
 
@@ -127,6 +129,19 @@ for (const [name, theme] of Object.entries(THEMES)) {
         `${name}: the ${kind} pill is ${ratio.toFixed(2)}:1, below the ${AA}:1 floor`,
       );
     }
+  });
+
+  test(`${name}: a warning notice is readable on its own tint`, () => {
+    // `--warn-ink` on `--warn-surface` is a SECOND warm pair, separate from the `warn` status pill
+    // above: the pill says "do not lean on this reading", the notice says something to the person
+    // configuring. It was unmeasured until a symbol's dead-rule warning used it, which is the whole
+    // argument for measuring a pair when it is first used rather than when it is first suspected.
+    const ratio = contrast(theme.notice.ink, theme.notice.surface);
+
+    assert.ok(
+      ratio >= AA,
+      `${name}: a warning notice is ${ratio.toFixed(2)}:1, below the ${AA}:1 floor`,
+    );
   });
 
   test(`${name}: the quality colours are distinguishable from each other`, () => {

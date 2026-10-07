@@ -1,7 +1,7 @@
 import { Component, computed, effect, input, linkedSignal, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Alarm, HistorySample } from './models';
-import { TagSnapshot } from './tag';
+import { TagSnapshot, TagValue } from './tag';
 import { ScreenView } from './screen-view';
 import {
   addComponent,
@@ -19,6 +19,7 @@ import {
   SymbolStateRule,
   toSaveScreen,
   trendTagIds,
+  unmatchableRules,
 } from './screen';
 
 /** The six kinds, with what each needs, for the author's picker. The server refuses any other. */
@@ -207,6 +208,25 @@ const WIDEST = 12;
                         <button type="button" class="ghost" (click)="removeRule(cell.id, $index)"
                                 title="Remove this rule">✕</button>
                       </div>
+
+                      <!--
+                        A rule that can never match the tag it is bound to (ADR-0027). **This is a
+                        warning and not a refusal**, and the wording is careful about which: the
+                        mapping saves, because the product cannot know what an author is part-way
+                        through doing, and the sentence says what will happen rather than what is
+                        forbidden.
+
+                        It sits under its own rule rather than at the top of the mapping, because
+                        "rule 2 can never match" at the top of a list is something the author then has
+                        to count down to find — and this appears while they are typing into the very
+                        row it is about.
+                      -->
+                      @if (deadRule(cell.id, $index); as why) {
+                        <p class="dead-rule" role="status">
+                          <span aria-hidden="true">⚠</span>
+                          <span>This rule can never match, so it will never be drawn — {{ why }}.</span>
+                        </p>
+                      }
                     }
 
                     <button type="button" class="ghost add-rule" (click)="addRule(cell.id)">
@@ -361,6 +381,26 @@ const WIDEST = 12;
       align-self: center;
     }
     .rule button { padding: 0 5px; }
+    /* A rule that can never match (ADR-0027). The notice tokens rather than the bad ones: this is
+       something the author should see and may well have meant for a moment, not a failure. The pair
+       was unmeasured until this used it, and theme-contrast.test.mjs measures it now, in both themes.
+
+       No backticks in here, and that is not a style note: this whole styles block is a template
+       literal, so one backtick ends it and the file stops parsing several hundred lines later. The
+       client's npm test compiles three files and would never have seen it -- ng build did. */
+    .dead-rule {
+      display: flex;
+      gap: 6px;
+      align-items: baseline;
+      margin: 0 0 2px;
+      padding: 4px 6px;
+      font-size: var(--text-xs);
+      line-height: 1.35;
+      color: var(--warn-ink);
+      background: var(--warn-surface);
+      border-left: 2px solid var(--warn-border);
+      border-radius: var(--radius-sm);
+    }
     .add-rule { font-size: var(--text-xs); padding: 2px 7px; justify-self: start; }
     .row-controls {
       display: flex;
@@ -621,6 +661,52 @@ export class ScreenEditor {
     return this.draft().components.find((component) => component.id === componentId)?.symbol ?? null;
   }
 
+  /**
+   * What the tag behind an id is currently reading, or `none` when nothing is.
+   *
+   * The **reading's** kind rather than the tag's declared one, and that is the right choice rather than
+   * a shortcut: `matchesRule` compares against the reading, so this is the exact kind the rules will be
+   * evaluated against. A tag this session cannot see is not in `tags()` at all and answers `none`,
+   * which is also correct — nothing is known about it here.
+   */
+  private kindOf(tagId: string | null): TagValue['kind'] {
+    if (tagId === null || tagId === '') {
+      return 'none';
+    }
+
+    return this.tags().find((tag) => tag.tagId === tagId)?.value?.kind ?? 'none';
+  }
+
+  /**
+   * Which of a symbol's rules can never match the tag it is bound to, by component id.
+   *
+   * Computed for the whole draft at once so the template asks a map rather than calling a function per
+   * rule — a function call in a template runs on every change detection pass, and this one walks every
+   * rule of every component.
+   */
+  protected readonly deadRules = computed(() => {
+    const byComponent = new Map<string, Map<number, string>>();
+
+    for (const component of this.draft().components) {
+      if (component.kind !== 'symbol' || component.states.length === 0) {
+        continue;
+      }
+
+      const dead = unmatchableRules(component.states, this.kindOf(component.tagId));
+
+      if (dead.length > 0) {
+        byComponent.set(component.id, new Map(dead.map(({ at, reason }) => [at, reason])));
+      }
+    }
+
+    return byComponent;
+  });
+
+  /** Why this rule can never match, or null when it can. */
+  protected deadRule(componentId: string, at: number): string | null {
+    return this.deadRules().get(componentId)?.get(at) ?? null;
+  }
+
   protected pathOf(tagId: string): string {
     // A tag the author cannot see is still named here rather than left blank: it is a tag somebody
     // bound once, and "a tag you cannot see" is more use than an empty space.
@@ -663,7 +749,14 @@ export class ScreenEditor {
       ...draft,
       components: addComponent(
         draft.components,
-        newComponent(option.kind, option.needsTag ? tagId : null, option.wantsTitle ? title : null),
+        newComponent(
+          option.kind,
+          option.needsTag ? tagId : null,
+          option.wantsTitle ? title : null,
+          // What the tag is reading now, so a symbol's starting mapping fits the tag it is being
+          // bound to rather than assuming a boolean (ADR-0027; see `defaultSymbolStates`).
+          this.kindOf(option.needsTag ? tagId : null),
+        ),
         rowIndex,
       ),
     }));
