@@ -561,7 +561,13 @@ recorded one is not silent.
 All three were found by looking at the running application, and all three are recorded rather than
 fixed because the session ended. Each says what it would take.
 
-**1. A new symbol assumes its tag is boolean, and says nothing when it is not.**
+***Status, 2026-10-07: the first is closed — it was the only one that put a wrong reading on a screen.
+The second still needs a decision before any code, and the third is still open.***
+
+**1. A new symbol assumes its tag is boolean, and says nothing when it is not. — CLOSED 2026-10-07.**
+
+*The description below is left as it was written, because it is the clearest statement of the defect.
+What was done about it is at the end of this item.*
 
 `newComponent('symbol', …)` is born with `running when value is true`, and `stopped otherwise`. That is
 right for the pump this slice shipped, because a pump's run signal is a boolean. It is **wrong for every
@@ -578,6 +584,59 @@ What it would take: either a default that follows the tag's `valueKind`, or a wa
 a mapping's comparisons cannot match the bound tag's kind — and probably both. It is a rules question
 rather than a rendering one, so it belongs with `ScreenRules` on the server and in the editor's own
 validation, not in the symbol.
+
+**What was done, 2026-10-07.** Both, and the note above was right that both are needed: a default
+cannot help an author who **re-binds** an existing symbol, and a warning does not stop the mistake being
+made in the first place.
+
+- `newComponent` takes the bound tag's value kind and picks the starting mapping from it. A numeric tag
+  gets `running above 0` — chosen because a run signal arriving as a number is a 0/1, a 0/100 or a flow,
+  and "above zero" is the one reading true of all three. A **text or discrete** tag gets a lone
+  `unknown` fallback, because there is nothing to guess and a guess would be this same defect in another
+  kind; a lone fallback is saveable and draws ADR-0027 §3's own "the mapping does not cover this" state.
+  A boolean tag, and a tag nothing has measured, keep what most pumps want.
+- `unmatchableRules` (client `screen.ts`) names a rule that can never match the bound tag's kind, and
+  the editor draws it **under that rule**, in the notice tint, while the author is typing into it.
+
+**Three boundaries, each pinned by a test that fails if it moves**, because the risk in a check like
+this is that it grows into an opinion:
+
+1. a rule that is merely *unlikely* is not faulted. `above 100` on a tag that never exceeds 5 is wrong
+   and no code can know it — that is the line `ScreenRules` already drew in words, and a warning that
+   fired there would teach an author to ignore warnings;
+2. a tag nothing has measured says nothing, because nothing is known;
+3. **the tag-dependent case is not a save-time refusal.** It would need the tag's kind inside
+   `ScreenRules`, and a stored screen would stop being saveable the moment somebody changed a tag's kind
+   underneath it. `ScreenRules` records the split at the code.
+
+**What *is* refused on the server is the half that needs no tag:** `above 'hot'` saved cleanly before
+this and then matched nothing for ever. `1,5` is refused with it — a comma is a decimal point in this
+project's own locale and is **not** one on the wire, so accepting it would store a threshold meaning 1
+to one half of the system and 15 to the other. Infinity and NaN are refused for the reason they are
+dead: no reading is above infinity, and every comparison with NaN is false.
+
+**Walked, in a browser, against a Gateway and a live Modbus simulator** — not only tested. A symbol
+bound to the numeric `Discharge Pressure` was born `running above 0` and the preview drew it **green and
+turning**, which is what the old default could never do. Setting its value to `true` raised the warning
+under its own rule, in both themes, and the preview fell to a grey `STOPPED` — the defect and its
+absence, side by side with a second symbol on the boolean tag that showed no warning at all. Saving with
+`above true` was **refused by the server** with the new message; changing the comparison to `is` saved,
+**with the warning still showing**, which is the intended difference between the two halves.
+
+**One thing the walk showed that no test states:** the saved screen draws a grey `STOPPED` pump and
+**nothing on the operator's view says the mapping is dead.** That is right — an operator is not the
+author, and ADR-0027 gives the fallback to the author — but it is the reason the editor's warning has to
+carry the whole load.
+
+**Two gaps closed on the way, neither of them looked for.** `ProblemWithStates` had **no test at all**:
+ADR-0027's consequences claim every bad mapping is "refused at save, by name" and not one branch of it
+was exercised — `tests/Core.Tests/SymbolMappingRulesTests.cs` now names each. And `--warn-ink` on
+`--warn-surface` was **unmeasured by the contrast audit**; it is a second warm pair, separate from the
+warn status pill, and this was its first use outside `app.css`. Measured now, both themes.
+
+**And one thing `npm test` cannot see.** A backtick inside a component's `styles` block ends the
+template literal, and the file stops parsing hundreds of lines later. The client's `npm test` compiles
+three files; `ng build` is what caught it. There is a note at the line.
 
 **2. Nothing marks a value that cannot be true.**
 
