@@ -17,6 +17,34 @@ public sealed record HistorianSample(
     Quality Quality);
 
 /// <summary>
+/// One bucket of a reduced history: what a stretch of the window held, rather than one reading.
+/// </summary>
+/// <param name="StartUtc">
+/// The start of the stretch, on the grid the caller's own window set (ADR-0029 §5).
+/// </param>
+/// <param name="LastUtc">
+/// When the newest reading in it was measured. **The only field that can answer "how fresh is
+/// this"**: <paramref name="StartUtc"/> is the edge of the stretch rather than a measurement time,
+/// so an age decided on it would name a time nothing was measured at and would call a live trend
+/// stale up to one bucket early.
+/// </param>
+/// <param name="Count">
+/// How many readings were read in it, whatever their quality. Never zero — a stretch nothing was
+/// measured in produces no bucket at all, which is how a gap is drawn (ADR-0029 §4).
+/// </param>
+/// <param name="Low">
+/// The lowest of the readings a trend plots in this bucket, or null when none of them was
+/// plottable. Paired with <paramref name="High"/>, never with a substituted or averaged value.
+/// </param>
+/// <param name="High">The highest of them, or null for the same reason as <paramref name="Low"/>.</param>
+public sealed record HistorianBucket(
+    DateTimeOffset StartUtc,
+    DateTimeOffset LastUtc,
+    int Count,
+    double? Low,
+    double? High);
+
+/// <summary>
 /// Storage and retrieval of historized values, independent of the concrete backend
 /// (ADR-0002). PostgreSQL + TimescaleDB is the implementation used today (ADR-0006),
 /// but nothing in core may assume it.
@@ -48,6 +76,30 @@ public interface IHistorian
         Guid tagId,
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads one tag's samples over a time range **reduced to buckets of a chosen width**, so that a
+    /// long window costs the caller a bounded answer instead of every reading in it (ADR-0029).
+    /// </summary>
+    /// <remarks>
+    /// **The width is asked for, not the number of buckets.** How many points a caller can draw is a
+    /// question about its screen; how wide a bucket is is a question about storage — ADR-0002's
+    /// boundary, applied to a parameter.
+    ///
+    /// Every reading in the range falls in exactly one bucket, and **no bucket is invented for a
+    /// stretch nothing was measured in**, so the sum of the counts is the number of readings in the
+    /// range and a missing bucket is a gap rather than a zero.
+    ///
+    /// **Plottable means Good and numeric**, which is the set a trend draws — so a reduced read can
+    /// never show a value a <see cref="ReadAsync"/> of the same window would have dropped. A caller
+    /// that needs another set of readings, or every one of them, reads them raw.
+    /// </remarks>
+    Task<IReadOnlyList<HistorianBucket>> ReadBucketsAsync(
+        Guid tagId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        TimeSpan bucketWidth,
         CancellationToken cancellationToken);
 
     /// <summary>

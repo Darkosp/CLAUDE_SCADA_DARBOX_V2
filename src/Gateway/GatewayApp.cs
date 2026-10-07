@@ -34,6 +34,17 @@ public static class GatewayApp
     /// <summary>The application role's database password, when the connection string carries none.</summary>
     public const string AppPasswordVariable = "SCADA_APP_DB_PASSWORD";
 
+    /// <summary>
+    /// The fewest points a trend may ask for (ADR-0029 §3). One point is not a line.
+    /// </summary>
+    public const int MinimumTrendPoints = 2;
+
+    /// <summary>
+    /// The most points a trend may ask for, which is more detail than any screen this project draws:
+    /// past it, "reduce this" has stopped being a reduction (ADR-0029 §3).
+    /// </summary>
+    public const int MaximumTrendPoints = 2000;
+
     /// <param name="args">Command-line arguments, as given to the process.</param>
     /// <param name="configure">
     /// Runs after every default registration and before the host is built, so a test can
@@ -389,6 +400,7 @@ public static class GatewayApp
             Guid tagId,
             DateTimeOffset? from,
             DateTimeOffset? to,
+            int? points,
             IHistorian historian,
             ITagRepository tags,
             TimeProvider timeProvider,
@@ -408,11 +420,50 @@ public static class GatewayApp
             }
 
             var now = timeProvider.GetUtcNow();
-            var samples = await historian.ReadAsync(
-                tagId,
-                from ?? now.AddMinutes(-15),
-                to ?? now,
-                cancellationToken);
+            var windowFrom = from ?? now.AddMinutes(-15);
+            var windowTo = to ?? now;
+
+            // **A width is refused rather than clamped** (ADR-0029 §3), for the reason §2.0f refused
+            // an out-of-range `responseTimeoutSeconds`: a caller whose request was quietly coarsened
+            // gets a picture it did not ask for, and nothing anywhere says so. The width itself is
+            // the storage question, and `points` is the caller's own answer to "how much room do I
+            // have" — the one number it knows and the server does not.
+            long? bucketMilliseconds = null;
+            IReadOnlyList<HistorianBucket>? buckets = null;
+
+            if (points is { } asked)
+            {
+                if (asked is < MinimumTrendPoints or > MaximumTrendPoints)
+                {
+                    return Results.BadRequest(new
+                    {
+                        error = $"A trend can ask for between {MinimumTrendPoints} and {MaximumTrendPoints} "
+                                + $"points; {asked} was asked for.",
+                    });
+                }
+
+                // At most `asked` buckets, and exactly that many whenever the span divides — so a
+                // quarter-hour at the chart's 600 points still reduces to the 1500 ms grouping the
+                // browser used to do for itself, and nothing an operator sees today gets coarser.
+                var span = windowTo - windowFrom;
+                var width = span <= TimeSpan.Zero
+                    ? 1d
+                    : Math.Ceiling(span.TotalMilliseconds / asked);
+
+                bucketMilliseconds = (long)Math.Max(width, 1d);
+                buckets = await historian.ReadBucketsAsync(
+                    tagId,
+                    windowFrom,
+                    windowTo,
+                    TimeSpan.FromMilliseconds(bucketMilliseconds.Value),
+                    cancellationToken);
+            }
+
+            // One or the other, never a mixture: a payload holding both would be one whose
+            // completeness a reader has to work out (ADR-0029 §3).
+            IReadOnlyList<HistorianSample> samples = buckets is null
+                ? await historian.ReadAsync(tagId, windowFrom, windowTo, cancellationToken)
+                : [];
 
             return Results.Ok(new TagHistoryDto(
                 tagId,
@@ -423,7 +474,14 @@ public static class GatewayApp
                     TagValueDto.From(sample.Value),
                     sample.SourceTimestampUtc,
                     sample.IngestedAtUtc,
-                    sample.Quality.ToString())).ToList()));
+                    sample.Quality.ToString())).ToList(),
+                bucketMilliseconds,
+                buckets?.Select(bucket => new HistoryBucketDto(
+                    bucket.StartUtc,
+                    bucket.LastUtc,
+                    bucket.Count,
+                    bucket.Low,
+                    bucket.High)).ToList() ?? []));
         });
     }
 

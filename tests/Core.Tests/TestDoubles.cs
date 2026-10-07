@@ -1,4 +1,5 @@
 using ScadaDarbox.Core.Historian;
+using ScadaDarbox.Core.Model;
 using ScadaDarbox.Core.Tags;
 
 namespace ScadaDarbox.Core.Tests;
@@ -49,6 +50,50 @@ internal sealed class RecordingHistorian : IHistorian
                 .OrderBy(s => s.SourceTimestampUtc)
                 .ToList());
 
+    /// <summary>The database's rule, kept in memory: the same counts, envelope and grid (ADR-0029).</summary>
+    public Task<IReadOnlyList<HistorianBucket>> ReadBucketsAsync(
+        Guid tagId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        TimeSpan bucketWidth,
+        CancellationToken cancellationToken)
+    {
+        var inRange = Written
+            .Where(s => s.TagId == tagId && s.SourceTimestampUtc >= fromUtc && s.SourceTimestampUtc < toUtc);
+
+        var buckets = inRange
+            .GroupBy(s => InBucket(s.SourceTimestampUtc, fromUtc, bucketWidth))
+            .OrderBy(group => group.Key)
+            .Select(group =>
+            {
+                // Plottable means Good and numeric, and finite — JSON carries no NaN and no
+                // infinity, so the raw path sends those as no value and the chart drops them.
+                var plot = group
+                    .Where(s => s.Quality == Quality.Good && s.Value is TagValue.Numeric { } n && double.IsFinite(n.Value))
+                    .Select(s => ((TagValue.Numeric)s.Value!).Value)
+                    .ToList();
+
+                return new HistorianBucket(
+                    group.Key,
+                    group.Max(s => s.SourceTimestampUtc),
+                    group.Count(),
+                    plot.Count == 0 ? null : plot.Min(),
+                    plot.Count == 0 ? null : plot.Max());
+            })
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<HistorianBucket>>(buckets);
+    }
+
+    /// <summary>Floors to the grid the window set, which is what `date_bin` does with its origin.</summary>
+    private static DateTimeOffset InBucket(DateTimeOffset at, DateTimeOffset fromUtc, TimeSpan bucketWidth)
+    {
+        // Truncating integer division, which floors here because every reading in range is at or
+        // after the origin — the same reason the SQL can use date_bin rather than a CASE.
+        var steps = (at - fromUtc).Ticks / bucketWidth.Ticks;
+        return fromUtc.AddTicks(steps * bucketWidth.Ticks);
+    }
+
     public Task<DateTimeOffset?> LastIngestedAtAsync(CancellationToken cancellationToken) =>
         Task.FromResult(Written.Count == 0 ? (DateTimeOffset?)null : Written.Max(s => s.IngestedAtUtc));
 }
@@ -77,6 +122,14 @@ internal sealed class FailingHistorian : IHistorian
         Guid tagId,
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
+        CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("The historian is unavailable.");
+
+    public Task<IReadOnlyList<HistorianBucket>> ReadBucketsAsync(
+        Guid tagId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        TimeSpan bucketWidth,
         CancellationToken cancellationToken) =>
         throw new InvalidOperationException("The historian is unavailable.");
 
