@@ -1036,11 +1036,12 @@ and an operator looking into something that happened two hours ago had no way to
   two date fields, because the question they are really asking is *how far back*.
 
 **Walking it found the defect that would have made it useless.** Eight hours of a tag scanned every
-second is 28,402 readings drawn into 600 pixels, and what appeared was **a solid block of ink**. The
-chart now reduces to one column per pixel keeping each column's **extremes** — never an average, never
-every n-th reading, because the one-second excursion that tripped an alarm is exactly the sample a
-thinning pass throws away. What is drawn is the envelope with the line through it, which is what a
-trend over hours honestly looks like.
+second is 28,402 readings drawn into 600 pixels, and what appeared was **a solid block of ink**. It was
+reduced to one column per pixel keeping each column's **extremes** — never an average, never every n-th
+reading, because the one-second excursion that tripped an alarm is exactly the sample a thinning pass
+throws away — with the envelope drawn and the line through it, which is what a trend over hours honestly
+looks like. **That reduction was in the browser then and is in the query now**: ADR-0029 moved it the
+same day, and the rule went with it unchanged. The paragraph below is where it went.
 
 **What it left open was closed the same day, by the ADR this paragraph asked for** —
 [ADR-0029](../architecture/decisions/0029-a-trend-asks-for-the-points-it-can-draw.md). The reduction
@@ -1051,7 +1052,7 @@ chooses the bucket width and **states it in the answer**; a request without `poi
 reading, because a cap that dropped readings without saying so is the one answer this project must not
 take. Measured on the demo database's busiest tag, 110,782 readings over a day and three quarters:
 **19 MB of JSON and 182 ms before; 417 buckets holding all of them and 56 kB after.** The client's
-`trendColumns` and its six tests were **deleted rather than kept as a fallback**, and the gap rule
+`trendColumns` and its five tests were **deleted rather than kept as a fallback**, and the gap rule
 became exact — `ordinalNext − ordinalPrev > 1` — where the old heuristic could not see a hole narrower
 than about four columns. **What this does not fix, and it is worth knowing before the next
 measurement: the query still reads every row to group it**, so this removed bytes from the wire rather

@@ -100,7 +100,8 @@ Serves the API and the SignalR hub on `http://localhost:5220`.
 - `POST /api/auth/login` with `{ "username": ..., "password": ... }` — returns a token;
   send it as `Authorization: Bearer <token>` on every other request
 - `GET /api/tags` — every tag on a Site you can see, with its current value
-- `GET /api/tags/{id}/history?from=&to=` — historised samples for one tag
+- `GET /api/tags/{id}/history?from=&to=` — historised samples for one tag, or the same
+  window reduced to buckets when `points` says how many the caller can draw (ADR-0029)
 - `/hubs/tags` — real-time push, per Site
 - `GET /api/alarms/journal?from=&to=&limit=` — the alarm journal, newest first,
   filtered to the Sites you may see; `limit` defaults to 200 and is capped at 1000

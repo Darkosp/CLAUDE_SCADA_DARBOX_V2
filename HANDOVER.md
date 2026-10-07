@@ -160,7 +160,7 @@ and login requires a session; a Site the caller cannot see answers 404, never 40
 | `POST /api/auth/login`, `/api/auth/logout`, `GET /api/auth/me` | sessions and the caller's own access |
 | `GET /api/health` | the only anonymous endpoint besides login |
 | `GET /api/tags`, `GET /api/tags/{tagId}` | current value of every tag the caller may see |
-| `GET /api/tags/{tagId}/history?from=&to=` | historised samples |
+| `GET /api/tags/{tagId}/history?from=&to=[&points=]` | historised readings; with `points`, the window reduced to buckets and the width it was reduced to (ADR-0029) |
 | `POST /api/tags/{tagId}/value` | tag write, Operator-gated |
 | `GET /api/alarms`, `GET /api/alarms/journal?from=&to=&limit=` | live list; the journal, newest first, `limit` default 200, capped 1000 |
 | `POST /api/alarms/{definitionId}/acknowledge`, `/shelve` | acknowledge; shelve with a bounded expiry |
