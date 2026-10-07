@@ -177,14 +177,32 @@ const WIDEST = 12;
                           <option value="equals">is</option>
                           <option value="above">above</option>
                           <option value="below">below</option>
-                          <option value="">anything else</option>
+                          <!--
+                            "anything else" was the first wording here, and it was read as "for
+                            anything" rather than "when nothing above matched" — which is the one thing
+                            a fallback must be understood as, because it is what makes every rule
+                            before it meaningful. "otherwise" says the same in one word, and it is the
+                            word the ADR uses.
+                          -->
+                          <option value="">otherwise</option>
                         </select>
 
-                        <input type="text" [ngModel]="rule.value ?? ''"
-                               (ngModelChange)="revalue(cell.id, $index, $event)"
-                               [disabled]="rule.otherwise"
-                               [attr.aria-label]="'Value for rule ' + ($index + 1)"
-                               placeholder="value" />
+                        @if (rule.otherwise) {
+                          <!--
+                            A dash rather than a disabled input. **A greyed field holding the
+                            placeholder "value" still reads as a field waiting to be filled in**, and
+                            this row is the one where nothing is expected — the emptiness is the
+                            point, since a fallback that also stated a comparison is what the API
+                            refuses. Showing that it is empty on purpose is clearer than showing a
+                            control that will not accept anything.
+                          -->
+                          <span class="no-value" aria-hidden="true">—</span>
+                        } @else {
+                          <input type="text" [ngModel]="rule.value ?? ''"
+                                 (ngModelChange)="revalue(cell.id, $index, $event)"
+                                 [attr.aria-label]="'Value for rule ' + ($index + 1)"
+                                 placeholder="value" />
+                        }
 
                         <button type="button" class="ghost" (click)="removeRule(cell.id, $index)"
                                 title="Remove this rule">✕</button>
@@ -334,6 +352,14 @@ const WIDEST = 12;
     .mapping .shape select { flex: 1; }
     .rule { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 4px; align-items: center; }
     .rule select, .rule input { font-size: var(--text-xs); padding: 3px 5px; }
+    /* Stands where a rule's value would be, for the one rule that has none. Centred so it reads as
+       "deliberately nothing" rather than as a missing control. */
+    .rule .no-value {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      text-align: center;
+      align-self: center;
+    }
     .rule button { padding: 0 5px; }
     .add-rule { font-size: var(--text-xs); padding: 2px 7px; justify-self: start; }
     .row-controls {
