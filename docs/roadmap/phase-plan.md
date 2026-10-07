@@ -815,9 +815,11 @@ The walk itself is written out in
 [`phase-7-manual-gate.md`](phase-7-manual-gate.md): what to watch on each
 side, the two ways to cut the link, what has to be true of the numbers
 afterwards, and the two decisions — which machine hosts the edge, and which
-outage is staged — that have to be made before it starts. It says at the top
-that it has not been walked yet, and the section that replaces it is the
-record.
+outage is staged — that have to be made before it starts. **It says at the top
+that it was walked**, on 2026-09-26 and again since, and the procedure below that
+is what was followed. *(Corrected 2026-10-07; this said the gate document
+announces itself as unwalked, which it has not done since the walk was recorded
+in it.)*
 
 **The question Phase 7 left open is now decided.** The edge's device and tag
 list — with the cloud Gateway's own tag ids — used to be a hand-written
@@ -840,9 +842,12 @@ build" until then)*: `EdgeConfigurationBuilder` derives each edge's configuratio
 from the catalogue, `EdgeConfigurationPublisher` publishes it retained on
 `{prefix}/{edgeId}/config`, `GatewayApp` registers it,
 `deploy/cloud/docker-compose.yml` turns `EdgeProvisioning` on, and `mosquitto/acl`
-confines each side to its own topic. What has not been done is the walk: no run has
-yet had a real broker and a real edge accept a derived configuration end to end.
-See [`open-work.md`](open-work.md).
+confines each side to its own topic. **And the walk has been done, three times**
+*(corrected 2026-10-07; this said "what has not been done is the walk", while
+`open-work.md` §2.1 in the same repository recorded each one)*: 2026-10-01 on one
+machine, 2026-10-02 against the real cloud stack over TLS and then **on two
+hosts**, and again inside the write walk of 2026-10-06. See
+[`open-work.md`](open-work.md) §2.1.
 
 ## Phase 8 — Operator screens (HMI)
 
