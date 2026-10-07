@@ -583,15 +583,17 @@ validation, not in the symbol.
 
 `Tank 3 Level` read **`464.00 %`** — impossible for a level — and it was drawn exactly like
 `4.79 bar`. That particular reading was this session's own demo data: the tag was seeded against a raw
-register with no scaling, so the number is the session's fault rather than the product's. **The question
-it raises is not.** A percentage above 100, a negative pressure on a gauge that cannot go below zero, a
-level that exceeds its tank: none of these have anywhere to be said.
+register with no scaling, so the number is the session's fault rather than the product's. **The tag now
+carries `scale=0.1` and reads `34.2 %`**, so the demo no longer shows it. **The question it raises is
+not fixed and is not the demo's.**
 
-ADR-0005 gives a tag a dimension and an SI factor, which is a statement about **what a number means and
-how to convert it** — not about **whether a particular value is possible**. So this is genuinely
-unanswered by the units work, and it needs a decision before code: whether the product should have an
-opinion at all, and if so whether it belongs to the tag's definition (a range), to the alarm engine (a
-limit), or to the screen. The safe default is that the product says nothing it was not told.
+A percentage above 100, a negative pressure on a gauge that cannot go below zero, a level that exceeds
+its tank: none of these have anywhere to be said. ADR-0005 gives a tag a dimension and an SI factor,
+which is a statement about **what a number means and how to convert it** — not about **whether a
+particular value is possible**. So this is genuinely unanswered by the units work, and it needs a
+decision before code: whether the product should have an opinion at all, and if so whether it belongs to
+the tag's definition (a range), to the alarm engine (a limit), or to the screen. The safe default is
+that the product says nothing it was not told.
 
 **3. The `discrete` kind still has no editor, which is older than this session and easy to forget.**
 
