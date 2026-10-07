@@ -1016,6 +1016,53 @@ export function moveComponent(
 }
 
 /**
+ * Where a drop lands, as a row and a place in it, or null when the drop means nothing.
+ *
+ * **This exists because the index an author sees and the index `moveComponent` takes are not the
+ * same index**, and the difference is invisible until it is wrong. `moveComponent` builds its target
+ * row with the moved component already taken out — that is what lets it treat a move within a row and
+ * a move between rows as one operation — so `at` counts places in a row that no longer contains the
+ * thing being moved. A drop handler reading the rendered row, which *does* contain it, is one too high
+ * for every drop to the right of where the component started.
+ *
+ * So the editor passes ids and a side, and the arithmetic is done here where it can be tested without
+ * a browser: `side` is which half of the target the pointer was over, and the whole of dragging is
+ * which component you let go on and which side of it.
+ *
+ * Null for a drop that cannot mean anything — onto itself, or onto something no longer in the set.
+ * The caller does nothing with a null rather than guessing, because a guess here moves a component an
+ * author did not ask to move.
+ */
+export function dropPosition(
+  components: readonly ScreenComponent[],
+  draggedId: string,
+  ontoId: string,
+  side: 'before' | 'after',
+): { rowIndex: number; at: number } | null {
+  if (draggedId === ontoId) {
+    return null;
+  }
+
+  const onto = components.find((component) => component.id === ontoId);
+
+  // Both ends have to be real. Only `onto` being checked would leave a drag of something that is no
+  // longer in the set answering with a position — and `moveComponent` would then do nothing with it,
+  // so the editor would redraw, renumber and report a change that did not happen.
+  if (!onto || !components.some((component) => component.id === draggedId)) {
+    return null;
+  }
+
+  // The same frame `moveComponent` will build: this row, without the component being dragged.
+  const row = components
+    .filter((component) => component.rowIndex === onto.rowIndex && component.id !== draggedId)
+    .sort((left, right) => left.position - right.position);
+
+  const at = row.findIndex((component) => component.id === ontoId);
+
+  return at === -1 ? null : { rowIndex: onto.rowIndex, at: side === 'before' ? at : at + 1 };
+}
+
+/**
  * The component set with one moved a place earlier or later within its row.
  *
  * Returns the same set unchanged at either end rather than wrapping: an author pressing "left" on
