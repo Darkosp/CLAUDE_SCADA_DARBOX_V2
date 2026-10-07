@@ -18,16 +18,27 @@ the documents it points to, before doing anything else in this repo.
 ## Current status
 
 **Before committing anything here, read the two-agent section at the top of [`HANDOVER.md`](HANDOVER.md).**
-On 2026-10-07 two sessions shared this one checkout; the second is stopped but **its work is still in this
-working tree, uncommitted** (`src/Core/Model/Screen.cs`, `src/Web/src/app/{screen,screen-editor,symbol}.ts`,
-three `symbol-*.test.mjs` files — its *"more symbols"* work on `feat/more-symbols`). **Never `git add -A`
-here**, and never use `git checkout <branch> -- <path>` to move uncommitted work: it destroyed edits of mine.
-Two decisions of that day, **ADR-0031** (failed sign-ins lock the account, response headers, `script-src` by
-hash) and **ADR-0032** (the audit trail is readable by an Admin), are on `main` with their code in **draft
-PR #10**; **ADR-0030** is on `main` with its server half in **draft PR #8**, and its display half is not
-built. All three drafts wait on the same thing: **nobody has looked at the new screens in the running
-product.** The Gateway project is at **188 passed / 0 failed / 0 skipped** and the client at **241 / 0**; the
-whole-solution baseline has not been re-measured since 648 / 228.
+On 2026-10-07 two sessions shared this one checkout. **Both are stopped and the tree is clean** *(corrected
+2026-10-08)*: the second session's *"more symbols"* work — a motor, a valve and a tank — is committed on
+`feat/more-symbols` as **PR #11**. **Never `git add -A` here**, and never use
+`git checkout <branch> -- <path>` to move uncommitted work: it destroyed edits of mine.
+
+**`main` could not be built from a fresh clone until 2026-10-08**, and nothing recorded it. `dotnet build
+-warnaserror --no-incremental` failed on `TrendReductionTests.cs:59`, while the plain incremental build
+reported "0 Errors" because MSBuild never recompiled that project and its analyzers never ran. Merged as
+PR #9 and verified in a throwaway worktree. **Build with `--no-incremental` before believing a green
+build**, and if `dotnet test` on the solution gives counts that move between runs, something else is
+building this tree — run the projects one at a time.
+
+Three decisions of that day are on `main` with their code still in draft: **ADR-0031** (failed sign-ins lock
+the account, response headers, `script-src` by hash) and **ADR-0032** (the audit trail is readable by an
+Admin) in **draft PR #10**; **ADR-0030** with its server half in **draft PR #8**, its display half not built.
+All three wait on the same thing: **nobody has looked at the new screens in the running product.**
+
+**Baselines, and which tree each belongs to.** On **PR #10's branch**: Gateway **188 / 0 / 0**, client
+**241 / 0** — `main` alone is **228** client tests, the extra 13 being `audit-trail.test.mjs`, which exists
+only there. On **PR #11's branch**: **677 .NET across seven projects with 0 skipped, and 237 client**,
+measured **per project** for the reason above.
 
 **How to read a PR number here, and there are now three numbering spaces.**
 *(Corrected 2026-10-07: this paragraph named `Darkosp/DEEP_SCADA_DARBOX` as

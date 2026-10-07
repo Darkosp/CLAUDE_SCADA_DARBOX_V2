@@ -10,9 +10,13 @@ happened: a commit of mine landed on a branch the other session had created; two
 session's `testhost` held the other's output; one test run measured a tree the other session was editing; and
 **`git checkout <branch> -- <file>` silently destroyed my uncommitted edits** to this file and `CLAUDE.md`.
 
-**The other session is stopped, and its work is in this tree uncommitted**: `src/Core/Model/Screen.cs`,
-`src/Web/src/app/{screen,screen-editor,symbol}.ts`, `src/Web/tests/symbol-{drawing,state,shapes}.test.mjs`,
-`tests/Core.Tests/SymbolVocabularyTests.cs` — its *"more symbols"* work on `feat/more-symbols` (`4d82f72`).
+**The other session is stopped and its work is now committed** — *(corrected 2026-10-08)*. It is
+`feat/more-symbols`, **PR #11**: a motor, a valve and a tank. The files this block used to list as loose
+in the tree are in that branch now, and the tree is clean.
+
+*What this block said before is worth keeping as the warning it is:* the work sat uncommitted here while
+`feat/more-symbols` pointed at `4d82f72`, **a merge commit containing none of it** — so a reader who
+checked the branch out would have found the symbols missing and concluded they were lost.
 **Never `git add -A` here**; commit explicit paths. **One agent per worktree is the fix**:
 `git worktree add ../scada-wt <branch>`.
 
@@ -20,16 +24,22 @@ session's `testhost` held the other's output; one test run measured a tree the o
 
 | decision | `main` | code | missing |
 |---|---|---|---|
+| **`main` could not be built from clean** | — | **merged, PR #9** `984392a` | — *(added 2026-10-08: this was open and unrecorded. `dotnet build -warnaserror --no-incremental` failed on `TrendReductionTests.cs:59` with xUnit2031, while the plain incremental build said "0 Errors" — MSBuild never recompiled that project, so the analyzer never ran. A fresh clone could not build. Verified fixed in a throwaway worktree.)* |
 | **ADR-0029** trend reduction | yes | merged, PR #7 `8e89ad0` | — (walked; the walk found the chart-drawn-where-its-axis-was defect) |
 | **ADR-0030** a tag declares its range | yes | **draft PR #8** `feat/tag-declared-range` | **the half a person sees** — no form fields, no marker, so `464 %` still looks like `4.79 bar` |
 | **ADR-0031** sign-in hardened (lockout, headers, `script-src` by hash) | yes | **draft PR #10** `feat/security-surface` | the walk; per-caller limiting (refused pending the caller-address decision) |
 | **ADR-0032** the audit trail is readable | yes | **draft PR #10** | the walk |
 
 Both drafts are **green**, and drafts only because **nobody has looked at the new screens in the running
-product** — this project's rule. Measured: Gateway project **188 passed / 0 failed / 0 skipped**, client
-**241 / 0**, `ng build` clean. **The whole-solution baseline has NOT been re-measured since 648 .NET / 228
-client** (ADR-0031/0032 landed after it; parallel build locks blocked a clean run) — take that run and correct
-`open-work.md` §2.4–§2.6.
+product** — this project's rule. Measured **on PR #10's branch**: Gateway project **188 passed / 0 failed /
+0 skipped**, client **241 / 0**, `ng build` clean. *(Clarified 2026-10-08: those two numbers are that
+branch's, not `main`'s — `main` alone is **228** client tests, and the extra 13 are `audit-trail.test.mjs`,
+which only exists on PR #10.)*
+
+**The whole-solution baseline has been re-measured, on `feat/more-symbols` (PR #11): 677 .NET across seven
+projects, 0 skipped, and 237 client** — taken **per project**, because a whole-solution run while two
+sessions shared this tree produced counts that moved between runs (Core 196 → 204 → 222 → 214). Correct
+`open-work.md` §2.4–§2.6 from that once PR #11 and PR #10 are both in.
 
 **The standards audit is on `main`**: `docs/architecture/standards-baseline.md` — 22 standards, 1 implemented,
 4 partial, 1 not, 16 out of scope. Its three biggest gaps, untouched: **IEC 62443-4-1 (no CI, no SBOM, no
@@ -39,6 +49,8 @@ vulnerability intake, no threat model — the biggest, and not code)**, **OPC UA
 
 ## Next, in order
 
+0. ~~**Merge PR #9**~~ — done 2026-10-08. Nothing could be built from a fresh clone until it was, and
+   the *Verify in five minutes* block below would have passed here and failed there.
 1. **Walk PR #10** (eyes only): sign in, open **Audit**, check the *"newest N of M"* line, load older, filter
    `auth.`, then five wrong passwords to see the lockout message. **Then walk PR #8 once its display half is
    built** — range low/high fields in `app.ts`/`app.html`, marker in `screen-view.ts`/`app.html`
@@ -72,10 +84,15 @@ vulnerability intake, no threat model — the biggest, and not code)**, **OPC UA
 
 ```powershell
 docker start scada-test-db-5433     # or the tests skip, and 422 skipped looks like a pass
-dotnet build ScadaDarbox.slnx       # 0 Errors; a lock here is a stray testhost
+dotnet build ScadaDarbox.slnx --no-incremental   # --no-incremental, or a broken project is skipped
 $env:SCADA_TEST_DB_PORT='5433'; dotnet test ScadaDarbox.slnx
 cd src/Web; npm test; npx ng build
 ```
+
+**`--no-incremental` is not caution, it is the lesson of PR #9**: without it MSBuild leaves an unchanged
+project alone, its analyzers never run, and the build reports success on a tree that cannot be built from
+a clone. And if `dotnet test` on the solution returns counts that differ between runs, **something else is
+building this tree** — run the projects one at a time and read those numbers instead.
 
 *End of the 2026-10-07 amendment.*
 
