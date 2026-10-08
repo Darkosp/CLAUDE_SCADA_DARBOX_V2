@@ -42,6 +42,48 @@ public sealed record UnitOfMeasure(
     double FactorToSi = 1.0,
     double OffsetToSi = 0.0)
 {
+    /// <summary>
+    /// Refused here rather than checked by each caller, because a unit that cannot convert is not a
+    /// unit (ADR-0005) and there is no stage of this product at which one is useful.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// **Found on 2026-10-08 by reading an audit row**: three of the four tags carrying a unit in the
+    /// demo had <c>FactorToSi = 0</c>, accepted by the API and stored. A zero factor makes
+    /// <see cref="ToSi"/> return the offset for every reading and <see cref="FromSi"/> divide by zero
+    /// — so the model said "this is a percentage" while meaning "every percentage is the same number".
+    /// </para>
+    /// <para>
+    /// **Negative is refused with it.** A unit that scales by a negative number inverts the dimension's
+    /// direction, which is not what a unit does: the one conversion that genuinely runs backwards —
+    /// a temperature scale's zero — is what <see cref="OffsetToSi"/> is for. Non-finite is refused
+    /// because infinity and NaN are not conversions either, and NaN would spread silently.
+    /// </para>
+    /// <para>
+    /// A constructor check rather than a validation method, so an invalid unit cannot be built at all
+    /// — not by the API, not by a repository reading an old row, not by a test reaching for a shortcut.
+    /// An existing row that holds one now fails loudly when it is read, which is the right direction:
+    /// it was already meaningless, and silence is how it got there.
+    /// </para>
+    /// </remarks>
+    public double FactorToSi { get; } = double.IsFinite(FactorToSi) && FactorToSi > 0
+        ? FactorToSi
+        : throw new ArgumentOutOfRangeException(
+            nameof(FactorToSi),
+            FactorToSi,
+            $"A unit's factor to SI must be a positive, finite number: '{Symbol}' was given {FactorToSi}. "
+            + "A unit is a dimension plus its conversion to SI (ADR-0005), and zero, a negative or a "
+            + "non-finite factor is not a conversion. A scale whose zero differs from SI's carries that "
+            + "in OffsetToSi.");
+
+    /// <summary>The additive term, which may legitimately be any finite number including zero.</summary>
+    public double OffsetToSi { get; } = double.IsFinite(OffsetToSi)
+        ? OffsetToSi
+        : throw new ArgumentOutOfRangeException(
+            nameof(OffsetToSi),
+            OffsetToSi,
+            $"A unit's offset to SI must be finite: '{Symbol}' was given {OffsetToSi}.");
+
     /// <summary>Converts a value expressed in this unit to its canonical SI value.</summary>
     public double ToSi(double value) => (value * FactorToSi) + OffsetToSi;
 

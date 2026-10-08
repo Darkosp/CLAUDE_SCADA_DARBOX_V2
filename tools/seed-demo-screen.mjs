@@ -44,28 +44,46 @@ const tagIdFrom = (list, name) => {
 
 // A few more readings, so a screen has something to be a screen about. Idempotent: a tag that
 // already exists is reused rather than refused.
+/**
+ * The units this script can attach, by symbol.
+ *
+ * **The field is `factorToSi`, and the name is the whole lesson here.** This script used to send
+ * `siFactor`, which is not a property of the API's UnitDto -- so it bound to nothing, defaulted to
+ * zero, and three demo tags were stored carrying a unit that could not convert. Nothing refused it
+ * (that hole is closed in `UnitOfMeasure` now, 2026-10-08) and nothing showed it until an audit row
+ * printed the stored payload.
+ *
+ * A table rather than a conditional, because the conditional is what hid the second half of it:
+ * `dimension: unitSymbol === '%' ? 'Dimensionless' : 'Pressure'` quietly called a flow a pressure.
+ */
+const UNITS = {
+  '%': { symbol: '%', dimension: 'Dimensionless', factorToSi: 1, offsetToSi: 0 },
+  bar: { symbol: 'bar', dimension: 'Pressure', factorToSi: 100000, offsetToSi: 0 },
+  'm³/h': { symbol: 'm³/h', dimension: 'VolumeFlow', factorToSi: 1 / 3600, offsetToSi: 0 },
+};
+
 const ensureTag = async (name, valueKind, sourceAddress, unitSymbol, isWritable = false) => {
   const existing = device.tags.find((t) => t.name === name);
   if (existing) return existing.id;
+
+  if (unitSymbol && !UNITS[unitSymbol]) {
+    throw new Error(`No unit defined for '${unitSymbol}'. Add it to UNITS with its factor to SI.`);
+  }
 
   const created = await api('POST', `/api/devices/${device.id}/tags`, {
     name,
     valueKind,
     sourceAddress,
     isWritable,
-    unit: unitSymbol
-      ? {
-          symbol: unitSymbol,
-          dimension: unitSymbol === '%' ? 'Dimensionless' : 'Pressure',
-          siFactor: unitSymbol === '%' ? 1 : 100000,
-        }
-      : null,
+    unit: unitSymbol ? UNITS[unitSymbol] : null,
   });
   return created.id;
 };
 
 const level = await ensureTag('Tank 3 Level', 'Numeric', 'holding:10', '%');
-const flow = await ensureTag('Suction Flow', 'Numeric', 'holding:11', 'bar');
+// A suction flow in bar was this script's own mistake, not the product's: it called everything that
+// was not a percentage a pressure.
+const flow = await ensureTag('Suction Flow', 'Numeric', 'holding:11', 'm³/h');
 const setpoint = await ensureTag('Discharge Setpoint', 'Numeric', 'holding:12', 'bar', true);
 
 // The tree read above is now stale — it predates the tags just created — so it is read AGAIN before
