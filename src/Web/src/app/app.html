@@ -53,6 +53,9 @@
               (click)="showUsers()">Users</button>
       <button type="button" class="ghost" [class.current]="view() === 'edges'"
               (click)="showEdges()">Edges</button>
+      <!-- Admin only, because the trail is: the Gateway answers 403 to anybody else (ADR-0032 §1). -->
+      <button type="button" class="ghost" [class.current]="view() === 'audit'"
+              (click)="showAudit()">Audit</button>
     }
   </nav>
 
@@ -277,6 +280,61 @@
           }
         </tbody>
       </table>
+    }
+  </main>
+} @else if (view() === 'audit') {
+  <main class="journal">
+    <div class="pane-head">
+      <h2>Audit trail</h2>
+      <button type="button" class="ghost" (click)="showAudit()" [disabled]="auditLoading()">Refresh</button>
+    </div>
+
+    <!-- What is being looked at, said plainly: a capped page that does not admit it is capped reads as
+         a system that did nothing (ADR-0032 §3). -->
+    <p class="muted">{{ auditNote() }}</p>
+
+    <div class="journal-filters">
+      <label>
+        Action
+        <input name="auditAction" placeholder="auth. or alarm."
+               [ngModel]="auditAction()" (ngModelChange)="filterAuditByAction($event)" />
+      </label>
+    </div>
+
+    @if (auditLoading() && auditEntries().length === 0) {
+      <p class="muted">Reading…</p>
+    } @else if (auditEntries().length === 0) {
+      <p class="muted">Nothing recorded matches these filters.</p>
+    } @else {
+      <table class="journal-rows">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Who</th>
+            <th>Action</th>
+            <th>Subject</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (entry of auditEntries(); track entry.id) {
+            <tr>
+              <td>{{ entry.occurredAtUtc | date: 'yyyy-MM-dd HH:mm:ss' }}</td>
+              <!-- A failed sign-in names nobody, and the row says so rather than looking anonymous. -->
+              <td>{{ entry.actor ?? 'no one signed in' }}</td>
+              <td>{{ entry.action }}</td>
+              <td>{{ auditEntity(entry) }}</td>
+              <td class="detail">{{ entry.detail === '{}' ? '' : entry.detail }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+
+      @if (auditEntries().length < auditTotal()) {
+        <button type="button" class="ghost" (click)="loadOlderAudit()" [disabled]="auditLoading()">
+          Load older
+        </button>
+      }
     }
   </main>
 } @else if (view() === 'templates') {

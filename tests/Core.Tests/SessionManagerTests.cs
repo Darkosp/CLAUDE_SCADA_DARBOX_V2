@@ -206,6 +206,10 @@ public class SessionManagerTests
 
         public Task<bool> SetPasswordHashAsync(Guid userId, string passwordHash, CancellationToken cancellationToken) => throw new NotSupportedException();
 
+        public Task RecordSignInFailureAsync(Guid userId, SignInLockout lockout, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task ClearSignInFailuresAsync(Guid userId, CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task<bool> SetSiteRoleAsync(Guid userId, Guid siteId, SiteRole role, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<bool> RemoveSiteRoleAsync(Guid userId, Guid siteId, CancellationToken cancellationToken) => throw new NotSupportedException();

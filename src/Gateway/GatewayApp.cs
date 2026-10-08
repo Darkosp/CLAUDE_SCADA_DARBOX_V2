@@ -72,6 +72,14 @@ public static class GatewayApp
             throw new InsecureTransportException(insecure);
         }
 
+        // The lockout numbers are refused in the same place and for the same reason (ADR-0031 §6): a
+        // deployment that set thirty minutes and was quietly given three believes a control is there that
+        // is not, and a control believed to be present is worse than one known to be absent.
+        if (LockoutPolicy.From(builder.Configuration).Problem() is { } unusableLockout)
+        {
+            throw new InvalidOperationException(unusableLockout);
+        }
+
         if (tls.ServesTls)
         {
             // Kestrel rather than a proxy (ADR-0028 §1): it keeps the client on the Gateway's own
@@ -171,6 +179,31 @@ public static class GatewayApp
             }
         }
 
+        // **`script-src` is computed from the page the Gateway itself serves** (ADR-0031 §8). The client
+        // boots the stored theme with an inline script so the dark theme applies before the first paint
+        // (ADR-0027), and a policy naming `script-src` without that script's hash breaks the first paint
+        // while every test that does not look at the browser still passes. Read once, at startup: the file
+        // is replaced only by an upgrade, and an upgrade restarts the Gateway.
+        var clientIndex = Path.Combine(app.Environment.WebRootPath ?? string.Empty, "index.html");
+        var scriptSource = ScriptHashes.ScriptSourceFor(
+            File.Exists(clientIndex) ? File.ReadAllText(clientIndex) : null);
+
+        // **Headers that cost nothing and close whole classes of attack** (ADR-0031 §8): the interface
+        // cannot be framed by another site, a response cannot be sniffed into executing, no referrer leaks
+        // out of a plant, and the device APIs a console has no use for are closed.
+        app.Use(async (context, next) =>
+        {
+            var headers = context.Response.Headers;
+            headers["X-Content-Type-Options"] = "nosniff";
+            headers["Referrer-Policy"] = "no-referrer";
+            headers["X-Frame-Options"] = "DENY";
+            headers["Content-Security-Policy"] =
+                $"frame-ancestors 'none'; object-src 'none'; base-uri 'self'; script-src {scriptSource}";
+            headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), usb=(), payment=()";
+
+            await next().ConfigureAwait(false);
+        });
+
         // The web client is served from here, so the browser talks to one origin and no
         // cross-origin allowance exists at all (Phase 6). Its files are public — the sign-in
         // screen has to load before anyone has a session — so they are served ahead of
@@ -200,6 +233,7 @@ public static class GatewayApp
         MapTagReads(app);
         app.MapAuthApi();
         app.MapUserApi();
+        app.MapAuditApi();
         app.MapConfigurationApi();
         app.MapAlarmApi();
         app.MapTemplateApi();
@@ -219,6 +253,7 @@ public static class GatewayApp
         var services = builder.Services;
 
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(LockoutPolicy.From(builder.Configuration));
         services.AddSingleton(dataSource);
         services.AddSingleton(catalogSource);
         services.AddSingleton<IConfigurationStore>(configurationStore);
@@ -334,6 +369,10 @@ public static class GatewayApp
         services.AddSingleton(securityStore);
         services.AddSingleton<ISecurityStore>(securityStore);
         services.AddSingleton<IAuditLog>(securityStore);
+
+        // The same object, behind the read contract only (ADR-0032): a component that is handed the log can
+        // append and cannot read, which is the direction the trail is written in.
+        services.AddSingleton<IAuditTrail>(securityStore);
         services.AddSingleton(userDirectorySource);
         services.AddSingleton<SessionManager>();
         services.AddSingleton<Authenticator>();
