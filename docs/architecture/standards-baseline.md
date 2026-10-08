@@ -1028,6 +1028,11 @@ open**: the decision is in force and the code is unchanged, which are two differ
 this entry stays in the list. **Remaining cost: a week, plus the deployment-facing certificate story.**
 
 **3. Alarm priority (ISA-18.2 — and OPC UA Part 9's `Severity`, which is the same gap found twice).**
+*Decided 2026-10-08 by [ADR-0034](decisions/0034-an-alarm-carries-a-priority.md); the code is not
+written, and those are two different claims, so the entry stays.* It takes both vocabularies together
+as this entry asked: three named priorities are the model, a numeric severity is a mapping at the edge,
+and **null means "not yet rationalised"** — ISA-18.2's own lifecycle state, which is what lets the
+migration avoid inventing a consequence assessment for every existing alarm.
 There is no priority or class on an alarm definition, so alarms cannot be rationalised, sorted, flooded,
 escalated or measured — five of the standard's central practices, all of which rest on that one field.
 **§4.8, added 2026-10-08, finds the same field missing against a second and independent standard**, which

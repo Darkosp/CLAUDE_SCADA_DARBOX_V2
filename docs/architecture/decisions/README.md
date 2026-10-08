@@ -64,6 +64,7 @@ they say about it.
 | [0031](0031-the-sign-in-path-is-hardened.md) | Failed sign-ins are counted on the account and lock it for a window that is a comparison rather than a job; the locked account is told, deliberately; an Admin reset is the way out; and per-caller limiting waits until "the caller's address" is answerable |
 | [0032](0032-the-audit-trail-can-be-read.md) | The append-only audit trail is readable by an Admin and nobody else, backwards by id rather than by the non-unique time, with the matching total beside every page; looking at it is deliberately not journalled |
 | [0033](0033-the-opc-ua-driver-negotiates-security.md) | The OPC UA driver selects the strongest endpoint a server offers and refuses one that offers none; an unsecured session is a per-device opt-out that is logged; a deprecated policy is accepted and named rather than refused; a secret never lives in `connection_settings`; and a refused certificate is distinguishable from a device that is not answering |
+| [0034](0034-an-alarm-carries-a-priority.md) | An alarm definition carries a priority from a fixed ordered set of three (High, Medium, Low); **null means "not yet rationalised"**, which is ISA-18.2's own state and is why the migration does not have to guess; priority never changes with an alarm's state; and today it changes ordering and nothing else, because red already means two things on this product's screens |
 
 ## Template
 
