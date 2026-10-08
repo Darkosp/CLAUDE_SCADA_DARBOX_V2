@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Opc.Ua;
@@ -24,6 +25,7 @@ public sealed class OpcUaDriver : IDeviceDriver
 {
     private readonly string _endpointUrl;
     private readonly bool _acceptUntrustedCertificates;
+    private readonly OpcUaSecurity _security;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
 
@@ -39,6 +41,37 @@ public sealed class OpcUaDriver : IDeviceDriver
     /// that a fault repeating every scan compares equal to itself and is named once.
     /// </summary>
     private const string NotConnected = "the session is not connected";
+
+    /// <summary>
+    /// Why the last connect attempt failed, when the driver knows something better than
+    /// <see cref="NotConnected"/>.
+    /// </summary>
+    /// <remarks>
+    /// **ADR-0033 decision 6, and it needs a field because of where the exception goes.**
+    /// `DeviceScannerService` catches a connect failure, logs it and carries on scanning so that the
+    /// tags report Bad rather than stale (ADR-0003) — which means by the time <see cref="ReadAsync"/>
+    /// runs, the exception is gone and every tag would say "the session is not connected". A refused
+    /// certificate and an unplugged machine would read identically, and **the two remedies have nothing
+    /// in common**: one is *go and trust a certificate*, the other is *go and find out why the machine
+    /// is not answering*. A reader given one message for both tries the wrong one first, every time.
+    /// <para>
+    /// Cleared on a successful connect, so a fault that is fixed stops being reported. No lock, for the
+    /// same reason as <see cref="_badReasons"/>: one scan loop owns this driver.
+    /// </para>
+    /// </remarks>
+    private string? _connectFailure;
+
+    /// <summary>
+    /// The server certificate the validator last refused, captured so the reason can name it.
+    /// </summary>
+    /// <remarks>
+    /// The stack reports a rejected certificate as a status code; the certificate itself reaches only
+    /// the validator's event. An operator cannot act on "the certificate was rejected" — to decide
+    /// whether to trust it they need the **subject and thumbprint**, which is what they would compare
+    /// against the server. The rejected certificate is also written to `pki/rejected`, and **nobody
+    /// looks in a directory**.
+    /// </remarks>
+    private X509Certificate2? _refusedCertificate;
 
     /// <summary>The reason each tag last read Bad, so a standing fault is named once.</summary>
     /// <remarks>
@@ -59,11 +92,13 @@ public sealed class OpcUaDriver : IDeviceDriver
     public OpcUaDriver(
         string endpointUrl,
         bool acceptUntrustedCertificates,
+        OpcUaSecurity security,
         TimeProvider timeProvider,
         ILogger<OpcUaDriver>? logger = null)
     {
         _endpointUrl = endpointUrl;
         _acceptUntrustedCertificates = acceptUntrustedCertificates;
+        _security = security;
         _timeProvider = timeProvider;
 
         // Optional so a composition that deliberately keeps no log — a unit test, a tool —
@@ -71,35 +106,155 @@ public sealed class OpcUaDriver : IDeviceDriver
         _logger = logger ?? NullLogger<OpcUaDriver>.Instance;
     }
 
+    /// <remarks>
+    /// <para>
+    /// **The channel is negotiated up, and a server that offers nothing is refused** (ADR-0033). Before
+    /// that decision this passed `useSecurity: false` unconditionally, with a comment deferring the
+    /// question to "the auth work in Phase 5" — Phase 5 shipped without it, and every value read from a
+    /// plant crossed the network in the clear for two more phases while the surrounding
+    /// `SecurityConfiguration` made it look otherwise.
+    /// </para>
+    /// <para>
+    /// **A failure here is recorded before it is rethrown.** The caller logs it and carries on scanning,
+    /// so this is the last place that knows what went wrong; see <see cref="_connectFailure"/>.
+    /// </para>
+    /// </remarks>
     public async Task ConnectAsync(CancellationToken cancellationToken)
     {
         await DisposeSessionAsync().ConfigureAwait(false);
 
-        var configuration = await BuildConfigurationAsync().ConfigureAwait(false);
+        _refusedCertificate = null;
 
-        // Security is deliberately not negotiated up in Phase 4. Certificates, policies
-        // and user identity belong with the auth work in Phase 5, and choosing them here
-        // would pre-empt a decision that has its own phase.
-        var endpoint = await CoreClientUtils.SelectEndpointAsync(
-            configuration,
-            _endpointUrl,
-            useSecurity: false,
-            telemetry: Telemetry,
-            cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var configuration = await BuildConfigurationAsync().ConfigureAwait(false);
 
-        var description = new ConfiguredEndpoint(null, endpoint, EndpointConfiguration.Create(configuration));
+            var endpoint = await CoreClientUtils.SelectEndpointAsync(
+                configuration,
+                _endpointUrl,
+                useSecurity: _security == OpcUaSecurity.Required,
+                telemetry: Telemetry,
+                cancellationToken).ConfigureAwait(false);
 
-        _session = await new DefaultSessionFactory(Telemetry).CreateAsync(
-            configuration,
-            description,
-            updateBeforeConnect: false,
-            checkDomain: false,
-            sessionName: "ScadaDarbox",
-            sessionTimeout: 60_000,
-            identity: new UserIdentity(new AnonymousIdentityToken()),
-            preferredLocales: null,
-            cancellationToken).ConfigureAwait(false);
+            // A server that answered and offered nothing at all. Distinct from the case below: there is
+            // no channel to secure rather than no security on offer, and the remedy is the server's
+            // endpoint configuration rather than this device's setting.
+            if (endpoint is null)
+            {
+                throw new InvalidOperationException(
+                    $"The OPC UA server at '{_endpointUrl}' answered but offered no endpoint.");
+            }
+
+            // **Asked for security and got none.** `SelectEndpoint` returns the best endpoint on offer,
+            // and when the best on offer is `None` it returns that rather than failing -- which is the
+            // silent downgrade ADR-0033 decision 1 refuses. Checked after the call because the server's
+            // endpoint list is the only place this is knowable.
+            if (_security == OpcUaSecurity.Required && endpoint.SecurityMode == MessageSecurityMode.None)
+            {
+                throw new OpcUaSecurityUnavailableException(_endpointUrl);
+            }
+
+            var description = new ConfiguredEndpoint(null, endpoint, EndpointConfiguration.Create(configuration));
+
+            _session = await new DefaultSessionFactory(Telemetry).CreateAsync(
+                configuration,
+                description,
+                updateBeforeConnect: false,
+                checkDomain: false,
+                sessionName: "ScadaDarbox",
+                sessionTimeout: 60_000,
+                // **Anonymous, and that is a decision rather than a leftover** (ADR-0033 decision 4).
+                // The client certificate created by BuildConfigurationAsync is what identifies this
+                // application to the server. A named user would need somewhere to keep its secret, and
+                // `connection_settings` is not that place: it is echoed by the API and written into
+                // `audit_log.detail`, which ADR-0032 makes opaque JSON that is never parsed -- so a
+                // password put there would be printed in full on a screen built for an Admin to read.
+                identity: new UserIdentity(new AnonymousIdentityToken()),
+                preferredLocales: null,
+                cancellationToken).ConfigureAwait(false);
+
+            _connectFailure = null;
+            ReportNegotiatedChannel(endpoint);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _connectFailure = DescribeConnectFailure(exception);
+            throw;
+        }
     }
+
+    /// <summary>Says what was negotiated, at the one moment it is knowable.</summary>
+    /// <remarks>
+    /// **The policy is named rather than merely accepted** (ADR-0033 decision 3). `Basic128Rsa15` and
+    /// `Basic256` are deprecated and this driver takes them, because refusing them would push an
+    /// installation onto `security: none` and a weak policy is enormously better than no policy. What
+    /// it must not do is leave a weak policy indistinguishable from a strong one, so it is in the log.
+    /// <para>
+    /// The opt-out is logged every time for the same reason ADR-0028 logs its own: a deployment serving
+    /// in the clear should find that out from its log rather than from an incident.
+    /// </para>
+    /// </remarks>
+    private void ReportNegotiatedChannel(EndpointDescription endpoint)
+    {
+        if (_security == OpcUaSecurity.None)
+        {
+            _logger.LogWarning(
+                "Connected to {Endpoint} with NO security, because this device is configured "
+                + "'security=none'. Readings and commands cross the network unencrypted and "
+                + "unauthenticated (ADR-0033).",
+                _endpointUrl);
+
+            return;
+        }
+
+        _logger.LogInformation(
+            "Connected to {Endpoint} with {SecurityMode} using {SecurityPolicy}.",
+            _endpointUrl,
+            endpoint.SecurityMode,
+            endpoint.SecurityPolicyUri);
+    }
+
+    /// <summary>Turns a connect failure into the sentence a tag will carry (ADR-0003, ADR-0033 §6).</summary>
+    /// <remarks>
+    /// **The certificate cases are named apart from everything else on purpose.** Every other failure
+    /// here means roughly *the server did not answer*; a refused certificate means *the server answered
+    /// and we would not talk to it*, and the person who fixes that is doing something completely
+    /// different. The subject and thumbprint are included because they are what an operator compares
+    /// against the server before deciding to trust it.
+    /// </remarks>
+    private string DescribeConnectFailure(Exception exception)
+    {
+        if (exception is OpcUaSecurityUnavailableException unavailable)
+        {
+            return unavailable.Message;
+        }
+
+        if (_refusedCertificate is { } certificate)
+        {
+            return $"the server's certificate is not trusted: subject '{certificate.Subject}', "
+                   + $"thumbprint {certificate.Thumbprint}. Put it in the trusted store, or set "
+                   + "'acceptUntrustedCertificates' on this device if that is what you mean.";
+        }
+
+        if (exception is ServiceResultException { StatusCode: var status } && IsCertificateStatus(status))
+        {
+            // The validator's event did not fire -- a certificate refused inside the handshake rather
+            // than by our trust list -- so the status name is the most this can say.
+            return $"the server's certificate was refused ({StatusCodes.GetBrowseName(status)}).";
+        }
+
+        return $"the connection could not be established: {exception.Message}";
+    }
+
+    /// <summary>Whether a status code is about a certificate rather than about reachability.</summary>
+    /// <remarks>
+    /// Matched on the name rather than enumerated: the stack has upwards of a dozen `BadCertificate…`
+    /// codes (untrusted, time-invalid, revoked, host-name mismatch, chain incomplete, and more), they
+    /// all mean the same thing to the person who has to act, and a list of them here would be one more
+    /// place to forget to update.
+    /// </remarks>
+    private static bool IsCertificateStatus(uint status) =>
+        StatusCodes.GetBrowseName(status).StartsWith("BadCertificate", StringComparison.Ordinal);
 
     public async Task<IReadOnlyList<TagReading>> ReadAsync(
         IReadOnlyList<DriverTag> tags,
@@ -127,7 +282,10 @@ public sealed class OpcUaDriver : IDeviceDriver
 
         if (readable.Count == 0 || _session is not { Connected: true } session)
         {
-            readings.AddRange(readable.Select(entry => Bad(entry.Tag, NotConnected)));
+            // The reason the connect failed, when there is one, rather than the generic sentence:
+            // ADR-0003 asks a tag with no value to say *why*, and "not connected" is true of a refused
+            // certificate and of a cut cable alike while being useful for neither (ADR-0033 §6).
+            readings.AddRange(readable.Select(entry => Bad(entry.Tag, _connectFailure ?? NotConnected)));
             return readings;
         }
 
@@ -344,6 +502,48 @@ public sealed class OpcUaDriver : IDeviceDriver
 
         await configuration.ValidateAsync(ApplicationType.Client, CancellationToken.None)
             .ConfigureAwait(false);
+
+        // **This handler is where `acceptUntrustedCertificates` is actually honoured, and until
+        // ADR-0033 nothing honoured it at all.** The setting has existed since Phase 4 with a comment
+        // arguing for its default; it was never implemented, because with an unsecured channel no
+        // server certificate is ever presented and the code path could not run. It did not merely
+        // "decide nothing" -- it was not wired to anything. Found by turning security on and watching
+        // every existing test fail with `BadCertificateUntrusted`.
+        //
+        // The handler also records what was refused, so the Bad reason can name a subject and a
+        // thumbprint (decision 6): otherwise the certificate exists only in `pki/rejected`, and nobody
+        // looks in a directory.
+        configuration.CertificateValidator.CertificateValidation += (_, e) =>
+        {
+            if (e.Accept || e.Error is null)
+            {
+                return;
+            }
+
+            // **Only `BadCertificateUntrusted`, and deliberately not the rest.** "Untrusted" means *we
+            // have not been told to trust this one*, which is what an operator opts out of on a
+            // self-signed plant server. An expired, revoked or malformed certificate is a different
+            // statement about the world, and a flag named for one should not silently cover the others.
+            if (_acceptUntrustedCertificates && e.Error.StatusCode == StatusCodes.BadCertificateUntrusted)
+            {
+                e.Accept = true;
+
+                // Said out loud every connect, as the unsecured opt-out is: this is a deliberate
+                // weakening, and a deployment should meet it in its log rather than in an incident.
+                _logger.LogWarning(
+                    "Accepting the UNTRUSTED certificate of {Endpoint} (subject '{Subject}', "
+                    + "thumbprint {Thumbprint}) because this device is configured "
+                    + "'acceptUntrustedCertificates'. Put the certificate in the trusted store to stop "
+                    + "trusting whatever answers on this address (ADR-0033).",
+                    _endpointUrl,
+                    e.Certificate.Subject,
+                    e.Certificate.Thumbprint);
+
+                return;
+            }
+
+            _refusedCertificate = e.Certificate;
+        };
 
         // Creates a self-signed client certificate on first run. The stack requires the
         // client to have one even when the channel itself is unsecured.

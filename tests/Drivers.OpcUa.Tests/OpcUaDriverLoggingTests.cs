@@ -42,6 +42,8 @@ public sealed class OpcUaDriverLoggingTests : IAsyncLifetime
         var log = new RecordingLogger<OpcUaDriver>();
         await using var driver = Driver(log);
         await driver.ConnectAsync(CancellationToken.None);
+        // The handshake has its own lines now, and they are not this test's subject (ADR-0033).
+        log.Clear();
 
         var broken = new DriverTag(Guid.NewGuid(), "not a node id", TagValueKind.Numeric);
         var reading = Assert.Single(await driver.ReadAsync([broken], CancellationToken.None));
@@ -63,6 +65,8 @@ public sealed class OpcUaDriverLoggingTests : IAsyncLifetime
         var log = new RecordingLogger<OpcUaDriver>();
         await using var driver = Driver(log);
         await driver.ConnectAsync(CancellationToken.None);
+        // The handshake has its own lines now, and they are not this test's subject (ADR-0033).
+        log.Clear();
 
         var missing = new DriverTag(Guid.NewGuid(), "ns=2;s=Pump1.NoSuchTag", TagValueKind.Numeric);
         var reading = Assert.Single(await driver.ReadAsync([missing], CancellationToken.None));
@@ -82,6 +86,8 @@ public sealed class OpcUaDriverLoggingTests : IAsyncLifetime
         var mistypedLog = new RecordingLogger<OpcUaDriver>();
         await using var connected = Driver(mistypedLog);
         await connected.ConnectAsync(CancellationToken.None);
+        // The handshake has its own lines now, and they are not this test's subject (ADR-0033).
+        mistypedLog.Clear();
         await connected.ReadAsync(
             [new DriverTag(Guid.NewGuid(), "ns=2;s=Pump1.NoSuchTag", TagValueKind.Numeric)],
             CancellationToken.None);
@@ -90,6 +96,7 @@ public sealed class OpcUaDriverLoggingTests : IAsyncLifetime
         await using var unplugged = new OpcUaDriver(
             $"opc.tcp://localhost:{FreePort()}/ScadaDarboxSimulator",
             acceptUntrustedCertificates: true,
+            OpcUaSecurity.Required,
             TimeProvider.System,
             unpluggedLog);
         await Assert.ThrowsAnyAsync<Exception>(() => unplugged.ConnectAsync(CancellationToken.None));
@@ -101,7 +108,14 @@ public sealed class OpcUaDriverLoggingTests : IAsyncLifetime
         var saidTheOther = Assert.Single(unpluggedLog.At(LogLevel.Warning)).Message;
 
         Assert.Contains("BadNodeIdUnknown", saidOne, StringComparison.Ordinal);
-        Assert.Contains("the session is not connected", saidTheOther, StringComparison.Ordinal);
+
+        // **This used to assert "the session is not connected", and ADR-0033 made that wording
+        // obsolete by making it better.** The driver now remembers why the connect failed and says
+        // that instead, so an unreachable machine names the connection and a refused certificate names
+        // the certificate -- which is the whole of ADR-0033 decision 6. What this test is for is
+        // unchanged and still holds: the two do not read the same.
+        Assert.Contains("the connection could not be established", saidTheOther, StringComparison.Ordinal);
+        Assert.DoesNotContain("certificate", saidTheOther, StringComparison.OrdinalIgnoreCase);
         Assert.NotEqual(saidOne, saidTheOther);
     }
 
@@ -115,6 +129,8 @@ public sealed class OpcUaDriverLoggingTests : IAsyncLifetime
         var log = new RecordingLogger<OpcUaDriver>();
         await using var driver = Driver(log);
         await driver.ConnectAsync(CancellationToken.None);
+        // The handshake has its own lines now, and they are not this test's subject (ADR-0033).
+        log.Clear();
 
         var wrongKind = new DriverTag(Guid.NewGuid(), "ns=2;s=Pump1.Running", TagValueKind.Numeric);
         var reading = Assert.Single(await driver.ReadAsync([wrongKind], CancellationToken.None));
@@ -133,6 +149,8 @@ public sealed class OpcUaDriverLoggingTests : IAsyncLifetime
         var log = new RecordingLogger<OpcUaDriver>();
         await using var driver = Driver(log);
         await driver.ConnectAsync(CancellationToken.None);
+        // The handshake has its own lines now, and they are not this test's subject (ADR-0033).
+        log.Clear();
 
         var missing = new DriverTag(Guid.NewGuid(), "ns=2;s=Pump1.NoSuchTag", TagValueKind.Numeric);
 
@@ -152,6 +170,8 @@ public sealed class OpcUaDriverLoggingTests : IAsyncLifetime
         var log = new RecordingLogger<OpcUaDriver>();
         await using var driver = Driver(log);
         await driver.ConnectAsync(CancellationToken.None);
+        // The handshake has its own lines now, and they are not this test's subject (ADR-0033).
+        log.Clear();
 
         // A tag's identity is its id (ADR-0001), so that — not the node id — is what the
         // recovery belongs to.
@@ -181,6 +201,8 @@ public sealed class OpcUaDriverLoggingTests : IAsyncLifetime
         var log = new RecordingLogger<OpcUaDriver>();
         await using var driver = Driver(log);
         await driver.ConnectAsync(CancellationToken.None);
+        // The handshake has its own lines now, and they are not this test's subject (ADR-0033).
+        log.Clear();
 
         var reading = Assert.Single(await driver.ReadAsync([PressureTag], CancellationToken.None));
 
@@ -191,6 +213,7 @@ public sealed class OpcUaDriverLoggingTests : IAsyncLifetime
     private OpcUaDriver Driver(ILogger<OpcUaDriver> logger) => new(
         $"opc.tcp://localhost:{_port}/ScadaDarboxSimulator",
         acceptUntrustedCertificates: true,
+        OpcUaSecurity.Required,
         TimeProvider.System,
         logger);
 
