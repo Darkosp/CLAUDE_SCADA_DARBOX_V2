@@ -1463,6 +1463,20 @@ Recorded so a later session does not mistake it for a defect in the code.
   before anything else and prints openssl's own words when that fails, instead of sending
   each step's reason to `/dev/null` and exiting in silence. Either way, clear the variable
   (`Remove-Item Env:\OPENSSL_CONF`) before making certificates on this machine.
+- **One file in the tree has doubled carriage returns, in the committed blob.** Measured 2026-10-07 while
+  editing it: **every one of `src/Gateway/Configuration/SiteTreeBuilder.cs`'s 123 lines ends `\r\r\n`**, in
+  `HEAD` and not only in the working copy — the file every other checkout normalises. It is **valid
+  UTF-8**, it compiles, its tests pass, and nothing reads line endings, which is the same shape as the
+  encoding damage open-work's own §2.0k records: *the damage is valid UTF-8 and nothing fails*. It cost
+  this session a confusing `edit` failure (a multi-line match cannot be found in a file whose lines end
+  with two CRs) and it is the reason the file's own change was made one line at a time. **The fix is one
+  commit that rewrites the file with single CRs and lets git normalise the blob to LF**, and it is left
+  for whoever next touches that file rather than done here, because a 123-line whitespace diff inside a
+  feature branch hides the change it is beside.
+- **A file can show as modified with no content difference.** `src/Core/Model/Screen.cs` reported ` M` in
+  `git status` on 2026-10-07 with an empty `git diff`: the blob is LF and the working copy is CRLF, which
+  is the convention §4 opens with, and git normalises it on the way in. Harmless, and recorded so the next
+  session does not go looking for an edit nobody made.
 
 ## 5. Documentation that described an older tree
 

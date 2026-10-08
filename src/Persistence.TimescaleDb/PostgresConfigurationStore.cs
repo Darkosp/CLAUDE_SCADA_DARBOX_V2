@@ -96,10 +96,8 @@ public sealed class PostgresConfigurationStore : IConfigurationStore
 
         var rows = await connection.QueryAsync<TagRow>(
             new CommandDefinition(
-                """
-                SELECT id, device_id, name, value_kind, unit_symbol, unit_dimension,
-                       unit_factor_to_si, unit_offset_to_si, source_address, is_writable,
-                       template_tag_id
+                $"""
+                SELECT {TagColumns}
                 FROM tag_active
                 ORDER BY name
                 """,

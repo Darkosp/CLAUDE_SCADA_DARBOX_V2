@@ -190,7 +190,9 @@ internal static class ConfigurationRows
         double? UnitOffsetToSi,
         string SourceAddress,
         bool IsWritable,
-        Guid? TemplateTagId)
+        Guid? TemplateTagId,
+        double? RangeLow,
+        double? RangeHigh)
     {
         internal Tag ToDomain() => new()
         {
@@ -210,6 +212,10 @@ internal static class ConfigurationRows
             SourceAddress = SourceAddress,
             IsWritable = IsWritable,
             TemplateTagId = TemplateTagId,
+            // Both ends or neither (ADR-0030), and migration 0020's paired CHECK refuses a half-declared
+            // range as well as the API does — so a row with one end set is a row nothing should have been
+            // able to write, and reading it as "nothing declared" is the only honest answer left.
+            Range = RangeLow is { } low && RangeHigh is { } high ? new TagRange(low, high) : null,
         };
     }
 
@@ -246,6 +252,25 @@ internal static class ConfigurationRows
     /// the price of the alias and is worth knowing before adding a third reader.
     /// </remarks>
     internal const string ScreenComponentColumns = "device_id, symbol, states";
+
+    /// <summary>
+    /// The columns <see cref="TagRow"/> needs, listed once — **because two queries read that row.**
+    /// </summary>
+    /// <remarks>
+    /// The note above about the component list applies here word for word, and this is the moment it
+    /// describes: ADR-0030 adds two columns to a row that <see cref="TagRepository"/> and
+    /// <see cref="PostgresConfigurationStore"/> both select. Dapper materialises by constructor
+    /// signature, so the second query would have failed at run time — on the scan path, where a tag
+    /// catalogue is loaded — with a message about a constructor and nothing about a column.
+    ///
+    /// **Unqualified, so it is only for a query that does not alias the table.** Neither reader does.
+    /// A third reader that joins would have to write its columns out, as the component query with an
+    /// alias already does.
+    /// </remarks>
+    internal const string TagColumns =
+        "id, device_id, name, value_kind, unit_symbol, unit_dimension, unit_factor_to_si, "
+        + "unit_offset_to_si, source_address, is_writable, template_tag_id, range_low, range_high";
+
 
     /// <summary>
     /// One component row.
