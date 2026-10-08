@@ -43,6 +43,17 @@ public sealed record TagValueDto(
 /// On a tag that has never received anything: when the Gateway began listening for it — an
 /// observed time, for "no data since", never a measurement time (ADR-0016).
 /// </param>
+/// <param name="RangeLow">
+/// The span this tag's readings are expected to fall in, or null when nothing has been declared
+/// (ADR-0030). Carried as well as the verdict, so a reader can say what the reading was compared with.
+/// </param>
+/// <param name="RangeHigh">The other end of the declared span, or null with <paramref name="RangeLow"/>.</param>
+/// <param name="RangeStatus">
+/// Where the current reading sits against that span — `InRange`, `AboveRange` or `BelowRange` — or null
+/// when there is nothing to say: no range declared, or no reading to compare. **Null is not "in range"**:
+/// a deployment that declared nothing is never shown a verdict nobody made (ADR-0030 §3), which is the
+/// same distinction a null on-delay carries (ADR-0025).
+/// </param>
 public sealed record TagSnapshotDto(
     Guid TagId,
     string Path,
@@ -50,7 +61,10 @@ public sealed record TagSnapshotDto(
     DateTimeOffset? SourceTimestampUtc,
     string Quality,
     string? UnitSymbol,
-    DateTimeOffset? NoDataSinceUtc)
+    DateTimeOffset? NoDataSinceUtc,
+    double? RangeLow = null,
+    double? RangeHigh = null,
+    string? RangeStatus = null)
 {
     public static TagSnapshotDto From(TagSnapshot snapshot) => new(
         snapshot.TagId,
@@ -59,7 +73,16 @@ public sealed record TagSnapshotDto(
         snapshot.SourceTimestampUtc,
         snapshot.Quality.ToString(),
         snapshot.UnitSymbol,
-        snapshot.NoDataSinceUtc);
+        snapshot.NoDataSinceUtc,
+        snapshot.Range?.Low,
+        snapshot.Range?.High,
+        // **Decided here, in the one function every reader goes through** — the tag list, the tag by id,
+        // and both real-time broadcasts — so no renderer derives it for itself (ADR-0030 §4). The verdict
+        // is about a number: a tag with no reading, or a value that is not numeric, gets none, and neither
+        // does one whose tag declared no range.
+        snapshot.Range is { } range && snapshot.Value is TagValue.Numeric numeric
+            ? range.VerdictFor(numeric.Value).ToString()
+            : null);
 }
 
 /// <summary>

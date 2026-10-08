@@ -85,7 +85,9 @@ public sealed class TagEngine : ITagEngine
                 reading.Value,
                 reading.SourceTimestampUtc,
                 reading.Quality,
-                tag.Unit?.Symbol);
+                tag.Unit?.Symbol,
+                NoDataSinceUtc: null,
+                Range: tag.Range);
 
             _current[reading.TagId] = snapshot;
             snapshots.Add(snapshot);
@@ -154,7 +156,9 @@ public sealed class TagEngine : ITagEngine
                 sample.Value,
                 sample.SourceTimestampUtc,
                 sample.Quality,
-                tag.Unit?.Symbol);
+                tag.Unit?.Symbol,
+                NoDataSinceUtc: null,
+                Range: tag.Range);
 
             _current[sample.TagId] = snapshot;
             becameCurrent.Add(snapshot);
@@ -325,7 +329,10 @@ public sealed class TagEngine : ITagEngine
             SourceTimestampUtc: null,
             Quality.Bad,
             tag.Unit?.Symbol,
-            NoDataSinceUtc: listening.Since);
+            NoDataSinceUtc: listening.Since,
+            // Carried for consistency: the range is a fact about the tag, not about this reading, and a
+            // snapshot with no value produces no verdict anyway (ADR-0030 §3).
+            Range: tag.Range);
 
         _listening[tagId] = listening with { Reported = true };
         _current[tagId] = nothing;

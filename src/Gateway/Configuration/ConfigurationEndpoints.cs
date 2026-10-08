@@ -345,6 +345,37 @@ internal static class ConfigurationEndpoints
             return false;
         }
 
+        // A declared range (ADR-0030). **Refused rather than repaired, every time**, for the reason
+        // §2.0f refused an out-of-range response timeout: a range silently completed or reordered is a
+        // range nobody chose, and every verdict it produces afterwards is about somebody else's number.
+        if ((request.RangeLow is null) != (request.RangeHigh is null))
+        {
+            error = request.RangeLow is null
+                ? $"A range needs both of its ends; only the high one was given ({request.RangeHigh})."
+                : $"A range needs both of its ends; only the low one was given ({request.RangeLow}).";
+            return false;
+        }
+
+        TagRange? range = null;
+        if (request.RangeLow is { } low && request.RangeHigh is { } high)
+        {
+            if (low >= high)
+            {
+                error = $"A range's low end has to be below its high end; {low} and {high} were given.";
+                return false;
+            }
+
+            if (valueKind != TagValueKind.Numeric)
+            {
+                // The same rule as the unit above, and for the same reason: a span is a statement about a
+                // number, and a boolean or a text tag has none for it to be about.
+                error = "Only a numeric tag can declare a range.";
+                return false;
+            }
+
+            range = new TagRange(low, high);
+        }
+
         tag = new Tag
         {
             Id = id,
@@ -354,6 +385,7 @@ internal static class ConfigurationEndpoints
             Unit = unit,
             SourceAddress = request.SourceAddress,
             IsWritable = request.IsWritable,
+            Range = range,
         };
 
         return true;

@@ -21,10 +21,8 @@ public sealed class TagRepository : ITagRepository
 
         var rows = await connection.QueryAsync<TagRow>(
             new CommandDefinition(
-                """
-                SELECT id, device_id, name, value_kind, unit_symbol, unit_dimension,
-                       unit_factor_to_si, unit_offset_to_si, source_address, is_writable,
-                       template_tag_id
+                $"""
+                SELECT {TagColumns}
                 FROM tag_active
                 WHERE device_id = @deviceId
                 ORDER BY name
@@ -45,9 +43,11 @@ public sealed class TagRepository : ITagRepository
             await connection.ExecuteAsync(new CommandDefinition(
                 """
                 INSERT INTO tag (id, device_id, name, value_kind, unit_symbol, unit_dimension,
-                                 unit_factor_to_si, unit_offset_to_si, source_address, is_writable)
+                                 unit_factor_to_si, unit_offset_to_si, source_address, is_writable,
+                                 range_low, range_high)
                 VALUES (@Id, @DeviceId, @Name, @ValueKind, @UnitSymbol, @UnitDimension,
-                        @UnitFactorToSi, @UnitOffsetToSi, @SourceAddress, @IsWritable)
+                        @UnitFactorToSi, @UnitOffsetToSi, @SourceAddress, @IsWritable,
+                        @RangeLow, @RangeHigh)
                 """,
                 ToParameters(tag),
                 cancellationToken: cancellationToken))
@@ -78,7 +78,9 @@ public sealed class TagRepository : ITagRepository
                     unit_factor_to_si = @UnitFactorToSi,
                     unit_offset_to_si = @UnitOffsetToSi,
                     source_address = @SourceAddress,
-                    is_writable = @IsWritable
+                    is_writable = @IsWritable,
+                    range_low = @RangeLow,
+                    range_high = @RangeHigh
                 WHERE id = @Id AND deleted_at IS NULL
                 """,
                 ToParameters(tag),
@@ -149,5 +151,9 @@ public sealed class TagRepository : ITagRepository
         UnitOffsetToSi = tag.Unit?.OffsetToSi,
         tag.SourceAddress,
         tag.IsWritable,
+        // Null for a tag that has declared no range, which is the default and the only thing the
+        // migration can produce (ADR-0030).
+        RangeLow = tag.Range?.Low,
+        RangeHigh = tag.Range?.High,
     };
 }

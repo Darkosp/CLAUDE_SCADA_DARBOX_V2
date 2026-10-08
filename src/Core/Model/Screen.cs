@@ -212,7 +212,29 @@ public static class Symbols
     /// <summary>A pump: turning, stopped, or unable to be read.</summary>
     public const string Pump = "pump";
 
-    public static IReadOnlyList<string> All { get; } = [Pump];
+    /// <summary>A motor. The same three plant states as a pump, drawn as the electrical symbol.</summary>
+    /// <remarks>
+    /// Kept apart from <see cref="Pump"/> although their state lists are identical, because a symbol
+    /// is a drawing before it is a state list: an author who puts a motor on a screen means a motor,
+    /// and a reader who sees a pump impeller beside a starter reads the wrong machine. ADR-0027 §6
+    /// names this as the cheap kind of addition — a drawing and a state list, not a decision.
+    /// </remarks>
+    public const string Motor = "motor";
+
+    /// <summary>A valve: open, closed, or in fault.</summary>
+    public const string Valve = "valve";
+
+    /// <summary>A vessel, drawn in a named band rather than at a proportional level.</summary>
+    /// <remarks>
+    /// <b>Bands, never a fill proportional to the reading</b> (ADR-0027 §5). An author declares where
+    /// low ends and high begins, with the same comparisons every other symbol uses, and the drawing
+    /// shows which band the reading fell in. A fill that tracked the number would be a continuing
+    /// value driving a picture, which is the thing that ADR refuses: a reader cannot measure a height
+    /// and would read decoration as a reading.
+    /// </remarks>
+    public const string Tank = "tank";
+
+    public static IReadOnlyList<string> All { get; } = [Pump, Motor, Valve, Tank];
 
     public static bool IsKnown(string? symbol) => symbol is not null && All.Contains(symbol);
 
@@ -225,7 +247,9 @@ public static class Symbols
     /// </remarks>
     public static IReadOnlyList<string> StatesOf(string? symbol) => symbol switch
     {
-        Pump => [Running, Stopped, Fault, Unknown, Bad, Stale],
+        Pump or Motor => [Running, Stopped, Fault, Unknown, Bad, Stale],
+        Valve => [Open, Closed, Fault, Unknown, Bad, Stale],
+        Tank => [Low, Normal, High, Unknown, Bad, Stale],
         _ => [],
     };
 
@@ -239,7 +263,8 @@ public static class Symbols
     /// mapping, which is why it is here: an author choosing "running" is choosing the picture, and the
     /// picture is this build's to draw.
     /// </remarks>
-    public static bool Animates(string? symbol, string? state) => symbol == Pump && state == Running;
+    public static bool Animates(string? symbol, string? state) =>
+        symbol is Pump or Motor && state == Running;
 
     // ---- the states themselves. Named once, used by every symbol that has them. ----
 
@@ -261,9 +286,29 @@ public static class Symbols
     /// <summary>The reading's quality is Uncertain or Stale: there is a reading and it is not current.</summary>
     public const string Stale = "stale";
 
+    /// <summary>A valve the plant says is open.</summary>
+    public const string Open = "open";
+
+    /// <summary>A valve the plant says is shut.</summary>
+    public const string Closed = "closed";
+
+    /// <summary>A vessel in its lowest declared band.</summary>
+    public const string Low = "low";
+
+    /// <summary>A vessel between its declared bands.</summary>
+    public const string Normal = "normal";
+
+    /// <summary>A vessel in its highest declared band.</summary>
+    public const string High = "high";
+
     /// <summary>Every state name any symbol uses, for a refusal to offer as a choice.</summary>
+    /// <remarks>
+    /// The union, not a per-symbol list: a mapping is only valid against a particular drawing, and
+    /// <see cref="CanDraw"/> is what enforces that. This exists so a refusal can tell an author what
+    /// vocabulary exists at all.
+    /// </remarks>
     public static IReadOnlyList<string> AllStates { get; } =
-        [Running, Stopped, Fault, Unknown, Bad, Stale];
+        [Running, Stopped, Fault, Open, Closed, Low, Normal, High, Unknown, Bad, Stale];
 }
 
 /// <summary>
