@@ -184,6 +184,17 @@ public static class GatewayApp
         // (ADR-0027), and a policy naming `script-src` without that script's hash breaks the first paint
         // while every test that does not look at the browser still passes. Read once, at startup: the file
         // is replaced only by an upgrade, and an upgrade restarts the Gateway.
+        //
+        // **A hashed `script-src` can never allow an inline event handler**, by specification: hashes do
+        // not apply to `onload=` and friends unless `'unsafe-hashes'` is present, and adding that to let
+        // one attribute run would reopen the hole the hashes exist to close. Angular's critical-CSS
+        // inlining emits exactly such an attribute — it parks the real stylesheet at `media="print"` and
+        // swaps it back with `onload="this.media='all'"` — so under this policy the swap never ran, **the
+        // whole stylesheet never applied**, and the page was drawn from the inlined "critical" subset
+        // alone. That subset had no `[data-theme='dark']` rule in it, because nothing at build time
+        // carried the attribute, so the dark theme was dead in the deployed product while being correct
+        // in the source. `inlineCritical` is off in `angular.json` for that reason; see
+        // `src/Web/tests/build-config.test.mjs`, which is what stops it coming back.
         var clientIndex = Path.Combine(app.Environment.WebRootPath ?? string.Empty, "index.html");
         var scriptSource = ScriptHashes.ScriptSourceFor(
             File.Exists(clientIndex) ? File.ReadAllText(clientIndex) : null);
