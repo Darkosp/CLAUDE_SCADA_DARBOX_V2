@@ -97,4 +97,17 @@ public sealed record Alarm(
     /// with no note of a wait looks exactly like an instant one.
     /// </remarks>
     public TimeSpan? OnDelay { get; init; }
+
+    /// <summary>
+    /// The priority this alarm was raised under, or null for not yet rationalised (ADR-0034).
+    /// </summary>
+    /// <remarks>
+    /// Carried on the alarm rather than read from the definition, for the same reason
+    /// <see cref="Deadband"/> and <see cref="LimitValue"/> are (ADR-0025 §7): <b>the alarm is the
+    /// record of the condition it was raised under</b>, not a window onto whatever the configuration
+    /// says now. An alarm that was raised as High and re-rationalised to Low while still standing was
+    /// still a High alarm when the operator was asked to deal with it, and the journal has to agree
+    /// with what they were shown.
+    /// </remarks>
+    public AlarmPriority? Priority { get; init; }
 }

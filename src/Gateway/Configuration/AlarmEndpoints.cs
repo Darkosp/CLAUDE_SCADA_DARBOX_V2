@@ -315,6 +315,10 @@ internal static class AlarmEndpoints
         LowLimit = request.LowLimit,
         OnDelaySeconds = request.OnDelaySeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
         Deadband = request.Deadband,
+
+        // Parsed here only after `Reject` has refused anything unrecognised, so this cannot quietly
+        // turn a typo into "not yet rationalised" (ADR-0034).
+        Priority = Enum.TryParse<AlarmPriority>(request.Priority, out var priority) ? priority : null,
     };
 
     /// <summary>
@@ -351,6 +355,17 @@ internal static class AlarmEndpoints
         if (request.Deadband is { } band && band <= 0)
         {
             return "The deadband must be more than zero, or left blank for none.";
+        }
+
+        // ADR-0034. **A value that is neither one of the three nor absent is refused by name**, rather
+        // than falling back to "not yet rationalised" -- which would turn a typed `Hgih` into an alarm
+        // that silently sorts last, and leave the author believing they had set it. Absent is a
+        // different thing from wrong and is allowed: it is the standard's own lifecycle state.
+        if (!string.IsNullOrWhiteSpace(request.Priority)
+            && !Enum.TryParse<AlarmPriority>(request.Priority, ignoreCase: false, out _))
+        {
+            return $"'{request.Priority}' is not an alarm priority. It must be 'High', 'Medium' or "
+                + "'Low', or left out entirely for an alarm that has not been rationalised yet.";
         }
 
         // A deadband wider than the gap between the limits would make one of them unreachable, which

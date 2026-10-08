@@ -370,7 +370,15 @@ export class App implements OnInit {
   protected readonly propagationNote = signal<string | null>(null);
 
   protected readonly tagAlarm = signal<AlarmDefinition | null>(null);
-  protected readonly alarmDraft = signal<{ high: NumberField; low: NumberField; onDelay: NumberField; deadband: NumberField } | null>(null);
+  protected readonly alarmDraft = signal<{
+    high: NumberField;
+    low: NumberField;
+    onDelay: NumberField;
+    deadband: NumberField;
+    // '' is **not yet rationalised** (ADR-0034), which is why this is not a boolean or a
+    // defaulted 'Low'. A select whose empty option is a real answer rather than a prompt.
+    priority: string;
+  } | null>(null);
 
   protected readonly writeDraft = signal('');
   protected readonly writeNote = signal<string | null>(null);
@@ -909,6 +917,7 @@ export class App implements OnInit {
       // things and the server refuses zero for both.
       onDelay: existing?.onDelaySeconds?.toString() ?? '',
       deadband: existing?.deadband?.toString() ?? '',
+      priority: existing?.priority ?? '',
     });
   }
 
@@ -946,6 +955,12 @@ export class App implements OnInit {
         lowLimit: low.value,
         onDelaySeconds: onDelay.value,
         deadband: deadband.value,
+
+        // '' is sent as null, which the server reads as not yet rationalised. **It is sent rather
+        // than omitted**: a save replaces the whole definition, so leaving the field out would make
+        // clearing a priority impossible — and clearing one is a thing a rationalisation session
+        // legitimately does.
+        priority: draft.priority === '' ? null : draft.priority,
       });
 
       this.alarmDraft.set(null);

@@ -159,6 +159,14 @@ export class Api {
       lowLimit: number | null;
       onDelaySeconds: number | null;
       deadband: number | null;
+      /**
+       * `'High' | 'Medium' | 'Low'`, or `null` for **not yet rationalised** (ADR-0034).
+       *
+       * Null is a state and not an absence: it means nobody has assessed this alarm's consequence or
+       * the time an operator has to respond, which is ISA-18.2's own lifecycle stage. Sending `'Low'`
+       * instead would be the client inventing an assessment.
+       */
+      priority: string | null;
     },
   ): Promise<unknown> {
     return definitionId === null

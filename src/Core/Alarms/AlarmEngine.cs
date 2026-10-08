@@ -598,6 +598,7 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
             DetectedAfterRestart = afterRestart,
             Deadband = definition.Deadband,
             OnDelay = waited ? definition.OnDelaySeconds : null,
+            Priority = definition.Priority,
         };
 
         // The live list first, the journal second: an operator in front of a screen needs
@@ -802,6 +803,11 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
                     ClearedAtUtc: null)
                 {
                     DetectedAfterRestart = alarmEvent.DetectedAfterRestart,
+
+                    // From the journal, not from the definition as it reads now: this alarm was
+                    // raised under that priority and an operator was asked to deal with it under
+                    // that priority (ADR-0034, and ADR-0025 section 7's reasoning for the deadband).
+                    Priority = alarmEvent.Priority,
                 };
                 raisedOrder.Add(occurrence);
                 continue;
@@ -890,6 +896,12 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
             LimitValue = alarm.LimitValue,
             UnitSymbol = alarm.UnitSymbol,
 
+            // From the alarm, so every event about an occurrence carries the priority it was raised
+            // under — including the ones written after somebody re-rationalised the definition
+            // (ADR-0034). The rebuild reads it off the Raised event; the rest are for a reader of the
+            // journal, who should not have to go and find the raise to learn how urgent this was.
+            Priority = alarm.Priority,
+
             // As it reads now, if the tag is still configured — a journal should show what
             // the operator saw at that moment, and a rename since the raise is part of that.
             TagPath = catalog.FindTag(alarm.TagId) is null ? alarm.TagPath : catalog.PathOf(alarm.TagId),
@@ -955,10 +967,20 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
             : value > ClearPointAt(standing.Limit, standing.LimitValue, standing.Deadband);
 
     /// <summary>Called with the gate held, after every change to the live list.</summary>
+    /// <remarks>
+    /// **Priority first, then newest first within a priority** (ADR-0034 §4), with *not yet
+    /// rationalised* last rather than mixed among the Lows. This is the whole of what priority changes
+    /// today, and it is deliberately the whole of it: a field six things read is a decision nobody can
+    /// revisit.
+    /// <para>
+    /// **A deployment that has rationalised nothing gets exactly the previous behaviour** — every rank
+    /// is equal, so the tie-break by time decides everything, which is what this line did before. That
+    /// property has its own test, because a change that quietly reorders a screen nobody asked to
+    /// reorder is the kind that gets noticed in an incident.
+    /// </para>
+    /// </remarks>
     private void PublishSnapshot() =>
-        Volatile.Write(
-            ref _snapshot,
-            _byDefinition.Values.OrderByDescending(alarm => alarm.RaisedAtUtc).ToList());
+        Volatile.Write(ref _snapshot, AlarmPriorityOrder.ForDisplay(_byDefinition.Values));
 
     private async Task PublishAsync(CancellationToken cancellationToken)
     {

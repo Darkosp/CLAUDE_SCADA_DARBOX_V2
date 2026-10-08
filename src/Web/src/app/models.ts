@@ -150,6 +150,15 @@ export interface AlarmDefinition {
   onDelaySeconds: number | null;
   /** How far a value must come back past the limit before clearing, or null for none (ADR-0025 §3). */
   deadband: number | null;
+  /**
+   * `'High' | 'Medium' | 'Low'`, or null for **not yet rationalised** (ADR-0034).
+   *
+   * Null is a state rather than an absence, and it is ISA-18.2's own: nobody has assessed this
+   * alarm's consequence or how fast an operator has to respond. **It is not "Low"** — an alarm
+   * nobody has looked at and an alarm somebody decided is unimportant are different facts, and a
+   * reader has to be able to find the first kind in order to do the work.
+   */
+  priority: string | null;
 }
 
 /**

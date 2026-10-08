@@ -1,3 +1,4 @@
+using ScadaDarbox.Core.Alarms;
 using ScadaDarbox.Core.Model;
 
 namespace ScadaDarbox.Persistence.TimescaleDb;
@@ -150,7 +151,7 @@ internal static class ConfigurationRows
     /// the list here means the next column cannot be added to one query and forgotten in the other.
     /// </remarks>
     internal const string AlarmDefinitionColumns =
-        "id, tag_id, high_limit, low_limit, on_delay_seconds, deadband";
+        "id, tag_id, high_limit, low_limit, on_delay_seconds, deadband, priority";
 
     /// <summary>
     /// One alarm threshold row.
@@ -166,7 +167,8 @@ internal static class ConfigurationRows
         double? HighLimit,
         double? LowLimit,
         double? OnDelaySeconds,
-        double? Deadband)
+        double? Deadband,
+        string? Priority)
     {
         internal AlarmDefinition ToDomain() => new()
         {
@@ -176,6 +178,13 @@ internal static class ConfigurationRows
             LowLimit = LowLimit,
             OnDelaySeconds = OnDelaySeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
             Deadband = Deadband,
+
+            // **A stored value this build does not know reads as unrationalised, not as a crash.**
+            // The column's CHECK keeps the three honest, and a Gateway reading a database a newer
+            // build wrote must still start -- the same direction ADR-0021 takes with payload
+            // versions. Null in, null out: an alarm nobody has assessed must not acquire a priority
+            // on the way through this type (ADR-0034 §2).
+            Priority = Enum.TryParse<AlarmPriority>(Priority, out var parsed) ? parsed : null,
         };
     }
 

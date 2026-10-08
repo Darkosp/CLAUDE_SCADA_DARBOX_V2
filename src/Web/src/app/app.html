@@ -951,6 +951,17 @@
                 <input name="deadband" type="number" step="any" min="0"
                        [(ngModel)]="draft.deadband" />
               </label>
+              <!-- ADR-0034. The empty option is a real answer and not a prompt: an alarm nobody has
+                   rationalised is a stage of ISA-18.2's own lifecycle, and defaulting it to anything
+                   would be the product making an assessment it is not entitled to make. -->
+              <label>Priority
+                <select name="priority" [(ngModel)]="draft.priority">
+                  <option value="">Not yet rationalised</option>
+                  <option value="High">High — act now</option>
+                  <option value="Medium">Medium — act soon</option>
+                  <option value="Low">Low — be aware</option>
+                </select>
+              </label>
 
               <div class="actions">
                 <button type="submit">Save</button>
@@ -964,6 +975,16 @@
               @if (definition.lowLimit !== null) { Low ≤ {{ definition.lowLimit }} }
               @if (definition.onDelaySeconds !== null) { · waits {{ definition.onDelaySeconds }} s }
               @if (definition.deadband !== null) { · clears {{ definition.deadband }} past the limit }
+            </p>
+            <!-- Said even when it is absent, because absent is the thing somebody has to act on:
+                 an unrationalised alarm that looks exactly like a rationalised one is invisible
+                 work (ADR-0034 §2). -->
+            <p class="muted">
+              @if (definition.priority !== null) {
+                Priority {{ definition.priority }}
+              } @else {
+                Not yet rationalised — nobody has judged how urgent this is
+              }
             </p>
           } @else {
             <p class="muted">No threshold configured.</p>

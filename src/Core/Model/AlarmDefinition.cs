@@ -1,3 +1,5 @@
+using ScadaDarbox.Core.Alarms;
+
 namespace ScadaDarbox.Core.Model;
 
 /// <summary>
@@ -49,4 +51,27 @@ public sealed class AlarmDefinition
     /// actually use, which is why it is not built and not configurable.
     /// </remarks>
     public double? Deadband { get; set; }
+
+    /// <summary>
+    /// How urgently this alarm needs an operator, or null for <b>not yet rationalised</b> (ADR-0034).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Null is a state, not an absence, and it is ISA-18.2's own.</b> It means nobody has assessed
+    /// this alarm's consequence and the time an operator has to respond — which is a real stage of the
+    /// standard's lifecycle, and is why the migration that added this column backfilled nothing.
+    /// </para>
+    /// <para>
+    /// <b>Every available default would have been a lie.</b> High makes a system 100% high priority,
+    /// which the standard says is the same as having no priorities at all; Low silently downgrades
+    /// something that may matter; Medium asserts a middling consequence for an alarm nobody assessed.
+    /// All three are the product deciding what only the plant can.
+    /// </para>
+    /// <para>
+    /// <b>It never changes with the alarm's state.</b> Priority is a statement about consequence, and
+    /// consequence does not change because an alarm has been standing a while, or because somebody
+    /// acknowledged it. ADR-0025 owns when an alarm raises and clears; ADR-0013 owns its states.
+    /// </para>
+    /// </remarks>
+    public AlarmPriority? Priority { get; set; }
 }
