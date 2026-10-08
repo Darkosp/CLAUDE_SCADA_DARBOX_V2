@@ -14,6 +14,16 @@ appsettings.Development.local.json
 # Deployment secrets (deploy/.env.example is the committed template)
 deploy/.env
 
+# TLS material. SCADA_TLS_DIR is a host path, and the obvious place to put a PEM pair while
+# trying the stack out is beside the compose file that names it -- so the one mistake that
+# cannot be undone by a later commit is made easy unless it is ignored here. The cloud
+# topology's per-edge certificates (deploy/cloud/certs.sh) land in a directory of their own
+# for the same reason.
+deploy/tls/
+deploy/**/certs/
+*.key
+*.pem
+
 # Database backups taken by the steps in deploy/README.md
 backups/
 

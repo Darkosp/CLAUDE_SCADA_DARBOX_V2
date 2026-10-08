@@ -594,6 +594,49 @@ nothing was lost, which was checked before the push rather than assumed — and 
 commits halves the same change. Recorded here because the rule exists to stop silent rewrites, and a
 recorded one is not silent.
 
+### 2.0m Two defects in the security policy, found by switching a theme — 2026-10-08
+
+**Closed the day they were found.** Both are recorded here because of *how* they hid, which is more
+reusable than either fix. [The walk record](walk-2026-10-08.md) §4 has the measurements.
+
+The Gateway serves `script-src 'self'` plus a hash per inline script (ADR-0031 §8). Two things were
+wrong with that in the product and with nothing in the source:
+
+1. **The hash covered CRLF; the browser hashes LF.** A CSP hash is taken over a script element's
+   child text, which exists only *after* the HTML parser has normalised every CRLF and lone CR to a
+   single LF. The Gateway hashed the file on disk, which on every Windows checkout of this
+   repository carries CRs. Eighteen bytes of carriage return, a header naming a hash nothing could
+   match, and **every inline script on the page refused** — including the one that applies the theme
+   before the first paint.
+
+2. **A hashed `script-src` cannot allow an inline event handler**, and Angular's critical-CSS
+   inlining emits one: it parks the stylesheet at `media="print"` and swaps it with
+   `onload="this.media='all'"`. Blocked, so **the whole stylesheet never applied** and the page drew
+   from the inlined "critical" subset — which had `:root` and not `[data-theme='dark']`. The dark
+   theme was dead in the deployed product and correct in `styles.css`.
+
+**Three things worth carrying.**
+
+**A walk can record a false finding, and this one did.** The morning walk's table says the policy is
+fine because *"the inline theme script runs, so the hash is the right one"* — inferred from the
+application rendering. It renders whether or not that script runs. That is *a test that cannot fail
+is not evidence*, committed by eye rather than in a test file, and the strikethrough is left in
+place rather than deleted so the shape stays visible.
+
+**A test whose two sides share an encoding cannot see an encoding defect.** `ScriptHashTests` fed in
+a literal and hashed the same literal back, so both sides carried whatever git checked out and
+agreed with each other while disagreeing with the browser. The replacement builds its CRLF and
+lone-CR fixtures *from* the LF one, and asserts the fixtures differ.
+
+**A default can be the broken state.** `inlineCritical` defaults to **true**, so the guard
+(`src/Web/tests/build-config.test.mjs`) asserts the value is `false` rather than asserting the
+setting is absent — and checks in the same breath that spelling `optimization` out as an object did
+not quietly drop minification with it.
+
+**And the dark theme has now been seen running for the first time** — built 2026-10-06, claimed in
+`CLAUDE.md` to be *"one `[data-theme='dark']` block and nothing else"*, which was true of the source
+and false of the product for two days because nobody opened it in a deployed stack.
+
 ### 2.0l The three things this session left open — 2026-10-06
 
 All three were found by looking at the running application, and all three are recorded rather than
@@ -1400,7 +1443,7 @@ decided inside an implementation pull request.
 | **An edit that silently releases a device from its edge** | found by the write walk, 2026-10-06; §2.0 | **a decision about the API's shape.** A `PUT` of a device that omits `edgeId` releases it, which is ADR-0019's documented contract — *"assigning and releasing are ordinary edits of the device"* — and a full replacement is a defensible REST shape. What the walk showed is that **the design makes it easy to do by accident**: changing one field means resending every other, and the only signal that an assignment was dropped is a write failing 4.75 s later with a message about DNS, after the cloud has tried to reach a plant device **directly**. The consequence is on the write path, which is the one path where being wrong means a plant was changed or an operator was told it was. Options span a PATCH, an explicit release endpoint, and leaving it and saying so louder — all three are ADR territory |
 | **What a pump should look like** | answered by the eye-walk of 2026-10-07; §2.0j | **a decision, and a cheap one either way.** The reader saw *"something that symbolises a pump — four thin arms in a circle, turning"*. That is arguably success: on a P&ID a pump **is** an abstract mark. But the convention plant people are trained on is a circle with a **wedge** marking the discharge, and four vanes reads closer to an impeller or a fan. ADR-0027 §6 makes a second drawing *"a drawing and a state list, not a decision"*, so the cost is small and the question is only which reading the product wants. **Decided 2026-10-07: it stays as it is for now.** The owner's words: *the pump's appearance is aesthetics; leave it, we will refine the look and the shape later.* Recorded rather than closed, because the question is deferred and not answered |
 | **A long trend transfers every reading** | measured 2026-10-07 while building the window picker | **closed 2026-10-07 by [ADR-0029](../architecture/decisions/0029-a-trend-asks-for-the-points-it-can-draw.md)** — the client asks for the points it can draw, the server reduces in the window in a `date_bin` query and **states the width it used**, and a request without `points` is still every reading. Measured on the demo database's busiest tag (110,782 readings over a day and three quarters): **19 MB of JSON and 182 ms before; 417 buckets holding all of them, 56 kB, after**. The client's own reduction and its five tests were **deleted rather than kept as a fallback**, and the gap rule became exact where the old heuristic could not see a hole narrower than four columns. **What the entry leaves open and ADR-0029 does not close: the query still reads every row to group it** — this removes bytes from the wire, not work from the database — and a precomputed aggregate is the answer for that, which is precisely what ADR-0006's licensing flag keeps out of scope |
-| **A unit may have an SI factor of zero** | found by the walk of 2026-10-08; [the record](walk-2026-10-08.md) | **a refusal, not a decision — ADR-0005 already says what a unit is.** Three of the four tags carrying a unit in the demo have `factor_to_si = 0`, and nothing refuses one: `UnitDto.ToDomain` passes it straight through and `UnitOfMeasure` only *defaults* it to 1. **A factor of zero is not a conversion**: `ToSi` turns every reading into the offset and `FromSi` divides by it. The blast radius today is small and that is luck — nothing in the product calls either yet except a test — so this is a hole in the model waiting for the first feature that converts or compares. Needs a refusal at the API, a test for the null and zero cases, and the demo data corrected |
+| **A unit may have an SI factor of zero** | found by the walk of 2026-10-08; [the record](walk-2026-10-08.md) | **closed 2026-10-08.** `UnitOfMeasure` refuses a factor that is not positive and finite, and an offset that is not finite, in its own constructor — so no path builds one. The seeder's bug was the source: it sent `siFactor`, which is not a property of the DTO, so it bound to nothing and defaulted to zero; it now uses a `UNITS` table keyed by symbol with `factorToSi`, and `Suction Flow` moved from `bar`/Pressure to `m³/h`/VolumeFlow, which was demo nonsense of its own. **The refusal alone would have been a worse defect than the hole**: `GetTagsAsync` runs while the Gateway is starting, so one stored bad row stopped the whole system with a stack trace. Migration `0022_a_unit_converts.sql` clears such a unit, **audits the clearing** with `tag.unit_cleared_by_upgrade` and a null actor, and adds `ck_tag_unit_converts` with the null case written out. Clearing rather than repairing is deliberate: a factor of 1 would be the product deciding that `bar` means pascals. Measured on the real database — schema at 22, Gateway healthy, three units cleared, `Discharge Pressure` (bar, 100000) untouched |
 | **The audit trail's Subject is a bare GUID** | walk of 2026-10-08; §2 of [the record](walk-2026-10-08.md) | **a scoped decision, and ADR-0032 already argued it one column over.** §5 resolves the *actor* at read time precisely so a row does not show *"a bare GUID"*; the **Subject** column still does — `tag 0f7a1b2c` — and an investigation is usually about what was changed, not only who changed it. Extending it means joining by `entity_type` across tags, devices, screens and users **and deciding what a deleted subject reads as**, which is ADR-0009's territory. `TagHistoryDto` has already answered that once (*"past any deletion"*) and is the precedent to follow. Small, but a decision rather than a patch |
 | Alarm notification channels and escalation policy | `phase-0-architecture.md`, "Explicitly open" | a design decision, then an ADR |
 | TimescaleDB continuous aggregates and native compression | ADR-0006 | the legal review ADR-0006 asks for; the code deliberately does not use them |
