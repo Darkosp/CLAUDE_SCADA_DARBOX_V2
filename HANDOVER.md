@@ -1,5 +1,101 @@
 # Handover — SCADA_DARBOX
 
+*Amended 2026-10-07, on `main` at `fdd75e9`. **Read this block first; the rest is history that is still
+mostly true.***
+
+## Two agents shared this one checkout — read this before committing anything
+
+Two agent sessions ran in `C:\GitProjects\CLAUDE_SCADA_DARBOX_V2` at once on 2026-10-07. What actually
+happened: a commit of mine landed on a branch the other session had created; two builds failed because one
+session's `testhost` held the other's output; one test run measured a tree the other session was editing; and
+**`git checkout <branch> -- <file>` silently destroyed my uncommitted edits** to this file and `CLAUDE.md`.
+
+**The other session is stopped and its work is now committed** — *(corrected 2026-10-08)*. It is
+`feat/more-symbols`, **PR #11**: a motor, a valve and a tank. The files this block used to list as loose
+in the tree are in that branch now, and the tree is clean.
+
+*What this block said before is worth keeping as the warning it is:* the work sat uncommitted here while
+`feat/more-symbols` pointed at `4d82f72`, **a merge commit containing none of it** — so a reader who
+checked the branch out would have found the symbols missing and concluded they were lost.
+**Never `git add -A` here**; commit explicit paths. **One agent per worktree is the fix**:
+`git worktree add ../scada-wt <branch>`.
+
+## What exists now
+
+| decision | `main` | code | missing |
+|---|---|---|---|
+| **`main` could not be built from clean** | — | **merged, PR #9** `984392a` | — *(added 2026-10-08: this was open and unrecorded. `dotnet build -warnaserror --no-incremental` failed on `TrendReductionTests.cs:59` with xUnit2031, while the plain incremental build said "0 Errors" — MSBuild never recompiled that project, so the analyzer never ran. A fresh clone could not build. Verified fixed in a throwaway worktree.)* |
+| **ADR-0029** trend reduction | yes | merged, PR #7 `8e89ad0` | — (walked; the walk found the chart-drawn-where-its-axis-was defect) |
+| **ADR-0030** a tag declares its range | yes | **draft PR #8** `feat/tag-declared-range` | **the half a person sees** — no form fields, no marker, so `464 %` still looks like `4.79 bar` |
+| **ADR-0031** sign-in hardened (lockout, headers, `script-src` by hash) | yes | **draft PR #10** `feat/security-surface` | the walk; per-caller limiting (refused pending the caller-address decision) |
+| **ADR-0032** the audit trail is readable | yes | **draft PR #10** | the walk |
+
+Both drafts are **green**, and drafts only because **nobody has looked at the new screens in the running
+product** — this project's rule. Measured **on PR #10's branch**: Gateway project **188 passed / 0 failed /
+0 skipped**, client **241 / 0**, `ng build` clean. *(Clarified 2026-10-08: those two numbers are that
+branch's, not `main`'s — `main` alone is **228** client tests, and the extra 13 are `audit-trail.test.mjs`,
+which only exists on PR #10.)*
+
+**The whole-solution baseline has been re-measured, on `feat/more-symbols` (PR #11): 677 .NET across seven
+projects, 0 skipped, and 237 client** — taken **per project**, because a whole-solution run while two
+sessions shared this tree produced counts that moved between runs (Core 196 → 204 → 222 → 214). Correct
+`open-work.md` §2.4–§2.6 from that once PR #11 and PR #10 are both in.
+
+**The standards audit is on `main`**: `docs/architecture/standards-baseline.md` — 22 standards, 1 implemented,
+4 partial, 1 not, 16 out of scope. Its three biggest gaps, untouched: **IEC 62443-4-1 (no CI, no SBOM, no
+vulnerability intake, no threat model — the biggest, and not code)**, **OPC UA connects with
+`useSecurity: false` and an anonymous identity and no ADR records the deferral** (`OpcUaDriver.cs:86,99`), and
+**no alarm priority field (ISA-18.2)**, which blocks rationalisation, flood sorting, escalation and metrics.
+
+## Next, in order
+
+0. ~~**Merge PR #9**~~ — done 2026-10-08. Nothing could be built from a fresh clone until it was, and
+   the *Verify in five minutes* block below would have passed here and failed there.
+1. **Walk PR #10** (eyes only): sign in, open **Audit**, check the *"newest N of M"* line, load older, filter
+   `auth.`, then five wrong passwords to see the lockout message. **Then walk PR #8 once its display half is
+   built** — range low/high fields in `app.ts`/`app.html`, marker in `screen-view.ts`/`app.html`
+   (**`screen.ts` is the other session's file**: coordinate, or do that part last).
+2. Merge both.
+3. Then by value: **OPC UA security** (ADR + certificate story), **alarm priority** (ADR + schema + API +
+   client — highest leverage), ISA-101 HMI (client, judged by eye), **nothing displays `site.time_zone_id`**
+   (ISO 8601's named gap), a partial index on `audit_log.action` when the trail grows.
+
+## Scars from this session — each of these cost time
+
+- **`dotnet test --no-build` after a failed build reports the previous binaries** → a false green, and a
+  mutation that looked like it changed nothing. Rebuild and read the build's result.
+- **A locked file under `tests/*/bin` is a stray `testhost`, not a code fault**:
+  `Get-Process testhost | Stop-Process -Force`.
+- **Dapper + a nullable `timestamptz`**: the row parameter must be `DateTime?` (**not** `DateTimeOffset?`),
+  and the column must match the property after underscore-insensitivity — `locked_until` does *not* match
+  `LockedUntilUtc`, and that failure is **silent** (the lock read as null). Use a class with settable
+  properties and an alias.
+- **The database's clock is not your test process's clock** — derive window boundaries from rows you read.
+- **A paging test that loops until an empty page hangs instead of failing** under the mutation that breaks the
+  cursor: bound the loop and assert it advanced.
+- **A test that cannot fail is not evidence.** Mine asserted a `<script src>` gets no CSP hash, and passed with
+  the rule deleted, because the fixture was empty either way.
+- `src/Gateway/Configuration/SiteTreeBuilder.cs` is the one file whose committed lines end `\r\r\n` (the
+  `edit` tool cannot match multi-line strings there); client `template:`/`styles:` literals must contain no
+  backticks; `src/Web/tests/encoding.test.mjs` guards UTF-8 in `src`/`docs`/`tools` but **not** root
+  `HANDOVER.md`/`CLAUDE.md`.
+
+## Verify in five minutes
+
+```powershell
+docker start scada-test-db-5433     # or the tests skip, and 422 skipped looks like a pass
+dotnet build ScadaDarbox.slnx --no-incremental   # --no-incremental, or a broken project is skipped
+$env:SCADA_TEST_DB_PORT='5433'; dotnet test ScadaDarbox.slnx
+cd src/Web; npm test; npx ng build
+```
+
+**`--no-incremental` is not caution, it is the lesson of PR #9**: without it MSBuild leaves an unchanged
+project alone, its analyzers never run, and the build reports success on a tree that cannot be built from
+a clone. And if `dotnet test` on the solution returns counts that differ between runs, **something else is
+building this tree** — run the projects one at a time and read those numbers instead.
+
+*End of the 2026-10-07 amendment.*
+
 Written 2026-09-27, on `main` at `886d959`, worktree clean, in sync with `origin/main`.
 
 *Amended 2026-10-02, on `main` at `df191b3`: ADR-0019 §8 (an edge declares its own drivers, and the

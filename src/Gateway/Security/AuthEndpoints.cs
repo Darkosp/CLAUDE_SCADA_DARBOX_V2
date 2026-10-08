@@ -15,6 +15,7 @@ internal static class AuthEndpoints
             LoginRequest request,
             Authenticator authenticator,
             IAuditLog audit,
+            TimeProvider clock,
             CancellationToken cancellationToken) =>
         {
             var attempt = request.Username is null || request.Password is null
@@ -46,13 +47,21 @@ internal static class AuthEndpoints
 
                 // **The account is told it is shut, and that is deliberate** (ADR-0031 §4): an operator at
                 // three in the morning who is told "wrong user name or password" goes looking for a password
-                // problem they do not have. The time is sent as an unambiguous instant with its zone rather
-                // than as a wall clock, because the server does not know what the reader's clock says.
+                // problem they do not have.
+                //
+                // **It is told as a duration, not as an instant.** This used to send `{until:O}` — an
+                // ISO-8601 UTC timestamp carrying seven decimal places of a second — on the reasoning that
+                // the server does not know what the reader's clock says. That reasoning is right and its
+                // conclusion was wrong: a reader shown `2026-10-08T06:31:12.8382210+00:00 (UTC)` at their
+                // own 08:20 has to subtract a seven-figure fraction to learn they are out for eleven more
+                // minutes. **A duration needs no clock at all**, which answers the same objection without
+                // asking anything of the person the message exists for. Seen on the sign-in screen and
+                // changed, 2026-10-08.
                 return Results.Json(
                     new
                     {
-                        error = $"Too many failed sign-ins. This account is locked until {until:O} "
-                                + "(UTC); an Admin can reset the password to reopen it.",
+                        error = $"Too many failed sign-ins. This account is locked {LockedFor(until, clock.GetUtcNow())}; "
+                                + "an Admin can reset the password to reopen it.",
                     },
                     statusCode: StatusCodes.Status423Locked);
             }
@@ -100,4 +109,39 @@ internal static class AuthEndpoints
 
     private static string? Truncate(string? username) =>
         username is { Length: > MaximumAuditedUsernameLength } ? username[..MaximumAuditedUsernameLength] : username;
+
+    /// <summary>
+    /// How long the account stays shut, as a sentence fragment a person can act on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// **Rounded up to the next whole minute.** A reader told "for another 10 minutes" who finds it
+    /// opens at 10 minutes and 50 seconds has been told something false; told "11", they wait and it
+    /// works. Under a minute says so in words rather than counting seconds, because a number that
+    /// small invites refreshing rather than waiting.
+    /// </para>
+    /// <para>
+    /// A lock whose moment has already passed is reported as reopening now rather than as a negative
+    /// duration: the row can be stale by a tick, and "locked for -1 minutes" is the kind of sentence
+    /// that makes a reader distrust everything else on the screen.
+    /// </para>
+    /// </remarks>
+    internal static string LockedFor(DateTimeOffset until, DateTimeOffset now)
+    {
+        var left = until - now;
+
+        if (left <= TimeSpan.Zero)
+        {
+            return "and reopens now";
+        }
+
+        if (left < TimeSpan.FromMinutes(1))
+        {
+            return "for less than a minute";
+        }
+
+        var minutes = (int)Math.Ceiling(left.TotalMinutes);
+
+        return minutes == 1 ? "for another minute" : $"for another {minutes} minutes";
+    }
 }

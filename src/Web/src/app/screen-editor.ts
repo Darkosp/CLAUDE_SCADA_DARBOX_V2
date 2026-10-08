@@ -10,6 +10,7 @@ import {
   groupIntoRows,
   moveComponent,
   newComponent,
+  remapForShape,
   removeComponent,
   reorderComponent,
   Screen,
@@ -644,11 +645,26 @@ export class ScreenEditor {
    * state the mapping names — the server refuses that by name, and discarding an author's rules
    * because they tried the picker would lose work they can see and fix.
    */
+  /**
+   * Changes a symbol's drawing, and its mapping with it when the drawing's states change.
+   *
+   * **A symbol is a drawing plus a state list, and the list belongs to the drawing.** Leaving the
+   * rules alone turns a pump into a valve carrying `running` and `stopped`, which a valve cannot be
+   * drawn in — so the save is refused, by name, about rules the author never wrote. `remapForShape`
+   * keeps the mapping exactly when every state survives the change (a pump and a motor have the same
+   * six, so tuned thresholds are kept) and replaces it when they do not.
+   */
   protected reshape(componentId: string, shape: string): void {
     this.draft.update((draft) => ({
       ...draft,
       components: draft.components.map((component) =>
-        component.id === componentId ? { ...component, symbol: shape as SymbolShape } : component,
+        component.id === componentId
+          ? {
+              ...component,
+              symbol: shape as SymbolShape,
+              states: remapForShape(component.states, shape as SymbolShape, this.kindOf(component.tagId)),
+            }
+          : component,
       ),
     }));
   }

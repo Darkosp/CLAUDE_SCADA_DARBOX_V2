@@ -33,4 +33,5 @@ public sealed record TagSnapshot(
     DateTimeOffset? SourceTimestampUtc,
     Quality Quality,
     string? UnitSymbol,
-    DateTimeOffset? NoDataSinceUtc = null);
+    DateTimeOffset? NoDataSinceUtc = null,
+    TagRange? Range = null);

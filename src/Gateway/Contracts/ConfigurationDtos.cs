@@ -21,13 +21,21 @@ public sealed record UnitDto(string Symbol, string Dimension, double FactorToSi,
 }
 
 /// <summary>A tag as it appears in the browse tree.</summary>
+/// <param name="RangeLow">
+/// The declared range, or nulls when nothing has been declared (ADR-0030). Carried here as well as on a
+/// live reading, because this is the shape the tag form reads back — a range an author cannot see is a
+/// range they cannot correct.
+/// </param>
+/// <param name="RangeHigh">The other end of the declared range, or null with <paramref name="RangeLow"/>.</param>
 public sealed record TreeTagDto(
     Guid Id,
     string Name,
     string ValueKind,
     UnitDto? Unit,
     string SourceAddress,
-    bool IsWritable);
+    bool IsWritable,
+    double? RangeLow = null,
+    double? RangeHigh = null);
 
 /// <summary>A device and the tags it owns.</summary>
 public sealed record TreeDeviceDto(
@@ -176,7 +184,14 @@ public sealed record SaveTagRequest(
     string ValueKind,
     UnitDto? Unit,
     string SourceAddress,
-    bool IsWritable);
+    bool IsWritable,
+    /// <summary>
+    /// The span this tag's readings are expected to fall in, both ends or neither (ADR-0030). Refused by
+    /// name when only one is given, when the ends are the wrong way round, or on a tag that cannot have
+    /// one.
+    /// </summary>
+    double? RangeLow = null,
+    double? RangeHigh = null);
 
 /// <summary>A driver this build has, and whether it pushes rather than being polled (ADR-0016).</summary>
 public sealed record DriverDto(string Key, bool Pushing);
