@@ -532,3 +532,13 @@ code {
   font-size: var(--text-base);
   margin: -0.25rem 0 0.25rem;
 }
+
+/* A reading outside the span its tag declares (ADR-0030 §5). The warning ink, not the bad ink: the
+   reading is still trusted -- §2 keeps its value and its quality untouched -- and this says only that
+   it fell outside what was declared plausible. Not an alarm (§6), so it does not shout. */
+.out-of-range {
+  margin: 0.2rem 0 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--status-warn-ink);
+}
