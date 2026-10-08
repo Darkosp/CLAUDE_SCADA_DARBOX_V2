@@ -118,6 +118,7 @@ public sealed class OpcUaDriverTests : IAsyncLifetime
         await using var driver = new OpcUaDriver(
             $"opc.tcp://localhost:{FreePort()}/Nothing",
             acceptUntrustedCertificates: true,
+            OpcUaSecurity.Required,
             TimeProvider.System);
 
         await Assert.ThrowsAnyAsync<Exception>(() => driver.ConnectAsync(CancellationToken.None));
@@ -145,6 +146,7 @@ public sealed class OpcUaDriverTests : IAsyncLifetime
     private OpcUaDriver Driver(TimeProvider? clock = null) => new(
         $"opc.tcp://localhost:{_port}/ScadaDarboxSimulator",
         acceptUntrustedCertificates: true,
+        OpcUaSecurity.Required,
         clock ?? TimeProvider.System);
 
     private static int FreePort()

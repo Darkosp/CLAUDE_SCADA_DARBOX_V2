@@ -15,6 +15,15 @@ internal sealed class RecordingLogger<T> : ILogger<T>
     internal IReadOnlyList<Entry> At(LogLevel level) =>
         [.. _entries.Where(entry => entry.Level == level)];
 
+    /// <summary>Forgets everything recorded so far.</summary>
+    /// <remarks>
+    /// **For separating what a connect writes from what a scan writes.** Since ADR-0033 a connect can
+    /// legitimately warn — an unsecured session was asked for, or an untrusted certificate was
+    /// accepted — and a test whose subject is the scan would otherwise be reading lines about the
+    /// handshake. Clearing after connecting keeps each test's subject its own.
+    /// </remarks>
+    internal void Clear() => _entries.Clear();
+
     public IDisposable? BeginScope<TState>(TState state)
         where TState : notnull => null;
 

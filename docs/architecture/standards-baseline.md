@@ -66,7 +66,7 @@ what you already know you implement cannot find the thing you invented instead o
 
 | # | Standard | Status | The one thing to know |
 |---|---|---|---|
-| 1 | **OPC UA / IEC 62541** (Parts 2, 3, 4, 8, 14) | **Partial** | Read path works; **Part 2 security is not implemented at all** — the client connects with `useSecurity: false` and an anonymous identity |
+| 1 | **OPC UA / IEC 62541** (Parts 2, 3, 4, 8, 14) | **Partial** | Read path works; **Part 2's channel security is implemented since 2026-10-08** (ADR-0033) — the strongest endpoint on offer, a refusal when none is, and certificate validation that now decides something. Identity is still anonymous, and subscriptions and Part 9 are still not spoken |
 | 2 | **OPC DA** (quality model) | Out of scope as a protocol | Its `QQSSSSLL` quality structure is the ancestor of our four values; we carry neither substatus nor limit bits |
 | 3 | **IEC 61850** (quality bits) | Out of scope | Substation protocol; its 13-bit quality is far finer than our four values, and mapping onto them would be lossy |
 | 4 | **DNP3 / IEEE 1815** | Out of scope | No driver; its flags (remote forced, local forced, chatter) have nowhere to go in our model |
@@ -160,26 +160,47 @@ stand-in driver for tests never reports Good unconditionally because the real on
 
 **Not implemented, and named.**
 
-- **Part 2, the security model, in full.** `ConnectAsync` selects the endpoint with `useSecurity: false`
-  and creates the session with `new UserIdentity(new AnonymousIdentityToken())`
-  (`OpcUaDriver.cs:80-101`), with a comment that says the choice was deliberately deferred "to the auth
-  work in Phase 5". Phase 5 shipped on 2026-09-11 and did not pick it up; ~~**no ADR anywhere records
-  this decision**~~ — *corrected 2026-10-08: it is recorded now, and as a reversal rather than a
-  deferral.* [**ADR-0033**](decisions/0033-the-opc-ua-driver-negotiates-security.md) decides that the
-  driver negotiates the strongest endpoint a server offers, refuses one that offers none, and makes an
-  unsecured session a per-device opt-out that is logged. **This row stays `Partial` until that is
-  built** — the decision is in force, the code is not written, and those are two different claims. The
-  consequence below is what the code still does today, and is concrete:
-  every value this product reads from an OPC UA server crosses the plant network **unencrypted and
-  unauthenticated**, and a device that answers on that address is trusted by default as far as the
-  session is concerned. `acceptUntrustedCertificates` defaults to false
-  (`OpcUaDriverFactory.cs:38-43`) — which is the right default and, with security off, currently decides
-  nothing.
-  **Cost:** a slice of its own — a per-device security policy and certificate settings, a trust list the
-  deployment owns, and the refusal path when a server's certificate is not trusted. **It needs an ADR
-  first**, because it decides what a deployment must trust and what happens when it does not. **Rough
-  size:** a week of implementation plus the deployment guide's certificate section, and it inherits the
-  renewal story already written for the edge certificates.
+- ~~**Part 2, the security model, in full.**~~ **Built on 2026-10-08**
+  ([ADR-0033](decisions/0033-the-opc-ua-driver-negotiates-security.md)), and the paragraph below is
+  kept as it stood because the history is the point.
+
+  *What it said:* `ConnectAsync` selects the endpoint with `useSecurity: false` and creates the session
+  with `new UserIdentity(new AnonymousIdentityToken())`, with a comment deferring the choice "to the
+  auth work in Phase 5" — a phase that shipped on 2026-09-11 without it — and **no ADR anywhere
+  recorded the decision**, which made it the largest undocumented gap this audit found.
+
+  *What is there now:* the driver takes the strongest endpoint a server offers; a server offering only
+  `None` is **refused** rather than silently downgraded; an unsecured session is a per-device
+  `security=none` opt-out logged at every connect; a deprecated policy is accepted and **named** in the
+  log rather than refused, because refusing it pushes an installation onto the opt-out; and a refused
+  certificate names its subject and thumbprint and is **distinguishable from a device that is not
+  answering**. Sixteen tests, six of them against a live OPC UA server, and two mutations watched.
+
+  *What building it uncovered, and it is worse than the gap that was written down:*
+  **`acceptUntrustedCertificates` had never been implemented.** It has existed since Phase 4 with a
+  comment arguing for its default, and nothing honoured it — with an unsecured channel no server
+  certificate is ever presented, so the code path could not run. This audit's first pass called it
+  *"the right default and, with security off, currently decides nothing"*, which was generous: it was
+  not wired to anything. Turning security on made every existing test in the assembly fail with
+  `BadCertificateUntrusted`, which is how it was found. **A setting that cannot be reached is not a
+  conservative default; it is a claim nobody checked.**
+
+  *Still open, and why the row stays `Partial`:*
+
+  - **User identity is still anonymous.** ADR-0033 decision 4 settles where a secret may live — **not
+    in `connection_settings`**, which the API echoes and a device edit writes into `audit_log.detail`
+    as opaque JSON nothing could redact — and deliberately does not build a named-user path, because
+    nothing has asked for one. A server that *requires* a named user cannot be reached today. The
+    decision about where the secret goes is already made, which is the expensive half.
+  - **No certificate-management screen.** Trusting a server means copying a file onto the
+    `gateway-pki` volume, which `deploy/README.md` now documents. An operator cannot see what is
+    trusted, or what was refused, from the application.
+  - **Nothing has been walked.** Everything above is tested against a simulator in-process. No real
+    OPC UA server has been met, and ADR-0028 and ADR-0031 both shipped correct and broken, so this is
+    recorded as untested in the field rather than as finished.
+
+  **Rough size for the rest:** the identity path is days once something needs it; the trust screen is a
+  slice; the walk is an afternoon with real equipment.
 - **Part 8's finer value model**: per the normative Annex A.4.3.3, an OPC UA status code carries a
   severity, a subcode and **limit bits**, and Part 8 §7.3 defines the limit bits a Data Access client is
   expected to understand. Our [`Quality`](../../src/Core/Model/Quality.cs) holds four values
@@ -1019,7 +1040,16 @@ a security report, who signs a release, whether a pipeline is built here or in a
 cheap first steps exist already as manual measurements — the two dependency audits in `open-work.md` §4 —
 and turning them into a pipeline is a day's work; the rest is not.
 
-**2. OPC UA security (IEC 62541 Part 2).** The driver connects to plant devices with `useSecurity: false`
+**2. ~~OPC UA security (IEC 62541 Part 2)~~ — built on 2026-10-08 (ADR-0033), and kept here because
+what it uncovered outlives it.** Decision and code both landed the same day; §2.1 has what is still
+open (anonymous identity, no trust screen, no walk against real equipment). **The lesson worth keeping
+in a list of biggest gaps**: building it showed that `acceptUntrustedCertificates` had never been
+implemented at all — a setting with a careful comment defending its default, wired to nothing, because
+the code path could not run while the channel was unsecured. **A setting that cannot be reached is not
+a conservative default; it is a claim nobody checked**, and this document called it "the right default"
+the day before.
+
+*What the entry said while it was open:* The driver connects to plant devices with `useSecurity: false`
 and an anonymous identity. Every other transport here is protected: the web surface by ADR-0028, the edge
 link by ADR-0017. ~~**No ADR records that decision**~~ — *corrected 2026-10-08*: the ADR this entry asked
 for is [**ADR-0033**](decisions/0033-the-opc-ua-driver-negotiates-security.md), and it was right that one
