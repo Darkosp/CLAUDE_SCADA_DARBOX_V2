@@ -108,8 +108,13 @@ stand-in driver for tests never reports Good unconditionally because the real on
 - **Part 2, the security model, in full.** `ConnectAsync` selects the endpoint with `useSecurity: false`
   and creates the session with `new UserIdentity(new AnonymousIdentityToken())`
   (`OpcUaDriver.cs:80-101`), with a comment that says the choice was deliberately deferred "to the auth
-  work in Phase 5". Phase 5 shipped on 2026-09-11 and did not pick it up; **no ADR anywhere records this
-  decision**, which makes it the largest undocumented gap this audit found. The consequence is concrete:
+  work in Phase 5". Phase 5 shipped on 2026-09-11 and did not pick it up; ~~**no ADR anywhere records
+  this decision**~~ — *corrected 2026-10-08: it is recorded now, and as a reversal rather than a
+  deferral.* [**ADR-0033**](decisions/0033-the-opc-ua-driver-negotiates-security.md) decides that the
+  driver negotiates the strongest endpoint a server offers, refuses one that offers none, and makes an
+  unsecured session a per-device opt-out that is logged. **This row stays `Partial` until that is
+  built** — the decision is in force, the code is not written, and those are two different claims. The
+  consequence below is what the code still does today, and is concrete:
   every value this product reads from an OPC UA server crosses the plant network **unencrypted and
   unauthenticated**, and a device that answers on that address is trusted by default as far as the
   session is concerned. `acceptUntrustedCertificates` defaults to false
