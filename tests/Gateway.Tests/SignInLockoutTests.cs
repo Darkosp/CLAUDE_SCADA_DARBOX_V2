@@ -54,8 +54,16 @@ public sealed class SignInLockoutTests : IClassFixture<GatewayTestHost>
 
         var message = await ErrorAsync(locking);
         Assert.Contains("Too many failed sign-ins", message);
-        Assert.Contains("(UTC)", message);
         Assert.Contains("an Admin can reset the password", message);
+
+        // **This asserted `(UTC)` until 2026-10-08**, when the message was seen on the sign-in screen and
+        // changed: it read "locked until 2026-10-08T06:31:12.8382210+00:00 (UTC)", which is an instant the
+        // reader ADR-0031 §4 names — the operator at three in the morning — cannot act on without
+        // arithmetic. It is a duration now, and the intent of this assertion is unchanged: the message
+        // still says when the account reopens. `LockoutMessageTests` owns the wording; this owns that the
+        // wording reaches the caller.
+        Assert.Contains("minute", message);
+        Assert.DoesNotContain("(UTC)", message);
 
         // And a shut account is refused whatever it carries — the right password included.
         using var shut = await client.PostAsJsonAsync(
