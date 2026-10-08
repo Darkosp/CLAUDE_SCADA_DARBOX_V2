@@ -50,10 +50,19 @@ the entries keep the two apart. Three cross-cutting notes apply to nearly every 
 
 ## 1. The summary
 
-Twenty-two standards were assessed. One is implemented, four are partial, one is not implemented, and
-sixteen are out of scope — thirteen because they are not this product's subject (the protocols it does
-not speak and the sectors it is not in), and three — ISO/IEC 27001, NIST SP 800-82 and GAMP 5 — because
-they bind an organisation or a deployment rather than a product.
+**Twenty-nine** standards were assessed. **Two** are implemented, **eight** are partial, **three** are
+not implemented, and sixteen are out of scope — thirteen because they are not this product's subject
+(the protocols it does not speak and the sectors it is not in), and three — ISO/IEC 27001,
+NIST SP 800-82 and GAMP 5 — because they bind an organisation or a deployment rather than a product.
+
+***Rows 23–29 were added on 2026-10-08, and the reason they were missing is the finding.*** The first
+pass asked *"which standards does this code meet"* and answered it well for everything the product
+**speaks**. It did not ask *"which standards exist for the questions we decided ourselves"*, so seven
+were absent — and **three of them cover decisions taken by taste on 2026-10-06 and 2026-10-07**: what an
+equipment symbol looks like (ISA-5.1), what a colour on a plant display is allowed to mean (IEC 60073),
+and what an alarm's model is (OPC UA Part 9). A fourth, ISA-112, is the only standard written for this
+kind of product as a whole and was published while this project was being built. **An audit scoped to
+what you already know you implement cannot find the thing you invented instead of looking it up.**
 
 | # | Standard | Status | The one thing to know |
 |---|---|---|---|
@@ -79,6 +88,52 @@ they bind an organisation or a deployment rather than a product.
 | 20 | **OPC UA FX / IEC/IEEE 60802** | Not implemented | Forward-looking field-level PubSub and TSN; no decision has been taken and none is needed yet |
 | 21 | **IEC 61508** | Out of scope by decision | We are not a safety-related system, and no SIL may be claimed for us |
 | 22 | **IEC 61511** | Out of scope by decision | Process-industry SIS standard; a SCADA is not the protection layer, and this one must never be used as one |
+| 23 | **ANSI/ISA-112.00.01-2025** | **Not implemented** | *SCADA Systems — Part 1*, published February 2026: the only standard written for **this kind of product as a whole**, and nothing here is measured against it |
+| 24 | **ISA-5.1 / ISO 14617** | **Partial** | The symbol conventions a plant engineer is trained on; ADR-0027's drawings were designed from first principles and never checked against them |
+| 25 | **IEC 60073** | **Partial** | What a colour on an indicator is *allowed* to mean; our palette matches the convention and arrived there by reasoning, not by the standard |
+| 26 | **OPC UA Part 9** (Alarms and Conditions) | **Partial** | The alarm model this industry already has: `Severity`, Acknowledge **and Confirm**, and shelving with a cap — we match the shelving rule and have no severity and no confirm |
+| 27 | **Eclipse Sparkplug 3.0** | Out of scope **by decision** (ADR-0017) | The de-facto MQTT convention for SCADA; refused for our own payload, and **the refusal had never been assessed as a standard** |
+| 28 | **MQTT 5.0** (OASIS) / ISO/IEC 20922 | **Implemented** | All three MQTT call sites pin `V500` explicitly; ISO/IEC 20922 is MQTT 3.1.1, so we are above the ISO publication rather than behind it |
+| 29 | **EU Cyber Resilience Act** (2024/2847), with NIS2 | **Not implemented** | **Law, not guidance**, for a product with digital elements sold in the EU: vulnerability reporting from 11 September 2026, the rest from 11 December 2027 |
+
+---
+
+## 1.5 ISA-112 — **the only standard written for this kind of product, and it is newer than this project**
+
+**What it is.** `ANSI/ISA-112.00.01-2025`, *SCADA Systems — Part 1: SCADA Lifecycle, Diagrams and
+Terminology*, announced by ISA in February 2026
+([ISA's announcement](https://www.processingmagazine.com/news-notes/news/55359937/new-isa-112-part-1-standard-targets-scada-modernization-and-system-governance),
+[Control Engineering's tutorial](https://www.controleng.com/tutorial-inside-look-at-the-isa112-scada-lifecycle-standard/)).
+The committee was formed in 2016 and now numbers over 350 members. **I did not read it** — it is sold by
+ISA — so what follows is from those two secondary descriptions and is deliberately thin.
+
+Its central idea, as both sources state it, is that **a SCADA system is a long-lived operational asset
+rather than a one-time capital project**: standard lifecycle phases, continuous work processes,
+standardised terminology and system diagrams. Further parts on lifecycle review processes and on SCADA
+architectures are planned and unpublished.
+
+**Why it belongs at the top of this document.** Every other standard here is about one *aspect* — a
+protocol, a security property, a display convention. This is the one whose subject is the thing being
+built. It is listed first for that reason, not because it is the most urgent.
+
+**Status: not implemented, and that is a statement about vocabulary, not about quality.** Nothing in this
+repository is expressed in ISA-112's terms. The phase plan is this project's own lifecycle, invented
+here; `open-work.md` is its own register; the terminology — Site, Device, Tag, Edge, Screen — was defined
+by ADR-0001 and ADR-0004 without reference to it. **None of that is necessarily wrong**, and the
+architecture is not in question; what is missing is any check of whether our words mean what the
+industry's words mean. Where they differ silently, an integrator reading our documentation will
+mis-translate it into their own.
+
+**What it would cost, and the honest recommendation.** Buying Part 1 and reading it against
+`phase-plan.md`, ADR-0001 and ADR-0004 is **a day**, and its output is a terminology mapping rather than
+code. **Worth doing before the first customer-facing document**, and not worth interrupting a phase for
+— with one exception: if the terminology diverges, fixing names costs more every week. Part 1 was
+published in February 2026; the bulk of this project's vocabulary was fixed before that, so this is a
+case of the standard arriving late rather than of the project ignoring it.
+
+**It is not a substitute for the gaps in §9.** A lifecycle standard does not implement OPC UA security
+or alarm priority. It is a frame, and a frame on a product with three open gaps is still a product with
+three open gaps.
 
 ---
 
@@ -220,6 +275,64 @@ it is, and why the drivers name the reason a tag has no value rather than invent
 (`ModbusTcpDriver`, and ADR-0003's silence rule as applied in ADR-0016 and ADR-0023). It is also the
 reason **network segmentation is not optional for a Modbus plant** — see IEC 62443 §3.6 below. The
 protocol itself offers nothing to conform to, so it carries no status row.
+
+### 2.7 Eclipse Sparkplug 3.0 — **out of scope by decision, and the decision had never been assessed**
+
+**What it is.** The de-facto convention for MQTT in industrial SCADA: a prescribed topic namespace and a
+state-management model, published as *Sparkplug Topic Namespace and State Management* and, at **3.0**,
+the first version managed under the Eclipse Foundation specification process — which formalised 2.2,
+resolving ambiguities and adding normative statements rather than adding features
+([the specification's version page](https://sparkplug.eclipse.org/specification/version)). Eclipse Tahu
+is the reference implementation. **I did not read the specification**; what follows is from that page
+and from widely-agreed secondary descriptions, which is why the mechanics below are named rather than
+quoted.
+
+Its substance, as those sources describe it: **birth and death certificates** — `NBIRTH`/`DBIRTH`
+publishing a node's or device's full metadata and current values on connect, `NDEATH`/`DDEATH` on loss,
+with `NDEATH` registered as the MQTT Last Will and Testament — and a retained `STATE` message by which a
+host application declares itself online, from which an edge decides whether to publish and when to
+rebirth.
+
+**ADR-0017 chose our own payload over it, explicitly.** That decision stands and this entry does not
+reopen it. What this entry records is that **until 2026-10-08 it had never been assessed as a standard**:
+Sparkplug appears seven times in this document and in `phase-plan.md` and ADR-0006, and *every one of
+those mentions was about documentation accuracy* — correcting places that wrongly implied we speak it
+(§2.1). The thing itself was never weighed.
+
+**Weighed now, the decision still looks right, and for a reason worth writing down.** Sparkplug's model
+assumes the edge is the authority on its own device list: a node announces what it has, and the host
+learns it. **ADR-0019 decides the opposite** — the cloud is the source of truth and *derives* each edge's
+configuration onto the link, and ADR-0022 goes further by making the link device underivable from
+anything an operator types. Those are not two ways of spelling the same thing; they are opposite answers
+to *who decides what an edge reads*. Adopting Sparkplug would have meant adopting its answer.
+
+**What we do match, having arrived there separately**, which is the interesting part: a declaration
+published on connect carrying the edge's drivers and devices (ADR-0021, and its version 2 bump), a
+retained configuration topic, Last Will on the link, and a buffer that records the window it lost
+(ADR-0017). The shapes converged because the problem is the same shape.
+
+**What it costs to have refused it.** An integrator with a Sparkplug-speaking historian or broker-side
+tool cannot point it at our link; they must read our payload. That is a real cost and it is the price of
+ADR-0019's model, not an oversight. **Status stays out of scope by decision** — now a decision that has
+been examined rather than one that was merely made.
+
+### 2.8 MQTT 5.0 / ISO/IEC 20922 — **Implemented**
+
+**What it is.** MQTT 5.0 is the OASIS standard; **ISO/IEC 20922 is the ISO publication of MQTT 3.1.1**,
+the older version. Being "above ISO/IEC 20922" is therefore the right place to be, and saying "we
+conform to ISO/IEC 20922" would be the wrong claim rather than a stronger one.
+
+**Implemented, and consistently — checked rather than assumed.** All three places this product speaks
+MQTT pin version 5 explicitly: `UplinkService.cs:94`, `EdgeConfigurationPublisher.cs:118` and
+`MqttPushingDriver.cs:80`, each `.WithProtocolVersion(MqttProtocolVersion.V500)`. There is no code path
+that negotiates down to 3.1.1, and nothing relies on a default.
+
+**This matters more than a version number usually does.** MQTT 5 is what makes ADR-0023's write path
+possible to express honestly — correlation data and response topics for matching a reply to its call —
+and it carries reason codes, so a refusal can say *why* rather than just dropping the connection, which
+is ADR-0003's rule arriving in the transport. A deployment pinned to a 3.1.1-only broker would lose
+those, and nothing currently checks the broker's version at connect. **The one gap here**: a broker that
+only speaks 3.1.1 is a connection failure rather than a message naming the cause.
 
 ---
 
@@ -392,6 +505,49 @@ used in that sector is usually asked to help with the *systems security manageme
 IEC 62443 — no lockout, no monitoring, no patch process, no inventory — are exactly the ones such a
 review would raise.
 
+### 3.6 EU Cyber Resilience Act, with NIS2 — **Not implemented, and it is law rather than guidance**
+
+**What it is.** Regulation (EU) 2024/2847, in force since **10 December 2024**, covering *products with
+digital elements* placed on the EU market. Two dates matter
+([Freshfields' timeline](https://freshfields.us/insights/campaigns/technology-quotient/tech-and-platform-regulation/eu-digital-strategy/cyber-resilience-act),
+[DLA Piper's summary](https://www.technologyslegaledge.com/2024/11/navigating-the-european-cyber-resilience-act-key-dates-and-obligations/)):
+
+- **11 September 2026** — manufacturers must report an **actively exploited vulnerability to ENISA within
+  24 hours**, with a full report in 72 hours, and the same for severe incidents.
+- **11 December 2027** — the rest, including conformity assessment and CE marking.
+
+Manufacturers must also run a vulnerability-handling process **for the expected product lifetime or five
+years, whichever is shorter**. Sector-regulated products (medical devices, aviation, vehicles) are carved
+out; SCADA is not. **I did not read the regulation**; the dates above are from two law-firm summaries and
+should be confirmed against the text on EUR-Lex before anything is promised to a customer. No source I
+found addresses how the CRA classifies SCADA software specifically — whether it falls in a higher-risk
+annex is an open question with a real cost attached, and it is a question for a lawyer, not for this
+document.
+
+**Why it is here and not under ISO/IEC 27001's "binds an organisation" exemption.** The CRA binds the
+**product and its manufacturer**. It is the one item in this document that is neither a technical
+standard nor optional: *this is a legal obligation if this product is ever sold into the EU*, and North
+Macedonia's market is oriented there.
+
+**Status: not implemented, and it is the same gap as §9's first one wearing a deadline.** The CRA's
+technical requirements are largely IEC 62443-4-1's — secure development, an SBOM, a vulnerability
+intake and disclosure path, security updates for a declared support period, a declared end of support.
+This repository has **none of them**, which §9 gap 1 already says. What this entry adds is that the gap
+now has **a date against it** and the cheapest piece is the one with the earliest date: the
+24-hour reporting duty of September 2026 needs a **published contact and a documented process**, not a
+pipeline, and could be done in an afternoon. The expensive half — conformity assessment — has a year
+more.
+
+**NIS2 (Directive (EU) 2022/2555) is the other side and does not bind us.** It binds *operators* of
+essential and important entities — which is what a water utility or an energy company running this
+product is. It reaches this product indirectly and usefully: a customer under NIS2 will ask their
+suppliers for exactly what the CRA requires, so the two push the same way.
+
+**This is an owner decision, not an engineering one.** Whether this product is placed on the EU market,
+who is named as manufacturer, who receives a vulnerability report and who signs a release are questions
+only the owner can answer, and §9 gap 1 already says the same of the lifecycle. Recorded here so that
+the date is on the record rather than discovered.
+
 ---
 
 ## 4. What an operator sees
@@ -559,6 +715,123 @@ note that it waits for a phase that creates a concrete need. The consequence a c
 Gateway scans, judges and records; it does not control.** Control stays in the PLC, which is where both
 this standard and IEC 61511 expect it.
 
+### 4.6 ISA-5.1 and ISO 14617 — **Partial: the drawings were designed, not looked up**
+
+**What they are.** `ANSI/ISA-5.1` (current edition **2024**) is the convention a plant engineer is
+trained on for instrument symbols and tagging on a P&ID
+([ANSI's announcement](https://blog.ansi.org/ansi-isa-5-1-2024-instrumentation-symbols/)); **ISO 14617**
+is the international multi-part series for graphical symbols on technical diagrams, and the two are
+named together as the primary sources for P&ID symbols
+([Project Materials' overview](https://blog.projectmaterials.com/quick-answers/epc/common-pid-symbols/)).
+**I read neither** — both are paywalled — and the searching done for this entry **did not return the
+pump glyph**, which is recorded deliberately: this entry says a standard exists and was not consulted,
+and it does **not** say what the standard requires.
+
+**Why it is in scope.** ADR-0027 added symbols — a pump, a motor, a valve, a tank — and they are drawn
+from first principles. The reasoning in that ADR is about *state* and *quality*, both of which it gets
+right; **it contains no reference to any symbol standard at all.** The pump is four thin arms in a
+circle, which reads as an impeller or a fan; the valve is a bowtie, which is the one that *is* the
+industry shape; the motor is a circle lettered M.
+
+**The finding is not "the pump is wrong".** It is that nobody looked. A reader of this repository on
+2026-10-07 described the pump as *"something that symbolises a pump"* — an honest reaction, and a
+reaction is what we have instead of a check. `open-work.md` §3 carries the question (*"what a pump
+should look like"*) as **a decision deferred by the owner on aesthetic grounds**, and the point of this
+entry is that it is **not purely an aesthetic question**: recognisability on a plant display is a
+functional property, and an established convention is what makes a symbol recognisable to somebody who
+has never seen *this* product before.
+
+**One nuance from the sources, and it is the useful one.** An EPC project normally ships a **legend
+sheet** defining the symbols used on its own P&IDs, and that legend governs where the two standards
+differ ([Project Materials](https://blog.projectmaterials.com/quick-answers/epc/common-pid-symbols/)).
+So the industry's own answer to *"whose symbol set?"* is **per-deployment**, which maps exactly onto
+ADR-0027 §6's position that a second drawing is *"a drawing and a state list, not a decision"*. The
+cheap, standard-compatible answer is therefore not *"redraw the pump"* but *"let a deployment choose its
+symbol set"* — shipping a default that matches ISA-5.1 rather than one invented here.
+
+**Cost: buy ISA-5.1-2024, read the pump, valve and motor glyphs, and compare — half a day.** It may
+confirm what is drawn. The current state is that nobody knows.
+
+### 4.7 IEC 60073 — **Partial, and red is doing two jobs**
+
+**What it is.** `IEC 60073`, *Basic and safety principles for man-machine interface — coding principles
+for indicators and actuators*: the rules for what a colour on an indicator is **allowed to mean**. It is
+a basic safety publication under IEC Guide 104; the 2002 edition appears to be current
+([GlobalSpec's listing](https://reference.globalspec.com/ref/3879665/iec-60073-2002)), and the 1991
+edition was superseded in 1996
+([AFNOR's record](https://www.boutique.afnor.org/en-gb/standard/iec-600731991/coding-of-indicating-devices-and-actuators-by-colours-and-supplementary-mea/xs302166/436178)).
+**I did not read it.** The meanings below come from a Schneider Electric FAQ citing IEC 60204-1 for
+machine signalling ([Schneider's FAQ](https://www.se.com/be/en/faqs/FA146188)) — a neighbouring standard
+rather than this one. The convention is consistent across them, and no clause is quoted for that reason.
+
+| Colour | Meaning, as the convention has it |
+|---|---|
+| **Red** | emergency — immediate action required |
+| **Yellow / amber** | abnormal — monitoring and/or intervention |
+| **Green** | normal — and its use is *optional* |
+| **Blue** | an action the operator must carry out |
+| **White** | neutral / monitoring, optional |
+
+**What matches, and it matches well.** The palette is Good green, Uncertain and Stale amber, Bad red, no
+reading grey; it is tokenised in `src/styles.css` with no raw colour anywhere in `src/app`; and the
+**accent is deliberately hue-less** so that no colour on the screen means two things. That decision was
+taken on 2026-10-06 for exactly the reason this standard exists, and reached by argument rather than by
+looking it up — which is the pattern this whole row is about.
+
+**The gap, and it is real.** **Red is used for two different things that the convention separates.**
+
+- `--status-bad-bg: #fbe6e6` / `--status-bad-ink: #9b2c25` means *this reading cannot be trusted*.
+- `--alarm-surface: #fff6f5` / `--alarm-border: #f0c7c4` means *a limit has been crossed*.
+
+Two near-identical reds, one screen. Under the convention, an **alarm** is red's actual meaning — a
+condition demanding action. A **Bad reading is not an emergency**; it is "I do not know", which is much
+closer to amber's *abnormal, needs monitoring or intervention*, and arguably closer still to **no colour
+at all**. The present arrangement spends the loudest signal on the condition that demands the least
+immediate action, and then distinguishes the two by a shade a reader cannot name.
+
+**This is not a defect to patch into the palette.** ADR-0003's four qualities are a decision, and so is
+whatever red means here; changing it is a decision of the same weight and belongs in an ADR, beside
+ADR-0027's rule that **quality overrides state**. Recorded here as the finding.
+
+**One more thing the convention says that we do**: green is *optional*, and a badge saying everything is
+fine on every tile is how a reader learns to stop reading badges. That argument is already written down
+in `out-of-range.test.mjs` for a different marker; it applies to the Good pill too, and has not been
+asked about.
+
+### 4.8 OPC UA Part 9 — **Partial: the industry already has an alarm model, and ours is close**
+
+**What it is.** `OPC 10000-9` / `IEC 62541-9`, *Alarms and Conditions* — the alarm model of the one
+protocol this product already speaks. Current release **1.05.06 (2025-10-31)**
+([the OPC Foundation's reference](https://reference.opcfoundation.org/Core/Part9/v105/docs/)). It is a
+published reference rather than a paywall, and the definitions below are quoted from it; where a concept
+is named without a definition, that section was not read and it says so.
+
+**What we match, having arrived separately — including one rule exactly.** Part 9's glossary defines
+shelving as temporarily preventing an alarm from being displayed *"when it is causing the Operator a
+nuisance"*, offers **OneShotShelving and TimedShelving**, and carries a duration property whose stated
+purpose is to *"prevent permanent Shelving of an Alarm"*. **ADR-0013 requires a capped expiry chosen from
+a fixed list** — the same rule, reasoned out here from the same hazard, and now shown to be the
+industry's own answer rather than a local preference. Part 9's **Active** state (*"An Alarm is Standing
+whilst the Condition persists"*) is our Active, and its separation of Active from the acknowledgement
+states is the separation ADR-0013 draws.
+
+**The two gaps.**
+
+- **`Severity`.** Part 9 carries a severity on a condition. We have none — which is §9's third gap seen
+  from the protocol side rather than from ISA-18.2's. **That it is missing against two independent
+  standards is the strongest argument yet that it is missing from the product**, and whichever ADR closes
+  it should take Part 9's severity and ISA-18.2's priority classes together rather than inventing a third
+  scheme.
+- **Confirm.** Part 9's acknowledgeable-condition model has **Acknowledge *and* Confirm** as separate
+  acts. Ours has acknowledgement only. The distinction — generally understood as *an operator has seen
+  it* versus *the cause has been dealt with* — is one this product cannot currently express, so an alarm
+  that was acknowledged and an alarm that was actually fixed look alike. **§4.3 was not read**, so this
+  describes the concept and not the standard's state machine.
+
+**Not in scope, and worth saying:** none of this means the driver should *expose* Part 9 over OPC UA —
+§2.1 already records that the driver polls and does not subscribe, and reading a server's alarms is a
+separate feature nobody has asked for. **This entry is about borrowing the model, not the wire.**
+
 ---
 
 ## 5. Regulated industries
@@ -723,13 +996,24 @@ built, **it must not be a safety claim**.
 
 ---
 
-## 9. The three biggest gaps, with their cost
+## 9. The biggest gaps, with their cost
 
 Ranked by what a serious reviewer would raise first, not by effort.
 
-**1. The secure development lifecycle (IEC 62443-4-1).** No CI, no build-time dependency scanning, no
-SBOM, no vulnerability intake or disclosure path, no threat model, no security-requirements register, no
-signed releases. This is the widest gap in the document and the only one that is about *how the product
+*This section was called "the three biggest gaps" until 2026-10-08 and now carries four. The fourth is
+not a fourth defect — it is the pattern the other three were found by, and it was added when rows
+23–29 made it visible.*
+
+**1. The secure development lifecycle (IEC 62443-4-1) — and since 2026-10-08 it has a legal
+deadline against it.** No CI, no build-time dependency scanning, no SBOM, no vulnerability intake or
+disclosure path, no threat model, no security-requirements register, no signed releases.
+
+**The EU Cyber Resilience Act requires most of this list by law** for a product with digital elements
+sold into the EU (§3.6): **actively exploited vulnerabilities reported to ENISA within 24 hours from
+11 September 2026**, and conformity assessment with CE marking from 11 December 2027. That changes
+nothing technically — the same artefacts close both — and it changes the ordering, because the
+earliest-dated piece is also the cheapest: **a published security contact and a written process is an
+afternoon**, not a pipeline. This is the widest gap in the document and the only one that is about *how the product
 is made* rather than what it does. **Cost: weeks, mostly process; needs an owner decision** (who reviews
 a security report, who signs a release, whether a pipeline is built here or in another repository). The
 cheap first steps exist already as manual measurements — the two dependency audits in `open-work.md` §4 —
@@ -743,12 +1027,33 @@ was needed — deciding what a deployment trusts is a decision, not a setting. *
 open**: the decision is in force and the code is unchanged, which are two different claims and the reason
 this entry stays in the list. **Remaining cost: a week, plus the deployment-facing certificate story.**
 
-**3. Alarm priority (ISA-18.2).** There is no priority or class on an alarm definition, so alarms cannot
-be rationalised, sorted, flooded, escalated or measured — five of the standard's central practices, all
-of which rest on that one field. The engine itself is in better shape than most of this document
+**3. Alarm priority (ISA-18.2 — and OPC UA Part 9's `Severity`, which is the same gap found twice).**
+There is no priority or class on an alarm definition, so alarms cannot be rationalised, sorted, flooded,
+escalated or measured — five of the standard's central practices, all of which rest on that one field.
+**§4.8, added 2026-10-08, finds the same field missing against a second and independent standard**, which
+is the strongest evidence in this document that it is missing from the product rather than merely absent
+from one standard's checklist. Whichever ADR closes it should take both vocabularies together rather
+than inventing a third. Part 9 also has **Confirm** as an act distinct from Acknowledge, which this
+product cannot express at all. The engine itself is in better shape than most of this document
 (states, on-delay, deadband, bounded shelving, an append-only journal, mutation-verified). **Cost: a
 schema, API, client and reporting slice; needs an ADR**, for the same reason ADR-0025 did: priority
 changes what an alarm *is*.
+
+**4. Three decisions were taken by taste where a standard already existed (added 2026-10-08).** Not a
+gap in the product so much as a gap in how it is being built, and it is the reason rows 23–29 exist:
+
+- **what an equipment symbol looks like** — ISA-5.1 and ISO 14617 (§4.6), never consulted when ADR-0027
+  drew a pump, a motor, a valve and a tank;
+- **what a colour is allowed to mean** — IEC 60073 (§4.7), which the palette happens to match, except
+  that **red is doing two jobs**: Bad quality and an active alarm, in two near-identical reds, where the
+  convention reserves red for the condition demanding action;
+- **what an alarm is** — OPC UA Part 9 (§4.8), whose shelving cap ADR-0013 reinvented exactly and whose
+  `Severity` and `Confirm` we lack.
+
+**Cost: low for each, and the habit is worth more than the three fixes.** The owner's rule, stated
+2026-10-08, is that an established standard decides a question before we do. This document is where that
+rule is cashed out, and **the first pass of it could not have caught these** — it asked which standards
+this code meets, not which standards exist for the questions the code answered on its own.
 
 **The cheapest high-value fixes, for contrast** — this list was written on 2026-10-07 and **three of its six
 were built the same day**, which is the point of writing costs down: brute-force protection on login (gap 1
@@ -779,6 +1084,21 @@ Written into the record rather than left in a tool's scrollback:
   clause. The display-hierarchy convention is attributed to industry practice, not to the standard.
 - **IEC 61000-4-30's class definitions were not read**; the class distinction is described from general
   practice.
+- **For rows 23–29, added 2026-10-08, none of the paywalled documents was read**: not ISA-112.00.01-2025,
+  not ISA-5.1-2024, not ISO 14617, not IEC 60073, and not Regulation (EU) 2024/2847. Each entry says so
+  in its own text, and each names the secondary source it is judged against.
+- **The ISA-5.1 pump glyph was searched for and not found.** §4.6 therefore records that a standard
+  exists and was not consulted; it deliberately does **not** state what the standard requires, because
+  that would be the wrong-clause-number failure in a different costume.
+- **The Sparkplug 3.0 specification text was not retrieved** — only its version page. §2.7's description
+  of birth and death certificates and of `STATE` is from widely-agreed secondary descriptions and is
+  named rather than quoted.
+- **IEC 60073's own colour table was not retrieved.** §4.7's table is from a Schneider Electric FAQ
+  citing IEC 60204-1, a neighbouring standard; the conventions agree, and that is why no clause is
+  quoted.
+- **The CRA dates are from two law-firm summaries**, not from EUR-Lex, and **nothing found addresses how
+  the CRA classifies SCADA software specifically** — whether it falls in a higher-risk annex is open, has
+  a real cost attached, and is a question for a lawyer rather than for this document.
 - **NERC CIP sub-requirement numbering was not read**, and none is used.
 - **OPC DA's `QQSSSSLL` structure** is quoted from OPC UA Part 8's own normative annex, which is a
   published source, rather than from the OPC DA specification itself.

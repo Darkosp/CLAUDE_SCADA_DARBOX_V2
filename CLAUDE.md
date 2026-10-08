@@ -425,8 +425,16 @@ the half that is missing is the half a person sees** — no form fields, no mark
 still drawn like `4.79 bar` until that lands. **The other is still open**: the `discrete` kind has no editor.
 
 **And the standards themselves were audited on 2026-10-07** — `docs/architecture/standards-baseline.md`,
-twenty-two of them read against the code with each one's status and the reason for it: **one implemented, four
-partial, one not implemented, sixteen out of scope by decision**. The three biggest gaps in its own words: no
+**twenty-nine** of them read against the code with each one's status and the reason for it: **two implemented,
+eight partial, three not implemented, sixteen out of scope by decision**. *(It read twenty-two — one, four, one
+— until 2026-10-08, when **seven standards it had never assessed were added**. The reason they were missing is
+itself the finding: the first pass asked which standards this code **meets**, not which standards exist for the
+questions the code answered **on its own**. Three of the seven cover decisions taken by taste the week before —
+what an equipment symbol looks like (ISA-5.1), what a colour may mean (IEC 60073, where **red is doing two
+jobs**: Bad quality and an active alarm), and what an alarm is (OPC UA Part 9, whose shelving cap ADR-0013
+reinvented exactly and whose `Severity` and `Confirm` we lack). A fourth, **ISA-112.00.01-2025**, is the only
+standard written for this kind of product as a whole and was published in February 2026, after most of this
+project's vocabulary was fixed.)* The biggest gaps in its own words: no
 secure-development lifecycle at all (IEC 62443-4-1 — no CI, no SBOM, no vulnerability intake, no threat model),
 **the OPC UA driver connects with `useSecurity: false` and an anonymous identity and no ADR records that
 deferral**, and ISA-18.2's alarm *priority* does not exist as a field, so rationalisation, flood sorting and
