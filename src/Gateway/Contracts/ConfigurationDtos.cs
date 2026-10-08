@@ -13,7 +13,13 @@ public sealed record UnitDto(string Symbol, string Dimension, double FactorToSi,
         : new UnitDto(unit.Symbol, unit.Dimension.ToString(), unit.FactorToSi, unit.OffsetToSi);
 
     /// <summary>Rebuilds the domain unit, or null when no unit was supplied.</summary>
-    /// <exception cref="ArgumentException">The dimension is not one this build knows.</exception>
+    /// <exception cref="ArgumentException">
+    /// The dimension is not one this build knows, or the unit cannot convert — a factor that is zero,
+    /// negative or non-finite (ADR-0005; <see cref="UnitOfMeasure"/> refuses it, and this is where the
+    /// refusal becomes a 400 rather than a 500). **A request that omits the factor entirely lands
+    /// here too**, which is how three demo tags came to be stored with a factor of zero: the field was
+    /// sent under a name the DTO does not have, bound to nothing, and defaulted.
+    /// </exception>
     public UnitOfMeasure ToDomain() =>
         Enum.TryParse<Dimension>(Dimension, ignoreCase: true, out var dimension)
             ? new UnitOfMeasure(Symbol, dimension, FactorToSi, OffsetToSi)
