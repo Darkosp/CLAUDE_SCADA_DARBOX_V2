@@ -736,10 +736,12 @@ cheap first steps exist already as manual measurements — the two dependency au
 and turning them into a pipeline is a day's work; the rest is not.
 
 **2. OPC UA security (IEC 62541 Part 2).** The driver connects to plant devices with `useSecurity: false`
-and an anonymous identity, and **no ADR records that decision**, even though the code comment says it was
-deferred to a phase that has since shipped without it. Every other transport here is protected: the web
-surface by ADR-0028, the edge link by ADR-0017. **Cost: a week, plus a deployment-facing certificate
-story, and it needs an ADR** — because deciding what a deployment trusts is a decision, not a setting.
+and an anonymous identity. Every other transport here is protected: the web surface by ADR-0028, the edge
+link by ADR-0017. ~~**No ADR records that decision**~~ — *corrected 2026-10-08*: the ADR this entry asked
+for is [**ADR-0033**](decisions/0033-the-opc-ua-driver-negotiates-security.md), and it was right that one
+was needed — deciding what a deployment trusts is a decision, not a setting. **The gap itself is still
+open**: the decision is in force and the code is unchanged, which are two different claims and the reason
+this entry stays in the list. **Remaining cost: a week, plus the deployment-facing certificate story.**
 
 **3. Alarm priority (ISA-18.2).** There is no priority or class on an alarm definition, so alarms cannot
 be rationalised, sorted, flooded, escalated or measured — five of the standard's central practices, all
