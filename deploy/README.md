@@ -141,6 +141,66 @@ publicly trusted and not before.
 continuing quietly is worse than stopping loudly: add one of the two settings above to `.env` before
 `docker compose up -d`, and the upgrade proceeds as it always has.
 
+## Talking to an OPC UA server, and the second breaking change
+
+Everything above is about how **people** reach this Gateway. This is about how the Gateway reaches
+**plant equipment**, and since ADR-0033 it is no longer in the clear.
+
+**An OPC UA device now negotiates a secured channel by default, and refuses a server that offers
+none.** Before that it connected with no security and an anonymous identity, always, with no way to
+ask for anything else — so every value read from a plant crossed the network unencrypted and
+unauthenticated.
+
+### What this means for an installation that is already running
+
+**A device pointed at a server that speaks no security will stop connecting**, and its tags will read
+Bad with a reason that names the setting. That is deliberate, and it is the second breaking change in
+this project for the same reason as the first: continuing quietly is worse than stopping loudly.
+
+Two settings on the device decide it, both added through *Browse* → the device → **Edit device**:
+
+| Setting | Default | What it means |
+|---|---|---|
+| `security` | `required` | The strongest endpoint the server offers. A server offering only `None` is refused. |
+| `security` | `none` | An unsecured session, chosen deliberately. Logged at every connect. |
+| `acceptUntrustedCertificates` | `false` | The server's certificate must be in the Gateway's trusted store. |
+| `acceptUntrustedCertificates` | `true` | Any server certificate is accepted. Logged at every connect, with its subject and thumbprint. |
+
+**These are two different questions and it is worth keeping them apart.** `security` is *is this
+channel encrypted*. `acceptUntrustedCertificates` is *do we check who is on the other end of it*. A
+secured channel to an unverified server still stops anyone reading the traffic; it does not stop
+someone standing in the middle of it.
+
+### Trusting a server properly
+
+Put the server's certificate (DER or PEM) in the Gateway's trusted store, which lives on the
+`gateway-pki` volume and survives upgrades and container re-creation:
+
+```bash
+docker compose cp ./plant-server.der gateway:/app/pki/trusted/certs/plant-server.der
+```
+
+Then restart the Gateway. The device connects with `acceptUntrustedCertificates` left at `false`, and
+nothing is trusted that you did not put there.
+
+### What a refusal looks like
+
+The tag reads Bad — it does **not** show a stale number (ADR-0003) — and the Gateway's log names which
+of the two problems it is, because the remedies have nothing in common:
+
+- `the server's certificate is not trusted: subject '...', thumbprint ...` — go and trust it, or decide
+  not to.
+- `The OPC UA server at '...' offers no secured endpoint` — configure the server, or set
+  `security=none` and mean it.
+- `the connection could not be established: ...` — the machine is not answering. A different errand
+  entirely, and before ADR-0033 all three said the same thing.
+
+### The simulator
+
+`opcua-sim` offers a secured endpoint and its certificate is self-signed, so the demo device needs
+`acceptUntrustedCertificates=true` and **not** `security=none`. That is the right way round: the
+channel is real, and only the identity check is relaxed, for a server you started yourself.
+
 ## Installing
 
 ### 2. Build the images
