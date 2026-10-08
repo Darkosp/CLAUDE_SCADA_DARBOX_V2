@@ -144,6 +144,27 @@ for (const [name, theme] of Object.entries(THEMES)) {
     );
   });
 
+  test(`${name}: the out-of-range marker is readable on the plain surfaces it sits on`, () => {
+    // A THIRD use of the warm ink, and the one that gets no tint at all: the "above 4.60" line under
+    // a reading (ADR-0030 §5) is bare text on whatever is behind it -- a card on a screen, the page
+    // in Browse's detail. Both pairs above measure the ink against a background chosen to go with
+    // it; this one measures it against backgrounds chosen for something else entirely, which is the
+    // harder case and the one that was about to ship unmeasured.
+    //
+    // **It is deliberately not a pill.** ADR-0030 §2 says the reading is still trusted, and the
+    // quality chip beside it says GOOD; wrapping the marker in a warm tint would give it the weight
+    // of a quality verdict, which is the one thing it must not claim.
+    for (const surface of ['page', 'surface', 'sunken']) {
+      const ratio = contrast(theme.status.warnInk, theme[surface]);
+
+      assert.ok(
+        ratio >= AA,
+        `${name}: the out-of-range marker (${theme.status.warnInk}) on ${surface} (${theme[surface]}) `
+          + `is ${ratio.toFixed(2)}:1, below the ${AA}:1 floor`,
+      );
+    }
+  });
+
   test(`${name}: the quality colours are distinguishable from each other`, () => {
     // Not a WCAG rule, and a real one for this product: Good, Warn and Bad are three *different*
     // answers to "can I trust this number", and three tints a reader cannot tell apart would make the

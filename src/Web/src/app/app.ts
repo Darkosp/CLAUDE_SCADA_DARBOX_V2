@@ -64,7 +64,7 @@ import {
   unreadableOf,
 } from './models';
 import { TagStream } from './tag-stream';
-import { formatValue, TagSnapshot } from './tag';
+import { TagSnapshot, formatValue, outOfRangeNote } from './tag';
 import { UNIT_PRESETS, unitBySymbol } from './units';
 
 /** Editable shape of a device, kept separate from the wire form. */
@@ -132,6 +132,15 @@ interface TagDraft {
   unitSymbol: string;
   sourceAddress: string;
   isWritable: boolean;
+  /**
+   * The span this tag's readings are expected to fall in (ADR-0030), as typed.
+   *
+   * `NumberField`, so an emptied box is **null and not zero** — the distinction the whole decision
+   * rests on: a tag that declares nothing is never shown a verdict, and a zero low end is a real
+   * declaration. Both or neither; the API refuses one alone, by name.
+   */
+  rangeLow: NumberField;
+  rangeHigh: NumberField;
   /**
    * The tag being edited, or null for one being added.
    *
@@ -1075,6 +1084,10 @@ export class App implements OnInit {
       unitSymbol: 'bar',
       sourceAddress: 'holding:0?scale=0.01',
       isWritable: false,
+      // Nothing declared, which is not the same as a range of zero to zero (ADR-0030 §3). A new tag
+      // says nothing about plausibility until somebody decides to.
+      rangeLow: null,
+      rangeHigh: null,
     });
   }
 
@@ -1102,7 +1115,21 @@ export class App implements OnInit {
       unitSymbol: tag.unit?.symbol ?? '',
       sourceAddress: tag.sourceAddress,
       isWritable: tag.isWritable,
+      // Read back as they are stored, so a range an author cannot see is not a range they cannot
+      // correct -- which is why TreeTagDto carries them at all.
+      rangeLow: tag.rangeLow ?? null,
+      rangeHigh: tag.rangeHigh ?? null,
     });
+  }
+
+  /**
+   * What to say about a live reading outside its declared range, or null (ADR-0030 §5).
+   *
+   * The same function the screen's value tile uses, so the browse detail and a tile cannot come to
+   * disagree about one reading -- the shape of defect this project has found in four walks.
+   */
+  protected rangeNote(snapshot: TagSnapshot): string | null {
+    return outOfRangeNote(snapshot);
   }
 
   protected async saveTag(): Promise<void> {
@@ -1118,12 +1145,32 @@ export class App implements OnInit {
       // sending one anyway would just produce an error the operator cannot act on.
       const unit = draft.valueKind === 'Numeric' ? unitBySymbol(draft.unitSymbol) : null;
 
+      // **An emptied box is null, never zero** (ADR-0030 §3), which is what `parseNumberField` is for.
+      // A refusal here rather than at the API, because the API's message names fields and this form
+      // can point at the box: both ends or neither, and low below high.
+      const low = parseNumberField(draft.rangeLow);
+      const high = parseNumberField(draft.rangeHigh);
+
+      if (!low.ok || !high.ok) {
+        throw new Error('A declared range must be a number, or empty.');
+      }
+
+      if ((low.value === null) !== (high.value === null)) {
+        throw new Error('A declared range needs both ends, or neither (ADR-0030).');
+      }
+
+      if (low.value !== null && high.value !== null && low.value >= high.value) {
+        throw new Error('A declared range must run upwards: its low end is not below its high end.');
+      }
+
       await this.api.saveTag(device.id, draft.id, {
         name: draft.name,
         valueKind: draft.valueKind,
         unit,
         sourceAddress: draft.sourceAddress,
         isWritable: draft.isWritable,
+        rangeLow: low.value,
+        rangeHigh: high.value,
       });
 
       this.tagDraft.set(null);

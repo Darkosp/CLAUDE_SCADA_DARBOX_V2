@@ -1,5 +1,5 @@
 import { Alarm, TrendBucket } from './models';
-import { formatValue, Quality, TagSnapshot, TagValue } from './tag';
+import { formatValue, outOfRangeNote, Quality, TagSnapshot, TagValue } from './tag';
 
 /** The component kinds this build renders. The server refuses any other (ADR-0024 §3). */
 export type ScreenComponentKind = 'label' | 'value' | 'trend' | 'alarms' | 'status' | 'symbol';
@@ -538,6 +538,15 @@ export type ResolvedScreenComponent =
        * draws. See ADR-0026 §2 for why the flag is still worth having.
        */
       writable: boolean;
+      /**
+       * What to say about a reading outside the span its tag declares, or null (ADR-0030 §5).
+       *
+       * Null covers three different silences on purpose: the reading is inside its range, the tag
+       * declared none, or nothing has been measured. **None of them is a verdict**, and a tile that
+       * said "in range" on every other reading would teach a reader to stop looking at the marker that
+       * matters.
+       */
+      rangeNote: string | null;
     }
   | { kind: 'status'; id: string; quality: string; writable: boolean }
   | {
@@ -651,6 +660,10 @@ export function resolveComponent(
         // Marks the control, and the write is refused again by the API if anyone gets here without
         // the role (ADR-0026 §2).
         writable: component.writable,
+        // ADR-0024 §5 says every component that reads a tag shows that tag's quality; ADR-0030 §5
+        // extends it: a reading the product knows is outside its declared range cannot be drawn
+        // exactly like one that is inside.
+        rangeNote: outOfRangeNote(snapshot),
       };
     case 'status':
       return { kind: 'status', id: component.id, quality: snapshot.quality, writable: component.writable };

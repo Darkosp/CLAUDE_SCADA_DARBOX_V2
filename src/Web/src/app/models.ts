@@ -13,6 +13,14 @@ export interface TreeTag {
   unit: Unit | null;
   sourceAddress: string;
   isWritable: boolean;
+  /**
+   * The span this tag's readings are expected to fall in, or nulls when nothing is declared (ADR-0030).
+   *
+   * Carried on the tree as well as on a live reading because this is the shape the tag form reads
+   * back: **a range an author cannot see is a range they cannot correct.**
+   */
+  rangeLow?: number | null;
+  rangeHigh?: number | null;
 }
 
 export interface TreeDevice {

@@ -53,6 +53,20 @@ import { SymbolView } from './symbol';
                   </p>
                   <p class="reading" [class.zero]="$any(cell.resolved).zero">{{ $any(cell.resolved).text }}</p>
 
+                  <!--
+                    Outside the span the tag declares (ADR-0030 §5). **Not an alarm** (§6): no journal
+                    row, nothing to acknowledge, nothing to shelve -- so it is a quiet mark beside the
+                    reading rather than the loud one a limit gets, and it says what the reading was
+                    compared with rather than shouting a word.
+
+                    Absent when the reading is inside its range, when the tag declared none and when
+                    nothing has been measured. A tile that said "in range" on every other reading would
+                    teach a reader to stop looking at the one that matters.
+                  -->
+                  @if ($any(cell.resolved).rangeNote; as range) {
+                    <p class="out-of-range">{{ range }}</p>
+                  }
+
                   <!-- The time appears only when the reading is not fresh, so its presence on a
                        tile is itself the signal rather than one line of chrome among four. -->
                   @if ($any(cell.resolved).note; as note) {
@@ -292,6 +306,15 @@ import { SymbolView } from './symbol';
     /* A zero is dimmed rather than coloured: it is worth noticing, and it is not a fault. Colouring
        it would put a second meaning on the status colours, which is the one thing this palette
        reserves them for. */
+    /* A quiet mark, not an alarm (ADR-0030 §6). The warning ink says "look at this" where the bad ink
+       would say "this cannot be trusted" -- and the reading itself IS trusted: ADR-0030 §2 keeps its
+       value and its quality untouched. */
+    .out-of-range {
+      margin: 2px 0 0;
+      font-size: var(--text-sm);
+      color: var(--status-warn-ink);
+      font-weight: 600;
+    }
     .reading.zero { color: var(--text-muted); }
 
     /* The state, written under the drawing. Not decoration: bad and stopped are different facts

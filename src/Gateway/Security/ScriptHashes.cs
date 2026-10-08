@@ -56,7 +56,7 @@ public static partial class ScriptHashes
                 continue;
             }
 
-            var code = element.Groups["code"].Value;
+            var code = NormalizeNewlines(element.Groups["code"].Value);
 
             if (code.Length == 0)
             {
@@ -68,6 +68,34 @@ public static partial class ScriptHashes
 
         return hashes;
     }
+
+    /// <summary>
+    /// The script's text as the browser will see it: every line ending an LF.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// **This is the difference between a correct header and a blocked script, and it is invisible from
+    /// the code.** A CSP hash is taken over the script element's *child text*, and by then the HTML
+    /// parser has already been through its input-stream preprocessing, which replaces every CRLF pair
+    /// and every lone CR with a single LF. The bytes on the wire still carry the CRs; the text the
+    /// browser hashes does not.
+    /// </para>
+    /// <para>
+    /// So a page checked out on Windows — where git writes CRLF, and every checkout of this repository
+    /// on this machine does — is served with CRs that the Gateway hashed and the browser did not. The
+    /// header names a hash nothing can ever match, and **every inline script on the page is refused**.
+    /// </para>
+    /// <para>
+    /// **Found in the browser on 2026-10-08, not by a test, and the test could not have found it**: it
+    /// builds its expected hash from the same literal it feeds in, so both sides carried the same line
+    /// endings and agreed with each other while disagreeing with the browser. The symptom was the theme
+    /// boot script being blocked on every load — `data-theme` never set, which is exactly the
+    /// "dark theme that silently stops applying" this class's own remarks warn about, arriving by a
+    /// route nobody had thought of.
+    /// </para>
+    /// </remarks>
+    private static string NormalizeNewlines(string code) =>
+        code.Contains('\r') ? code.Replace("\r\n", "\n").Replace('\r', '\n') : code;
 
     [GeneratedRegex(
         "<script(?<attributes>[^>]*)>(?<code>.*?)</script>",

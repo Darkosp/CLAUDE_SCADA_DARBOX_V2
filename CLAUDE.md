@@ -351,7 +351,12 @@ cool greys, layered surfaces. A dark theme was deliberately *not* built that day
 meant to make one a second set of values rather than a restyle — and **that claim was tested the
 following day and held**: the dark theme below is one `[data-theme='dark']` block in `src/styles.css`
 and nothing else. *(Corrected 2026-10-07; this said a dark theme "is deliberately not built", which
-stopped being true on 2026-10-06.)*
+stopped being true on 2026-10-06.)* **The claim held of the source and was false of the product for two
+days**: the content security policy blocked the inline handler Angular's critical-CSS inlining uses to
+un-park the real stylesheet, so a deployed page drew from the inlined "critical" subset, which contained
+`:root` and not the dark block. Fixed and **seen running for the first time on 2026-10-08**; `open-work.md`
+§2.0m has both halves. The habit worth taking from it: **a theme is not built until it has been looked at in
+a deployed stack**, because every instrument short of that one agreed it was fine.
 
 **How it was reviewed matters as much as what changed: by looking at it.** Three proposals were built
 and shown side by side, one was chosen, and then every view was captured from the **running application,
@@ -480,9 +485,12 @@ rows and the wire to gain a point every 2.5 px instead of every 1 px, in the one
 stop sending what nobody looks at.
 
 **The suite is green and its baseline is `open-work.md` §2.4–§2.6, with the current numbers measured on
-2026-10-07 after ADR-0029 and its walk: 648 .NET across seven projects with 0 skipped, and the client's 228.**
-*(It read 638 and 217 after PR #6 and 636 and 205 after PR #5, both the same day, and 586 and 162 before
-that. **The PR #6 numbers were measured and never written down** — the handover note carried them and no
+2026-10-08: 728 .NET across seven projects with 0 skipped, and the client's 254.**
+**The test database listens on 5433, and nothing in the test code defaults to it** — run the two
+database-backed projects with `SCADA_TEST_DB_PORT=5433` in the environment, or they skip 201 tests and still
+print `Passed!`. That cost a run on 2026-10-08, after the container was already up.
+*(It read 648 and 228 on 2026-10-07 after ADR-0029 and its walk, 638 and 217 after PR #6, 636 and 205 after
+PR #5, and 586 and 162 before that. **The PR #6 numbers were measured and never written down** — the handover note carried them and no
 document did, which is why this sentence now names all four rather than implying the suite stood still
 between PR #5 and ADR-0029. **A number here is a claim about the
 present tense like any other** — the session that writes one owns correcting it, which is the whole lesson of the

@@ -31,8 +31,11 @@ public sealed class ScriptHashTests
         var hashes = ScriptHashes.InlineScriptHashes(ThemeSnippet);
         var hash = Assert.Single(hashes);
 
-        // The element's text between the tags, and nothing else: that is what a CSP hashes.
-        var code = ThemeSnippet["<script>".Length..^"</script>".Length];
+        // The element's text between the tags, and nothing else: that is what a CSP hashes -- with its
+        // line endings as the HTML parser leaves them, which is LF. **This `Replace` is not tidying**:
+        // without it the expected value depends on how git happened to check this source file out, which
+        // is how the CRLF defect stayed invisible here while the browser refused the script.
+        var code = ThemeSnippet["<script>".Length..^"</script>".Length].Replace("\r\n", "\n");
         var expected = $"'sha256-{Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(code)))}'";
 
         Assert.Equal(expected, hash);
@@ -41,6 +44,37 @@ public sealed class ScriptHashTests
         // script the browser refuses — a dark theme that silently stops applying.
         var wholeElement = $"'sha256-{Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(ThemeSnippet)))}'";
         Assert.NotEqual(wholeElement, hash);
+    }
+
+    [Fact]
+    public void A_page_served_with_windows_line_endings_hashes_the_same_as_one_without()
+    {
+        // **The defect this file missed, and the reason it missed it.** A CSP hash covers the script
+        // element's child text, which exists only after the HTML parser's input-stream preprocessing has
+        // turned every CRLF and every lone CR into a single LF. The bytes on the wire still carry the CRs.
+        //
+        // So a page checked out on Windows is served with CRs the Gateway hashed and the browser did not,
+        // the header names a hash nothing can match, and every inline script on the page is refused. Seen
+        // in the browser on 2026-10-08: `data-theme` was never set, because the theme boot script was
+        // blocked on every load.
+        //
+        // **Every other test here feeds in a literal and hashes the same literal back**, so both sides
+        // carry whatever line endings the source file has and agree with each other while disagreeing with
+        // the browser. This one cannot do that: it builds the two forms from each other, so passing
+        // requires the normalization rather than a coincidence of encoding.
+        const string WithLf = "<html>\n<script>\nvar a = 1;\nvar b = 2;\n</script>\n</html>";
+        var withCrLf = WithLf.Replace("\n", "\r\n");
+        var withLoneCr = WithLf.Replace("\n", "\r");
+
+        var lf = Assert.Single(ScriptHashes.InlineScriptHashes(WithLf));
+
+        Assert.Equal(lf, Assert.Single(ScriptHashes.InlineScriptHashes(withCrLf)));
+        Assert.Equal(lf, Assert.Single(ScriptHashes.InlineScriptHashes(withLoneCr)));
+
+        // And the fixtures really do differ, so the three assertions above are not comparing one string
+        // with itself -- the shape that made the original defect invisible.
+        Assert.NotEqual(WithLf, withCrLf);
+        Assert.NotEqual(WithLf, withLoneCr);
     }
 
     [Fact]

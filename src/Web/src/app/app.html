@@ -846,6 +846,21 @@
               </select>
             </label>
           }
+          @if (draft.valueKind === 'Numeric') {
+            <!--
+              The span a reading is expected to fall in (ADR-0030). **Not an alarm limit** (§6): no
+              journal row, nothing to acknowledge. It says what is plausible, where ADR-0025's
+              threshold says what is worth watching, and the two are deliberately different screens.
+
+              Only on a numeric tag, for the reason a unit is: a boolean has no span.
+              Empty is a declaration of nothing, and an empty pair is the normal state.
+            -->
+            <fieldset class="range">
+              <legend>Expected range <span class="muted">optional, both ends or neither</span></legend>
+              <label>Low<input name="rangeLow" inputmode="decimal" [(ngModel)]="draft.rangeLow" /></label>
+              <label>High<input name="rangeHigh" inputmode="decimal" [(ngModel)]="draft.rangeHigh" /></label>
+            </fieldset>
+          }
           <label>Source address<input name="address" required [(ngModel)]="draft.sourceAddress" /></label>
           <label class="check">
             <input type="checkbox" name="writable" [(ngModel)]="draft.isWritable" />
@@ -868,6 +883,14 @@
                  up apart from one that fell silent (ADR-0016). -->
             <span class="meta">{{ noDataText(live) ?? live.quality }}</span>
           </div>
+          <!--
+            Outside the span the tag declares (ADR-0030 §5), beside the reading in the browse detail
+            as it is on a value tile. The reading itself keeps its value and its quality untouched
+            (§2) -- this says what it was compared with, and nothing more.
+          -->
+          @if (rangeNote(live); as range) {
+            <p class="out-of-range">{{ range }}</p>
+          }
           <p class="muted">{{ live.path }}</p>
         } @else {
           <p class="muted">No reading yet.</p>
