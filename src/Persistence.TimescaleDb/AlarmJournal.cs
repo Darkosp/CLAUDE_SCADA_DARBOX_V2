@@ -15,7 +15,7 @@ public sealed class AlarmJournal : IAlarmJournal
         event_type, occurrence_id, definition_id, tag_id, site_id, source_time, recorded_at,
         actor_user_id, actor_username, alarm_limit, limit_value, value, unit_symbol, tag_path,
         detected_after_restart, shelved_until, reason, gap_from, gap_until, unrecorded_transitions,
-        device_id, lost_samples, loss_id, clock_skew_seconds
+        device_id, lost_samples, loss_id, clock_skew_seconds, priority
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -27,7 +27,7 @@ public sealed class AlarmJournal : IAlarmJournal
         VALUES (@event_type, @occurrence_id, @definition_id, @tag_id, @site_id, @source_time, @recorded_at,
                 @actor_user_id, @actor_username, @alarm_limit, @limit_value, @value, @unit_symbol, @tag_path,
                 @detected_after_restart, @shelved_until, @reason, @gap_from, @gap_until, @unrecorded_transitions,
-                @device_id, @lost_samples, @loss_id, @clock_skew_seconds)
+                @device_id, @lost_samples, @loss_id, @clock_skew_seconds, @priority)
         """;
 
     public async Task AppendAsync(AlarmEvent alarmEvent, CancellationToken cancellationToken)
@@ -92,6 +92,7 @@ public sealed class AlarmJournal : IAlarmJournal
         Add(parameters, "unit_symbol", NpgsqlDbType.Text, alarmEvent.UnitSymbol);
         Add(parameters, "tag_path", NpgsqlDbType.Text, alarmEvent.TagPath);
         parameters.AddWithValue("detected_after_restart", alarmEvent.DetectedAfterRestart);
+        Add(parameters, "priority", NpgsqlDbType.Text, alarmEvent.Priority?.ToString());
         Add(parameters, "shelved_until", NpgsqlDbType.TimestampTz, alarmEvent.ShelvedUntilUtc);
         Add(parameters, "reason", NpgsqlDbType.Text, alarmEvent.Reason);
         Add(parameters, "gap_from", NpgsqlDbType.TimestampTz, alarmEvent.GapFromUtc);
@@ -211,6 +212,12 @@ public sealed class AlarmJournal : IAlarmJournal
             LostSamples = Nullable<long>(reader, 21),
             LossId = Nullable<Guid>(reader, 22),
             ClockSkewSeconds = Nullable<double>(reader, 23),
+
+            // Unknown reads as unrationalised rather than throwing: a Gateway must still start
+            // against a database a newer build wrote (ADR-0034, and ADR-0021's direction on versions).
+            Priority = reader.IsDBNull(24) || !Enum.TryParse<AlarmPriority>(reader.GetString(24), out var priority)
+                ? null
+                : priority,
         };
     }
 

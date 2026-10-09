@@ -30,7 +30,8 @@ public sealed record AlarmDto(
     string? AcknowledgedBy,
     DateTimeOffset? ClearedAtUtc,
     DateTimeOffset? ShelvedUntilUtc,
-    bool DetectedAfterRestart)
+    bool DetectedAfterRestart,
+    string? Priority)
 {
     public static AlarmDto From(Alarm alarm) => new(
         alarm.OccurrenceId,
@@ -48,7 +49,12 @@ public sealed record AlarmDto(
         alarm.AcknowledgedBy?.Username,
         alarm.ClearedAtUtc,
         alarm.ShelvedUntilUtc,
-        alarm.DetectedAfterRestart);
+        alarm.DetectedAfterRestart,
+
+        // Null travels as null and means **not yet rationalised** (ADR-0034 §2). A client that reads
+        // it as "Low" would be inventing an assessment nobody made, which is why the server never
+        // substitutes one here.
+        alarm.Priority?.ToString());
 }
 
 /// <summary>How long to shelve an alarm for: at most the configured maximum (ADR-0013).</summary>
@@ -70,7 +76,8 @@ public sealed record AlarmDefinitionDto(
     double? HighLimit,
     double? LowLimit,
     double? OnDelaySeconds,
-    double? Deadband)
+    double? Deadband,
+    string? Priority)
 {
     public static AlarmDefinitionDto From(AlarmDefinition definition) =>
         new(
@@ -79,7 +86,8 @@ public sealed record AlarmDefinitionDto(
             definition.HighLimit,
             definition.LowLimit,
             definition.OnDelaySeconds?.TotalSeconds,
-            definition.Deadband);
+            definition.Deadband,
+            definition.Priority?.ToString());
 }
 
 /// <summary>A threshold as submitted from the configuration UI.</summary>
@@ -87,7 +95,13 @@ public sealed record SaveAlarmDefinitionRequest(
     double? HighLimit,
     double? LowLimit,
     double? OnDelaySeconds = null,
-    double? Deadband = null);
+    double? Deadband = null,
+
+    // **Optional, and omitting it means "not yet rationalised"** rather than "leave it as it was".
+    // A screen that sends the whole definition on save must send this too; the alternative -- an
+    // absent field meaning "unchanged" -- would make it impossible to ever clear a priority, which
+    // is a thing a rationalisation session legitimately does.
+    string? Priority = null);
 
 /// <summary>Wire form of one journal entry (ADR-0013).</summary>
 /// <param name="SiteId">

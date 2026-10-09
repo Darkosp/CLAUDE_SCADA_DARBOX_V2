@@ -41,8 +41,8 @@ public sealed class AlarmDefinitionRepository : IAlarmDefinitionRepository
 
         await connection.ExecuteAsync(new CommandDefinition(
             """
-            INSERT INTO alarm_definition (id, tag_id, high_limit, low_limit, on_delay_seconds, deadband)
-            VALUES (@Id, @TagId, @HighLimit, @LowLimit, @OnDelaySeconds, @Deadband)
+            INSERT INTO alarm_definition (id, tag_id, high_limit, low_limit, on_delay_seconds, deadband, priority)
+            VALUES (@Id, @TagId, @HighLimit, @LowLimit, @OnDelaySeconds, @Deadband, @Priority)
             """,
             Parameters(definition),
             cancellationToken: cancellationToken))
@@ -61,7 +61,8 @@ public sealed class AlarmDefinitionRepository : IAlarmDefinitionRepository
             SET high_limit = @HighLimit,
                 low_limit = @LowLimit,
                 on_delay_seconds = @OnDelaySeconds,
-                deadband = @Deadband
+                deadband = @Deadband,
+                priority = @Priority
             WHERE id = @Id AND deleted_at IS NULL
             """,
             Parameters(definition),
@@ -107,5 +108,10 @@ public sealed class AlarmDefinitionRepository : IAlarmDefinitionRepository
         definition.LowLimit,
         OnDelaySeconds = definition.OnDelaySeconds?.TotalSeconds,
         definition.Deadband,
+
+        // As its name, so the column reads as what it means and the CHECK can enforce the three.
+        // Null stays null: not yet rationalised is a state, and storing it as any of the three would
+        // be the product making an assessment it is not entitled to make (ADR-0034 §2).
+        Priority = definition.Priority?.ToString(),
     };
 }

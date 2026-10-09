@@ -112,6 +112,22 @@ public sealed record AlarmEvent
     /// <summary>The device a source event is about; null on every other event.</summary>
     public Guid? DeviceId { get; init; }
 
+    /// <summary>
+    /// The priority the alarm was raised under, or null for not yet rationalised (ADR-0034).
+    /// </summary>
+    /// <remarks>
+    /// <b>Journalled so the ordering survives a restart.</b> The live list is rebuilt from this journal
+    /// (ADR-0013); without it a standing alarm would come back unrationalised and the screen would
+    /// silently reorder itself after every restart — a defect that looks like the alarms changed rather
+    /// than like a bug.
+    /// <para>
+    /// It also keeps the history agreeing with the screen somebody was looking at: an alarm raised as
+    /// High and re-rationalised to Low while still standing <i>was</i> High when an operator was asked
+    /// to deal with it.
+    /// </para>
+    /// </remarks>
+    public AlarmPriority? Priority { get; init; }
+
     /// <summary>On a <see cref="AlarmEventType.SamplesLost"/>, how many samples the source dropped.</summary>
     public long? LostSamples { get; init; }
 
