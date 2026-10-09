@@ -812,7 +812,17 @@ immediate action, and then distinguishes the two by a shade a reader cannot name
 
 **This is not a defect to patch into the palette.** ADR-0003's four qualities are a decision, and so is
 whatever red means here; changing it is a decision of the same weight and belongs in an ADR, beside
-ADR-0027's rule that **quality overrides state**. Recorded here as the finding.
+ADR-0027's rule that **quality overrides state**.
+
+***Decided 2026-10-09 by [ADR-0035](decisions/0035-what-a-colour-is-allowed-to-mean.md); the code is
+not written, and those are two different claims, so this row stays `Partial`.*** Red belongs to the
+alarm alone, an alarm is coloured by its **priority** rather than by existing — and **Low and
+unrationalised get no colour at all**, because ISA-18.2's own target makes four fifths of alarms Low
+and colouring them paints most of the list. Quality keeps its badge and gives up the area and
+intensity of red. The ADR also records what this search could **not** find: **no standard says what
+colour bad data is.** ISA-101, EEMUA 191 and IEC 60073 are silent on it, and the closest material is
+vendor behaviour that disagrees with itself — so that part is ours to decide, and the ADR says so
+rather than implying a standard backs it.
 
 **One more thing the convention says that we do**: green is *optional*, and a badge saying everything is
 fine on every tile is how a reader learns to stop reading badges. That argument is already written down
