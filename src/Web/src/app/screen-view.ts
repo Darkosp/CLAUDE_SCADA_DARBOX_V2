@@ -1,6 +1,6 @@
 import { Component, computed, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Alarm, TrendSeries } from './models';
+import { Alarm, formatMeasurement, TrendSeries } from './models';
 import {
   groupIntoRows,
   resolveComponent,
@@ -165,8 +165,24 @@ import { SymbolView } from './symbol';
                       @for (alarm of $any(cell.resolved).alarms; track alarm.occurrenceId) {
                         <li>
                           <span class="path">{{ alarm.tagPath }}</span>
-                          <span class="limit">{{ alarm.limit }}</span>
-                          <span class="value">{{ alarm.valueAtRaise }}</span>
+                          <!-- **Labelled, because 'High' here is the LIMIT side and 'High' is also a
+                               priority since ADR-0034.** Seen unlabelled on 2026-10-09: a tag reading
+                               bold 'High' whose priority was Low. The words themselves are the ones a
+                               plant engineer is trained on and are not renamed. -->
+                          <span class="limit">{{ alarm.limit === 'High' ? 'above' : 'below' }}</span>
+                          <!-- **This printed the raw number and showed 4.5600000000000005 on a plant
+                               screen**, overflowing its card, while the banner three inches above
+                               rendered the same value as 4.56 bar in the same page load. The
+                               arithmetic showing through is what this formatter exists to stop. -->
+                          <span class="value">{{ measurement(alarm.valueAtRaise, alarm.unitSymbol) }}</span>
+                          <!-- **Labelled here too, and not abbreviated for space.** A bare "High" is
+                               unambiguous inside this list now that the limit above says "above",
+                               and it is not unambiguous across the application: the banner two
+                               inches up still carries a red HIGH badge meaning the limit. One word
+                               that means two things in one product is the defect this whole change
+                               exists to remove, and a cramped tile is not a reason to reintroduce
+                               it. Whether it wraps badly on a real panel is a question for an eye. -->
+                          <span class="priority">{{ alarm.priority ? 'priority ' + alarm.priority : 'not rationalised' }}</span>
                         </li>
                       }
                     </ul>
@@ -369,7 +385,24 @@ import { SymbolView } from './symbol';
     .q-Stale { background: var(--status-warn-bg); color: var(--status-warn-ink); }
     .q-Bad { background: var(--status-bad-bg); color: var(--status-bad-ink); }
     .alarms { margin: 0; padding-left: 18px; }
-    .alarms .limit { font-weight: 650; margin: 0 6px; }
+    .alarms li { margin-bottom: 6px; }
+
+    /* **The path on its own line, the facts under it.** All four on one line overflowed the card at
+       a tile's width -- the reading was clipped mid-number, which is worse than the bad wrap it
+       replaced. The tag path is the long and variable part and is the one thing that may wrap; a
+       reading, its unit and a priority each stay whole below it. */
+    .alarms .path { display: block; }
+    .alarms .limit { font-weight: 650; margin-right: 6px; }
+    .alarms .priority { color: var(--text-muted); margin-left: 8px; }
+
+    /* **Each piece stays whole.** Looked at on 2026-10-09 and it wrapped between a reading and its
+       unit -- "4.54" on one line and "bar" on the next -- and between "priority" and the word it
+       labels. A number separated from its unit is two things on a plant screen, and the line is
+       allowed to break BETWEEN these pieces instead. The tag path may still wrap: it is the long
+       part, and a path breaking mid-path is readable in a way a measurement is not. */
+    .alarms .value,
+    .alarms .limit,
+    .alarms .priority { white-space: nowrap; }
     .empty, .unavailable { margin: 0; color: var(--text-muted); }
     .unavailable { font-style: italic; }
     .muted { margin: 0; color: var(--text-muted); }
@@ -506,6 +539,16 @@ export class ScreenView {
 
   /** What the server said when a write failed. Kept so the dialog stays open with its value. */
   protected readonly writeProblem = signal<string | null>(null);
+
+  /**
+   * A reading as a person reads it, for the alarms component.
+   *
+   * The same function the rest of the client uses, rather than the raw number this used to print —
+   * two decimals and the unit, so `4.5600000000000005` is `4.56 bar`.
+   */
+  protected measurement(value: number | null | undefined, unitSymbol?: string | null): string {
+    return formatMeasurement(value, unitSymbol);
+  }
 
   /** A write the operator has confirmed. The parent performs it — this component calls no API. */
   readonly writeRequested = output<{ tagId: string; value: number | boolean }>();

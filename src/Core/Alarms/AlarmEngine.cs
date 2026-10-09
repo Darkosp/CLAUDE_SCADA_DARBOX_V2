@@ -417,10 +417,19 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
                 changed = true;
             }
 
-            if (changed)
-            {
-                PublishSnapshot();
-            }
+            // **Published whatever happened, not only when a definition was removed.** A priority edit
+            // changes what the list says and what order it is in without changing *which* alarms are in
+            // it, so the flag above never sees it — which is precisely the shape of the ADR-0020 defect
+            // this project already paid for, where the line telling an operator something sat after the
+            // `continue` that skips an unchanged revision.
+            var before = Volatile.Read(ref _snapshot);
+
+            PublishSnapshot();
+
+            // Subscribers are told only when a reader would see a difference: every configuration save
+            // reaches here, and pushing an identical list to every browser on every unrelated edit is
+            // noise.
+            changed = changed || !Summarised(before).SequenceEqual(Summarised(Volatile.Read(ref _snapshot)));
         }
         finally
         {
@@ -980,7 +989,64 @@ public sealed class AlarmEngine : IAlarmEngine, ITagValueSubscriber
     /// </para>
     /// </remarks>
     private void PublishSnapshot() =>
-        Volatile.Write(ref _snapshot, AlarmPriorityOrder.ForDisplay(_byDefinition.Values));
+        Volatile.Write(ref _snapshot, AlarmPriorityOrder.ForDisplay(WithCurrentPriority(_byDefinition.Values)));
+
+    /// <summary>
+    /// Each standing alarm with its definition's priority **as it reads now** (ADR-0034 §3).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// **Found by the walk of 2026-10-09**, and it was a disagreement between two halves of one screen.
+    /// The priority used to be copied onto the alarm at raise and never revisited, so an engineer who
+    /// rationalised an alarm *while it was standing* saw the tag's detail say `Priority High` and
+    /// watched the standing list go on ordering it below a `Low` one. Measured: the change took effect
+    /// 100 seconds later, when the demo's value oscillated and the alarm re-raised. **On an alarm that
+    /// stands for days it would have taken days.**
+    /// </para>
+    /// <para>
+    /// **The freezing was copied from ADR-0025 §7 and that reasoning does not transfer.** A deadband is
+    /// arithmetic the alarm is part-way through using, so changing it under a standing alarm would make
+    /// it clear at a point it never raised against. A priority is advice to a person about what to deal
+    /// with first: nothing is mid-calculation, and changing that advice is the entire purpose of
+    /// rationalising an alarm. ADR-0034 §3 calls priority "a property of the definition", and a frozen
+    /// copy makes it a property of the occurrence instead.
+    /// </para>
+    /// <para>
+    /// **The stored alarm keeps its raise-time value**, so the journal still records what the alarm was
+    /// raised under — a journal is a record of the past. Only the published snapshot is resolved, which
+    /// is why this is here and not in the raise path. The engine already reconciles on
+    /// <see cref="TagCatalogSource.Changed"/>, so saving a threshold refreshes the list.
+    /// </para>
+    /// </remarks>
+    /// <summary>What a reader would notice about a published list: which alarms, in what order, how urgent.</summary>
+    /// <remarks>
+    /// Deliberately **not** the whole alarm. A value or an acknowledgement changing has its own path to
+    /// the subscribers; this exists only so a configuration save that altered nothing visible does not
+    /// push an identical list to every browser.
+    /// </remarks>
+    private static IEnumerable<(Guid Occurrence, AlarmPriority? Priority)> Summarised(IEnumerable<Alarm> alarms) =>
+        alarms.Select(alarm => (alarm.OccurrenceId, alarm.Priority));
+
+    private IEnumerable<Alarm> WithCurrentPriority(IEnumerable<Alarm> alarms)
+    {
+        var byDefinition = _catalogSource.Current.Alarms.ToDictionary(
+            definition => definition.Id,
+            definition => definition.Priority);
+
+        foreach (var alarm in alarms)
+        {
+            // A definition that no longer exists leaves the alarm's own value alone rather than
+            // blanking it: the alarm is still standing, and "nobody has judged this" would be a
+            // different and false statement about a threshold somebody deleted.
+            if (!byDefinition.TryGetValue(alarm.DefinitionId, out var current) || current == alarm.Priority)
+            {
+                yield return alarm;
+                continue;
+            }
+
+            yield return alarm with { Priority = current };
+        }
+    }
 
     private async Task PublishAsync(CancellationToken cancellationToken)
     {

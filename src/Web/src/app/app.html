@@ -83,8 +83,19 @@
   <section class="banner" role="alert" aria-label="Unacknowledged alarms">
     @for (alarm of unacknowledged(); track alarm.definitionId) {
       <div class="alarm" [class.cleared]="alarm.state === 'Cleared'">
-        <!-- The same word the summary table uses. One state, one name. -->
+        <!-- The same word the summary table uses. One state, one name.
+
+             **This badge is the LIMIT, not the priority**, and since ADR-0034 the two share their
+             words: `High` and `Low` name a limit side here and a priority there. Seen on 2026-10-09 —
+             a tag with a red HIGH badge and a `Low` priority. Renaming the badge was considered and
+             refused: HI/LO is the vocabulary a plant engineer is trained on, and inventing our own
+             would be the thing the owner's standing rule exists to prevent. The industry labels
+             instead, which is what the element beside it does. -->
         <span class="badge">{{ alarm.state === 'Cleared' ? 'CLEARED' : alarm.limit === 'High' ? 'HIGH' : 'LOW' }}</span>
+        <!-- Labelled, always, including when there is none: an alarm nobody has rationalised is the
+             one a reader has to be able to find (ADR-0034 §2). No colour -- §4 defers that, and red
+             is already doing two jobs in this product. -->
+        <span class="priority">{{ alarm.priority ? 'priority ' + alarm.priority : 'not rationalised' }}</span>
         <span class="where">{{ alarm.tagPath }}</span>
         <span class="what">
           <!-- Labelled, because this is the reading that tripped the limit and not the
@@ -1024,11 +1035,16 @@
       <h3 class="summary-head">Alarm summary</h3>
       <table class="summary">
         <thead>
-          <tr><th>Site</th><th>Tag</th><th>Condition</th><th>Raised</th><th>State</th><th>Acknowledged by</th><th></th></tr>
+          <!-- **Priority is a column rather than a colour** (ADR-0034 §4 defers colour, and §4's words
+               are "colour or any other visual weight" -- a labelled column is information, not
+               emphasis). It is here because the list is SORTED by it: a list ordered by something the
+               reader cannot see looks arbitrary, which the walk of 2026-10-09 found it doing. -->
+          <tr><th>Priority</th><th>Site</th><th>Tag</th><th>Condition</th><th>Raised</th><th>State</th><th>Acknowledged by</th><th></th></tr>
         </thead>
         <tbody>
           @for (alarm of alarms(); track alarm.definitionId) {
             <tr [class.settled]="alarm.state === 'Acknowledged' || alarm.state === 'Shelved'">
+              <td class="priority">{{ alarm.priority ?? 'Not rationalised' }}</td>
               <!-- Every Site the reader may see is listed here, not only the one being
                    browsed — an alarm elsewhere is still an alarm — so each row says where. -->
               <td>{{ siteNameOf(alarm.siteId) }}</td>

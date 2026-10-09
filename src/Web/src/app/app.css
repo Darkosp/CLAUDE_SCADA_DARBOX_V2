@@ -288,6 +288,14 @@ button.ghost.danger { background: var(--surface); color: var(--status-bad-ink); 
 .where { font-weight: 600; }
 .what { font-variant-numeric: tabular-nums; }
 .limit { color: var(--text-muted); }
+
+/* Priority, in the banner and in the summary table.
+   **Muted on purpose, and not a pill.** ADR-0034 section 4 defers colour, because red already means
+   two things in this product (standards-baseline.md section 4.7) and a third claim on that channel
+   needs its own decision. What it must be is READABLE and LABELLED -- the list is sorted by this,
+   and a list ordered by something invisible looks arbitrary. */
+.alarm .priority { color: var(--text-muted); font-size: var(--text-sm); white-space: nowrap; }
+td.priority { color: var(--text-body); white-space: nowrap; }
 .when { color: var(--text-muted); font-size: var(--text-sm); margin-left: auto; }
 
 .summary-head { margin: var(--space-6) 0 var(--space-3); }
