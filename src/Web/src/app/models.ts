@@ -133,6 +133,19 @@ export interface Alarm {
   shelvedUntilUtc: string | null;
   /** First seen on the first evaluation after a Gateway restart, so likely began unwatched. */
   detectedAfterRestart: boolean;
+  /**
+   * How urgently this needs an operator, or null for **not yet rationalised** (ADR-0034).
+   *
+   * **It is the priority the definition carries now**, not the one the alarm was raised under: an
+   * engineer who rationalises an alarm while it is standing has changed their advice about what to
+   * deal with first, and the standing list is the place that advice is acted on. The journal keeps
+   * the raise-time value, because a journal is a record of the past.
+   *
+   * **Not to be confused with `limit`**, which is also `'High' | 'Low'` and names which side of the
+   * range was crossed. Two standards, two correct vocabularies, one collision — see the walk of
+   * 2026-10-09. Anything that shows either one labels it.
+   */
+  priority: string | null;
 }
 
 /** A configured threshold on a tag. */

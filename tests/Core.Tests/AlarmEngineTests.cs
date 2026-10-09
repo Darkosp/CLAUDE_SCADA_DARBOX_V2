@@ -737,6 +737,57 @@ public class AlarmEngineTests
         Assert.Equal(AlarmEngine.SupersededReason, retired.Reason);
     }
 
+    [Fact]
+    public async Task Rationalising_a_STANDING_alarm_changes_the_list_without_waiting_for_it_to_re_raise()
+    {
+        // **The walk of 2026-10-09 found this on a screen.** The priority used to be copied onto the
+        // alarm at raise and never revisited, so a threshold rationalised while its alarm was standing
+        // showed `Priority High` on the tag's detail while the standing list went on ordering it as
+        // unrationalised. Measured there: 100 seconds, because the demo flaps. On an alarm that stands
+        // for days it would have been days.
+        var rig = await Rig.StartedAsync(high: 4.5);
+
+        await rig.FeedAsync(5.0);
+
+        var before = Assert.Single(rig.Engine.GetCurrent());
+        Assert.Null(before.Priority);
+
+        // Rationalised while standing — the engine reconciles on a catalogue change, which is what a
+        // threshold being saved produces.
+        rig.CatalogSource.Set(Rig.Catalog(high: 4.5, priority: AlarmPriority.High));
+
+        var after = Assert.Single(rig.Engine.GetCurrent());
+
+        Assert.Equal(AlarmPriority.High, after.Priority);
+
+        // And it is the *same* alarm, not a new one: rationalising must not retire and re-raise, which
+        // would put a spurious pair in the journal and clear an acknowledgement.
+        Assert.Equal(before.OccurrenceId, after.OccurrenceId);
+    }
+
+    [Fact]
+    public async Task A_definition_deleted_under_a_standing_alarm_leaves_its_priority_alone()
+    {
+        // The case the resolution has to not get wrong. "Nobody has judged this" is a statement about
+        // an alarm awaiting rationalisation; an alarm whose threshold somebody deleted is a different
+        // thing, and blanking it would say something false about the only record left.
+        var rig = await Rig.StartedAsync(high: 4.5);
+
+        rig.CatalogSource.Set(Rig.Catalog(high: 4.5, priority: AlarmPriority.Medium));
+        await rig.FeedAsync(5.0);
+
+        Assert.Equal(AlarmPriority.Medium, Assert.Single(rig.Engine.GetCurrent()).Priority);
+
+        rig.CatalogSource.Set(Rig.Catalog(configured: false));
+
+        var standing = rig.Engine.GetCurrent().SingleOrDefault();
+
+        if (standing is not null)
+        {
+            Assert.Equal(AlarmPriority.Medium, standing.Priority);
+        }
+    }
+
     private static AlarmEvent Raised(Guid occurrence) => new()
     {
         Type = AlarmEventType.Raised,
@@ -1085,7 +1136,8 @@ public class AlarmEngineTests
             double? low = null,
             bool configured = true,
             TimeSpan? onDelay = null,
-            double? deadband = null)
+            double? deadband = null,
+            AlarmPriority? priority = null)
         {
             var tenant = new Tenant { Id = new Guid("55555555-2222-4555-8555-555555555555"), Name = "Darbo" };
             var site = new Site { Id = SiteId, TenantId = tenant.Id, Name = "Skopje" };
@@ -1116,6 +1168,7 @@ public class AlarmEngineTests
                         LowLimit = low,
                         OnDelaySeconds = onDelay,
                         Deadband = deadband,
+                        Priority = priority,
                     },
                 ]
                 : [];
